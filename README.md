@@ -3,7 +3,7 @@
 A suite for testing with docker. Based on  [docker.go](https://github.com/camlistore/camlistore/blob/master/pkg/test/dockertest/docker.go) from [camlistore](https://github.com/camlistore/camlistore).
 This fork detects automatically, if [boot2docker](http://boot2docker.io/) is installed. If it is, you are able to use the docker integration on Windows and Mac OSX as well without any additional work.
 
-To avoid port collisions when using boot2docker, dockertest chooses a random port to bind to for the required image.
+To avoid port collisions when using boot2docker, dockertest chooses a random port to bind to for the requested image.
 
 ## Examples
 
