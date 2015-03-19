@@ -32,7 +32,8 @@ import (
     "time"
 
     "camlistore.org/pkg/netutil"
-    "math/rand")
+    "math/rand"
+)
 
 // Debug, if set, prevents any container from being removed.
 var Debug bool
