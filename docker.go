@@ -32,7 +32,8 @@ import (
     "time"
 
     "camlistore.org/pkg/netutil"
-    "math/rand")
+    "math/rand"
+)
 
 // Debug, if set, prevents any container from being removed.
 var Debug bool
@@ -239,6 +240,7 @@ const (
 )
 
 func randInt(min int, max int) int {
+    rand.Seed(time.Now().UTC().UnixNano())
     return min + rand.Intn(max-min)
 }
 
