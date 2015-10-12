@@ -1,122 +1,87 @@
 # dockertest
 
-A suite for testing with docker. Based on  [docker.go](https://github.com/camlistore/camlistore/blob/master/pkg/test/dockertest/docker.go) from [camlistore](https://github.com/camlistore/camlistore).
-This fork detects automatically, if [boot2docker](http://boot2docker.io/) is installed. If it is, you are able to use the docker integration on Windows and Mac OSX as well without any additional work.
+[![Build Status](https://travis-ci.org/ory-am/dockertest.svg)](https://travis-ci.org/ory-am/dockertest)
 
-To avoid port collisions when using boot2docker, dockertest chooses a random port to bind to for the requested image.
+A suite for testing with docker. Based on  [docker.go](https://github.com/camlistore/camlistore/blob/master/pkg/test/dockertest/docker.go) from [camlistore](https://github.com/camlistore/camlistore).
+This fork detects automatically, if [docker-machine](https://docs.docker.com/machine/) is installed. If it is, you are able to use the docker integration on Windows and Mac OSX as well without any additional work.
+
+To avoid port collisions when using docker-machine, dockertest chooses a random port to bind the requested image to.
 
 ## Examples
 
-The following examples are taken from [almamedia.fi](http://developers.almamedia.fi/painless-mongodb-testing-with-docker-and-golang/).
-
-### Setup test environment
+### Mongo Container
 
 ```go
 import "github.com/ory-am/dockertest"
+import "gopkg.in/mgo.v2"
 
-func TestStoryCreateAndGet(t *testing.T) {
-
+func Foobar() {
   // Start MongoDB Docker container
-  //
-  // One of the most powerful features in Golang
-  // is the ability to return multiple values from functions.
-  // In this we get:
-  // - containerID (type=ContainerID struct)
-  // - ip (type=string)
-  containerID, ip := dockertest.SetupMongoContainer(t)
+  containerID, ip, port, err := dockertest.SetupMongoContainer()
 
-  // defer schedules KillRemove(t) function call to run immediatelly
-  // when TestStoryCreateAndGet(t) function is done,
-  // so you can place resource clenup code close to resource allocation
-  defer containerID.KillRemove(t)
-
-  app := AppContext{}
-
-  // Connect to Dockerized MongoDB
-  mongoSession, err := mgo.Dial(ip)
-
-  // Golang favors visible first hand error handling.
-  // Main idea is that Errors are not exceptional so you should handle them
   if err != nil {
-    Error.Printf("MongoDB connection failed, with address '%s'.", Configuration.MongoUrl)
+    return err
   }
 
-  // close MongoDB connections when we're finished
-  defer mongoSession.Close()
+  // kill the container on deference
+  defer containerID.KillRemove()
 
-  app.mongoSession = mongoSession
+  url := fmt.Sprintf("%s:%d", ip, port)
+  sess, err := mgo.Dial(url)
+  if err != nil {
+    return err
+  }
 
-  // create test http server with applications route configuration
-  ts := httptest.NewServer(app.createRoutes())
-  defer ts.Close()
-
-  storyId := testCreate(ts, t) // run create test
-  testGet(ts, storyId, t) // run get test for created story
+  defer sess.Close()
+  // ...
 }
 ```
 
-### Post json document to http handler
-```go
-func testCreate(ts *httptest.Server, t *testing.T) string {
-
-  postData := strings.NewReader("{\"text\":\"tekstiä\",\"subjectId\":\"k2j34\",\"subjectUrl\":\"www.fi/k2j34\"}")
-
-  // create http POST with postData JSON
-  res, err := http.Post(ts.URL+"/story", applicationJSON, postData)
-
-  // read http response body data
-  data, err := ioutil.ReadAll(res.Body)
-  res.Body.Close()
-  if err != nil {
-    t.Error(err)
-  }
-
-  id := string(data)
-
-  // verify that we got correct http status code
-  if res.StatusCode != http.StatusCreated {
-    t.Fatalf("Non-expected status code: %v\n\tbody: %v, data:%s\n", http.StatusCreated, res.StatusCode, id)
-  }
-
-  // verify that we got valid lenght response data
-  if res.ContentLength != 5 {
-    t.Fatalf("Non-expected content length: %v != %v\n", res.ContentLength, 5)
-  }
-  return id
-}
-```
+### MySQL Container
 
 ```go
-func testGet(ts *httptest.Server, storyId string, t *testing.T) {
+import "github.com/ory-am/dockertest"
+import "github.com/go-sql-driver/mysql"
+import "database/sql"
 
-  // create http GET request with correct path
-  res, err := http.Get(ts.URL + "/story/" + storyId)
-  data, err := ioutil.ReadAll(res.Body)
-  res.Body.Close()
-  if err != nil {
-    t.Error(err)
-  }
+func Foobar() {
+    c, ip, port, err := dockertest.SetupMySQLContainer()
+    if err != nil {
+        return
+    }
+    defer c.KillRemove()
 
-  body := string(data)
+    url := fmt.Sprintf("mysql://%s:%s@%s:%d/", dockertest.MySQLUsername, dockertest.MySQLPassword, ip, port)
+    db, err := sql.Open("mysql", url)
+    if err != nil {
+        return
+    }
 
-  // validate status code
-  if res.StatusCode != http.StatusOK {
-    t.Fatalf("Non-expected status code: %v\n\tbody: %v, data:%s\n", http.StatusCreated, res.StatusCode, body)
-  }
-
-  // validate that response has correct storyId
-  if !strings.Contains(body, "{\"storyId\":\""+storyId+"\",") {
-    t.Fatalf("Non-expected body content: %v", body)
-  }
-
-  // validate that content leght is what is should be
-  if res.ContentLength < 163 && res.ContentLength > 165 {
-    t.Fatalf("Non-expected content length: %v < %v, content:\n%v\n", res.ContentLength, 160, body)
-  }
-
+    defer db.Close()
+    // ...
 }
 ```
+### Postgres Container
 
-## To do
+```go
+import "github.com/ory-am/dockertest"
+import "github.com/lib/pq"
+import "database/sql"
 
-I have not tested MySQL and PostgreSQL yet, if they don't work, feel free to create a PR or an issue.
+func Foobar() {
+    c, ip, port, err := dockertest.SetupPostgresContainer()
+    if err != nil {
+        return
+    }
+    defer c.KillRemove()
+
+    url := fmt.Sprintf("postgres://%s:%s@%s:%d/", dockertest.PostgresUsername, dockertest.PostgresPassword, ip, port)
+    db, err := sql.Open("postgres", url)
+    if err != nil {
+        return
+    }
+
+    defer db.Close()
+    // ...
+}
+```

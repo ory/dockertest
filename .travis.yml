@@ -1,0 +1,15 @@
+sudo: required
+
+services:
+  - docker
+
+language: go
+
+go:
+  - 1.5
+
+install:
+  - go get github.com/stretchr/testify/assert
+  - go get gopkg.in/mgo.v2
+  - go get github.com/lib/pq
+  - go get github.com/go-sql-driver/mysql
