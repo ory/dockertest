@@ -85,3 +85,5 @@ func Foobar() {
     // ...
 }
 ```
+
+Thanks to our sponsors: Ory GmbH & Imarum GmbH
