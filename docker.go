@@ -245,7 +245,7 @@ const (
 	MySQLUsername = "root"
 	MySQLPassword = "root"
 
-	PostgresUsername = "docker" // set up by the dockerfile of postgresImage
+	PostgresUsername = "postgres" // set up by the dockerfile of postgresImage
 	PostgresPassword = "docker" // set up by the dockerfile of postgresImage
 )
 
@@ -285,7 +285,7 @@ func SetupMySQLContainer() (c ContainerID, ip string, port int, err error) {
 func SetupPostgreSQLContainer() (c ContainerID, ip string, port int, err error) {
 	port = randInt(1024, 49150)
 	c, ip, err = setupContainer(postgresImage, port, 15*time.Second, func() (string, error) {
-		return run("-d", "-p", fmt.Sprintf("%d:%d", port, 5432), postgresImage)
+		return run("-d", "-p", fmt.Sprintf("%d:%d", port, 5432), "-e POSTGRES_PASSWORD=" + PostgresPassword, postgresImage)
 	})
 	return
 }
