@@ -184,14 +184,11 @@ func (c ContainerID) Remove() error {
 
 // KillRemove calls Kill on the container, and then Remove if there was
 // no error.
-func (c ContainerID) KillRemove() {
+func (c ContainerID) KillRemove() error {
 	if err := c.Kill(); err != nil {
-		log.Println(err)
-		return
+		return err
 	}
-	if err := c.Remove(); err != nil {
-		log.Println(err)
-	}
+	return c.Remove()
 }
 
 // lookup retrieves the ip address of the container, and tries to reach
