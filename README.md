@@ -21,10 +21,11 @@ The usage of dockertest is very simple. For now, MongoDB, Postgres and MySQL con
 ```go
 import "github.com/ory-am/dockertest"
 import "gopkg.in/mgo.v2"
+import "time"
 
 func Foobar() {
-  // Start MongoDB Docker container
-  containerID, ip, port, err := dockertest.SetupMongoContainer()
+  // Start MongoDB Docker container. Wait 1 second for the image to load.
+  containerID, ip, port, err := dockertest.SetupMongoContainer(time.Duration * 10)
 
   if err != nil {
     return err
@@ -50,9 +51,11 @@ func Foobar() {
 import "github.com/ory-am/dockertest"
 import "github.com/go-sql-driver/mysql"
 import "database/sql"
+import "time"
 
 func Foobar() {
-    c, ip, port, err := dockertest.SetupMySQLContainer()
+    // Wait 10 seconds for the image to load.
+    c, ip, port, err := dockertest.SetupMySQLContainer(time.Second * 10)
     if err != nil {
         return
     }
@@ -74,9 +77,11 @@ func Foobar() {
 import "github.com/ory-am/dockertest"
 import "github.com/lib/pq"
 import "database/sql"
+import "time"
 
 func Foobar() {
-    c, ip, port, err := dockertest.SetupPostgresContainer()
+    // Wait 10 seconds for the image to load.
+    c, ip, port, err := dockertest.SetupPostgresContainer(time.Second * 10)
     if err != nil {
         return
     }
