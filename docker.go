@@ -30,10 +30,10 @@ import (
 	"time"
 
 	"camlistore.org/pkg/netutil"
+	"github.com/ory-am/common/env"
 	"github.com/pborman/uuid"
 	"math/rand"
 	"regexp"
-	"github.com/ory-am/common/env"
 )
 
 // Debug, if set, prevents any container from being removed.
@@ -201,7 +201,7 @@ func (c ContainerID) lookup(port int, timeout time.Duration) (ip string, err err
 		var out []byte
 		out, err = exec.Command("docker-machine", "ip", DockerMachineName).Output()
 		ip = strings.TrimSpace(string(out))
-	} else if  isTravisEnv != "" {
+	} else if isTravisEnv != "" {
 		ip = "127.0.0.1"
 	} else {
 		ip, err = c.IP()
@@ -248,7 +248,7 @@ const (
 	MySQLPassword = "root"
 
 	PostgresUsername = "postgres" // set up by the dockerfile of postgresImage
-	PostgresPassword = "docker" // set up by the dockerfile of postgresImage
+	PostgresPassword = "docker"   // set up by the dockerfile of postgresImage
 )
 
 func randInt(min int, max int) int {
@@ -259,9 +259,9 @@ func randInt(min int, max int) int {
 // SetupMongoContainer sets up a real MongoDB instance for testing purposes,
 // using a Docker container. It returns the container ID and its IP address,
 // or makes the test fail on error.
-func SetupMongoContainer() (c ContainerID, ip string, port int, err error) {
-	port = randInt(10240, 49150)
-	forward :=  fmt.Sprintf("%d:%d", port, 27017)
+func SetupMongoContainer(sleep time.Duration) (c ContainerID, ip string, port int, err error) {
+	port = randInt(1024, 49150)
+	forward := fmt.Sprintf("%d:%d", port, 27017)
 	if isTravisEnv != "" {
 		forward = "127.0.0.1:" + forward
 	}
@@ -269,6 +269,7 @@ func SetupMongoContainer() (c ContainerID, ip string, port int, err error) {
 		res, err := run("--name", uuid.New(), "-d", "-P", "-p", forward, mongoImage)
 		return res, err
 	})
+	time.Sleep(sleep)
 	return
 }
 
@@ -276,15 +277,16 @@ func SetupMongoContainer() (c ContainerID, ip string, port int, err error) {
 // using a Docker container. It returns the container ID and its IP address,
 // or makes the test fail on error.
 // Currently using https://index.docker.io/u/orchardup/mysql/
-func SetupMySQLContainer() (c ContainerID, ip string, port int, err error) {
-	port = randInt(10240, 49150)
-	forward :=  fmt.Sprintf("%d:%d", port, 3306)
+func SetupMySQLContainer(sleep time.Duration) (c ContainerID, ip string, port int, err error) {
+	port = randInt(1024, 49150)
+	forward := fmt.Sprintf("%d:%d", port, 3306)
 	if isTravisEnv != "" {
 		forward = "127.0.0.1:" + forward
 	}
 	c, ip, err = setupContainer(mysqlImage, port, 10*time.Second, func() (string, error) {
-		return run("-d", "-p", forward, "-e", "MYSQL_ROOT_PASSWORD="+MySQLPassword, mysqlImage)
+		return run("-d", "-p", forward, "-e", fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", MySQLPassword), mysqlImage)
 	})
+	time.Sleep(sleep)
 	return
 }
 
@@ -292,14 +294,15 @@ func SetupMySQLContainer() (c ContainerID, ip string, port int, err error) {
 // using a Docker container. It returns the container ID and its IP address,
 // or makes the test fail on error.
 // Currently using https://index.docker.io/u/nornagon/postgres
-func SetupPostgreSQLContainer() (c ContainerID, ip string, port int, err error) {
-	port = randInt(10240, 49150)
-	forward :=  fmt.Sprintf("%d:%d", port, 5432)
+func SetupPostgreSQLContainer(sleep time.Duration) (c ContainerID, ip string, port int, err error) {
+	port = randInt(1024, 49150)
+	forward := fmt.Sprintf("%d:%d", port, 5432)
 	if isTravisEnv != "" {
 		forward = "127.0.0.1:" + forward
 	}
 	c, ip, err = setupContainer(postgresImage, port, 15*time.Second, func() (string, error) {
 		return run("-d", "-p", forward, "-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", PostgresPassword), postgresImage)
 	})
+	time.Sleep(sleep)
 	return
 }
