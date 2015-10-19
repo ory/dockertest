@@ -5,6 +5,11 @@ services:
 
 language: go
 
+before_install:
+  - docker pull mongo
+  - docker pull postgres
+  - docker pull mysql
+
 go:
   - 1.5
 
