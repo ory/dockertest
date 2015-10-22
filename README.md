@@ -98,4 +98,23 @@ func Foobar() {
 }
 ```
 
+### Setting up Travis-CI
+
+You can run the docker integration on travis easily:
+
+```yml
+# Sudo is required for docker
+sudo: required
+
+# Enable docker
+services:
+  - docker
+
+# In Travis, we need to bind to 127.0.0.1 in order to get a working connection. This environment variable
+# tells dockertest to do that.
+env:
+  - DOCKER_BIND_LOCALHOST=true
+
+```
+
 Thanks to our sponsors: Ory GmbH & Imarum GmbH

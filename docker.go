@@ -45,7 +45,7 @@ var DockerMachineAvailable bool
 // DockerMachineName is the machine's name. You might want to use a dedicated machine for running your tests.
 var DockerMachineName string = "default"
 
-var isTravisEnv = env.Getenv("IS_TRAVIS_ENV", "")
+var bindDockerToLocalhost = env.Getenv("DOCKER_BIND_LOCALHOST", "")
 
 /// runLongTest checks all the conditions for running a docker container
 // based on image.
@@ -201,7 +201,7 @@ func (c ContainerID) lookup(port int, timeout time.Duration) (ip string, err err
 		var out []byte
 		out, err = exec.Command("docker-machine", "ip", DockerMachineName).Output()
 		ip = strings.TrimSpace(string(out))
-	} else if isTravisEnv != "" {
+	} else if bindDockerToLocalhost != "" {
 		ip = "127.0.0.1"
 	} else {
 		ip, err = c.IP()
@@ -262,7 +262,7 @@ func randInt(min int, max int) int {
 func SetupMongoContainer(sleep time.Duration) (c ContainerID, ip string, port int, err error) {
 	port = randInt(1024, 49150)
 	forward := fmt.Sprintf("%d:%d", port, 27017)
-	if isTravisEnv != "" {
+	if bindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}
 	c, ip, err = setupContainer(mongoImage, port, 10*time.Second, func() (string, error) {
@@ -280,7 +280,7 @@ func SetupMongoContainer(sleep time.Duration) (c ContainerID, ip string, port in
 func SetupMySQLContainer(sleep time.Duration) (c ContainerID, ip string, port int, err error) {
 	port = randInt(1024, 49150)
 	forward := fmt.Sprintf("%d:%d", port, 3306)
-	if isTravisEnv != "" {
+	if bindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}
 	c, ip, err = setupContainer(mysqlImage, port, 10*time.Second, func() (string, error) {
@@ -297,7 +297,7 @@ func SetupMySQLContainer(sleep time.Duration) (c ContainerID, ip string, port in
 func SetupPostgreSQLContainer(sleep time.Duration) (c ContainerID, ip string, port int, err error) {
 	port = randInt(1024, 49150)
 	forward := fmt.Sprintf("%d:%d", port, 5432)
-	if isTravisEnv != "" {
+	if bindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}
 	c, ip, err = setupContainer(postgresImage, port, 15*time.Second, func() (string, error) {
