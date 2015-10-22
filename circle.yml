@@ -1,5 +1,0 @@
-machine:
-  services:
-    - docker
-  environment:
-    IS_TRAVIS_ENV: true

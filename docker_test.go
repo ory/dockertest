@@ -35,7 +35,7 @@ func TestMongo(t *testing.T) {
 }
 
 func TestMySQL(t *testing.T) {
-	c, ip, port, err := SetupMySQLContainer(time.Second * 10)
+	c, ip, port, err := SetupMySQLContainer(time.Second * 15)
 	require.Nil(t, err)
 	if err != nil {
 		t.Logf("%s", err.Error())
@@ -46,6 +46,7 @@ func TestMySQL(t *testing.T) {
 	url := fmt.Sprintf("%s:%s@tcp(%s:%d)/mysql", MySQLUsername, MySQLPassword, ip, port)
 	log.Printf("Dialing mysql at %s", url)
 	db, err := sql.Open("mysql", url)
+	time.Sleep(time.Second * 1)
 	require.Nil(t, err)
 	require.Nil(t, db.Ping())
 	require.NotNil(t, db)
@@ -53,7 +54,7 @@ func TestMySQL(t *testing.T) {
 }
 
 func TestPostgres(t *testing.T) {
-	c, ip, port, err := SetupPostgreSQLContainer(time.Second * 10)
+	c, ip, port, err := SetupPostgreSQLContainer(time.Second * 5)
 	require.Nil(t, err)
 	if err != nil {
 		t.Logf("%s", err.Error())

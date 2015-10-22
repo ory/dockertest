@@ -98,6 +98,50 @@ func Foobar() {
 }
 ```
 
+## Usage in tests
+
+It is a good idea to start up the container only once when running tests. You can achieve this for example by doing:
+
+```go
+
+import (
+	"fmt"
+	"testing"
+    "log"
+	"os"
+
+	"database/sql"
+	_ "github.com/lib/pq"
+	"github.com/ory-am/dockertest"
+)
+
+var db *sql.DB
+
+func TestMain(m *testing.M) {
+	c, ip, port, err := dockertest.SetupPostgreSQLContainer(time.Second * 5)
+	if err != nil {
+		log.Fatalf("Could not set up PostgreSQL container: %v", err)
+	}
+	defer c.KillRemove()
+
+	url := fmt.Sprintf("postgres://%s:%s@%s:%d/postgres?sslmode=disable", dockertest.PostgresUsername, dockertest.PostgresPassword, ip, port)
+	db, err = sql.Open("postgres", url)
+	if err != nil {
+		log.Fatalf("Could not set up PostgreSQL container: %v", err)
+	}
+
+	if err = db.Ping(); err != nil {
+		log.Fatalf("Could not ping database: %v", err)
+	}
+
+	os.Exit(m.Run())
+}
+
+func TestFunction(t *testing.T) {
+    // ...
+}
+```
+
 ### Setting up Travis-CI
 
 You can run the docker integration on travis easily:
