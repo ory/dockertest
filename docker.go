@@ -30,10 +30,15 @@ import (
 	"time"
 
 	"camlistore.org/pkg/netutil"
+	"database/sql"
 	"github.com/ory-am/common/env"
 	"github.com/pborman/uuid"
+	"gopkg.in/mgo.v2"
 	"math/rand"
 	"regexp"
+
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 )
 
 // Debug, if set, prevents any container from being removed.
@@ -259,7 +264,7 @@ func randInt(min int, max int) int {
 // SetupMongoContainer sets up a real MongoDB instance for testing purposes,
 // using a Docker container. It returns the container ID and its IP address,
 // or makes the test fail on error.
-func SetupMongoContainer(sleep time.Duration) (c ContainerID, ip string, port int, err error) {
+func SetupMongoContainer() (c ContainerID, ip string, port int, err error) {
 	port = randInt(1024, 49150)
 	forward := fmt.Sprintf("%d:%d", port, 27017)
 	if bindDockerToLocalhost != "" {
@@ -269,7 +274,6 @@ func SetupMongoContainer(sleep time.Duration) (c ContainerID, ip string, port in
 		res, err := run("--name", uuid.New(), "-d", "-P", "-p", forward, mongoImage)
 		return res, err
 	})
-	time.Sleep(sleep)
 	return
 }
 
@@ -277,7 +281,7 @@ func SetupMongoContainer(sleep time.Duration) (c ContainerID, ip string, port in
 // using a Docker container. It returns the container ID and its IP address,
 // or makes the test fail on error.
 // Currently using https://index.docker.io/u/orchardup/mysql/
-func SetupMySQLContainer(sleep time.Duration) (c ContainerID, ip string, port int, err error) {
+func SetupMySQLContainer() (c ContainerID, ip string, port int, err error) {
 	port = randInt(1024, 49150)
 	forward := fmt.Sprintf("%d:%d", port, 3306)
 	if bindDockerToLocalhost != "" {
@@ -286,7 +290,6 @@ func SetupMySQLContainer(sleep time.Duration) (c ContainerID, ip string, port in
 	c, ip, err = setupContainer(mysqlImage, port, 10*time.Second, func() (string, error) {
 		return run("-d", "-p", forward, "-e", fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", MySQLPassword), mysqlImage)
 	})
-	time.Sleep(sleep)
 	return
 }
 
@@ -294,7 +297,7 @@ func SetupMySQLContainer(sleep time.Duration) (c ContainerID, ip string, port in
 // using a Docker container. It returns the container ID and its IP address,
 // or makes the test fail on error.
 // Currently using https://index.docker.io/u/nornagon/postgres
-func SetupPostgreSQLContainer(sleep time.Duration) (c ContainerID, ip string, port int, err error) {
+func SetupPostgreSQLContainer() (c ContainerID, ip string, port int, err error) {
 	port = randInt(1024, 49150)
 	forward := fmt.Sprintf("%d:%d", port, 5432)
 	if bindDockerToLocalhost != "" {
@@ -303,6 +306,96 @@ func SetupPostgreSQLContainer(sleep time.Duration) (c ContainerID, ip string, po
 	c, ip, err = setupContainer(postgresImage, port, 15*time.Second, func() (string, error) {
 		return run("-d", "-p", forward, "-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", PostgresPassword), postgresImage)
 	})
-	time.Sleep(sleep)
 	return
+}
+
+type pinger interface {
+	Ping() error
+}
+
+func ping(db pinger, tries int, delay time.Duration) bool {
+	for i := 0; i <= tries; i++ {
+		time.Sleep(delay)
+		if s, ok := db.(*sql.DB); ok {
+			if _, err := s.Exec("SELECT 1"); err != nil {
+				continue
+			}
+		} else if s, ok := db.(*mgo.Session); ok {
+			if _, err := s.DatabaseNames(); err != nil {
+				continue
+			}
+		}
+		if err := db.Ping(); err == nil {
+			return true
+		}
+		log.Printf("Ping try %v failed", i)
+	}
+	return false
+}
+
+func OpenPostgreSQLContainerConnection(tries int, delay time.Duration) (c ContainerID, db *sql.DB, err error) {
+	c, ip, port, err := SetupPostgreSQLContainer()
+	if err != nil {
+		return c, nil, fmt.Errorf("Could not set up PostgreSQL container: %v", err)
+	}
+
+	for try := 0; try <= tries; try++ {
+		time.Sleep(delay)
+		url := fmt.Sprintf("postgres://%s:%s@%s:%d/postgres?sslmode=disable", PostgresUsername, PostgresPassword, ip, port)
+		log.Printf("Try %d: Connecting %s", try, url)
+		if db, err = sql.Open("postgres", url); err == nil {
+			if ping(db, tries, delay) {
+				log.Printf("Try %d: Successfully connected to %v", try, url)
+				return c, db, nil
+			}
+			log.Printf("Try %d: Could not ping database: %v", try, err)
+		}
+		log.Printf("Try %d: Could not set up PostgreSQL container: %v", try, err)
+	}
+	return c, nil, errors.New("Could not set up PostgreSQL container.")
+}
+
+func OpenMongoDBContainerConnection(tries int, delay time.Duration) (c ContainerID, db *mgo.Session, err error) {
+	c, ip, port, err := SetupMongoContainer()
+	if err != nil {
+		return c, nil, fmt.Errorf("Could not set up MongoDB container: %v", err)
+	}
+
+	for try := 0; try <= tries; try++ {
+		time.Sleep(delay)
+		url := fmt.Sprintf("%s:%d", ip, port)
+		log.Printf("Try %d: Connecting %s", try, url)
+		if db, err = mgo.Dial(url); err == nil {
+			if ping(db, tries, delay) {
+				log.Printf("Try %d: Successfully connected to %v", try, url)
+				return c, db, nil
+			}
+			log.Printf("Try %d: Could not ping database: %v", try, err)
+		}
+		log.Printf("Try %d: Could not set up MongoDB container: %v", try, err)
+	}
+	return c, nil, errors.New("Could not set up MongoDB container.")
+}
+
+func OpenMySQLContainerConnection(tries int, delay time.Duration) (c ContainerID, db *sql.DB, err error) {
+	c, ip, port, err := SetupMySQLContainer()
+	if err != nil {
+		return c, nil, fmt.Errorf("Could not set up MySQL container: %v", err)
+	}
+	defer c.KillRemove()
+
+	for try := 0; try <= tries; try++ {
+		time.Sleep(delay)
+		url := fmt.Sprintf("%s:%s@tcp(%s:%d)/mysql", MySQLUsername, MySQLPassword, ip, port)
+		log.Printf("Try %d: Connecting %s", try, url)
+		if db, err = sql.Open("mysql", url); err == nil {
+			if ping(db, tries, delay) {
+				log.Printf("Try %d: Successfully connected to %v", try, url)
+				return c, db, nil
+			}
+			log.Printf("Try %d: Could not ping database: %v", try, err)
+		}
+		log.Printf("Try %d: Could not set up MySQL container: %v", try, err)
+	}
+	return c, nil, errors.New("Could not set up MySQL container.")
 }
