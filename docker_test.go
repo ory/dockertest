@@ -1,10 +1,11 @@
-package dockertest
+package dockertest_test
 
 import (
 	"database/sql"
 	"fmt"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
+	. "github.com/ory-am/dockertest"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/mgo.v2"
 	"log"
@@ -12,7 +13,7 @@ import (
 	"time"
 )
 
-const (
+var (
 	Wait10s = time.Second * 10
 	Wait5s  = time.Second * 5
 	Wait3s  = time.Second * 3
