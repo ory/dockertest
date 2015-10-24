@@ -38,6 +38,13 @@ import (
 	"regexp"
 )
 
+var (
+	Wait10s = time.Second * 10
+	Wait5s  = time.Second * 5
+	Wait3s  = time.Second * 3
+	Wait1s  = time.Second
+)
+
 // Debug, if set, prevents any container from being removed.
 var Debug bool
 

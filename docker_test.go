@@ -13,13 +13,6 @@ import (
 	"time"
 )
 
-var (
-	Wait10s = time.Second * 10
-	Wait5s  = time.Second * 5
-	Wait3s  = time.Second * 3
-	Wait1s  = time.Second
-)
-
 func TestMongo(t *testing.T) {
 	containerID, ip, port, err := SetupMongoContainer(Wait1s)
 	require.Nil(t, err)
