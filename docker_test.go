@@ -12,8 +12,15 @@ import (
 	"time"
 )
 
+const (
+	Wait10s = time.Second * 10
+	Wait5s  = time.Second * 5
+	Wait3s  = time.Second * 3
+	Wait1s  = time.Second
+)
+
 func TestMongo(t *testing.T) {
-	containerID, ip, port, err := SetupMongoContainer(time.Second)
+	containerID, ip, port, err := SetupMongoContainer(Wait1s)
 	require.Nil(t, err)
 	if err != nil {
 		t.Logf("%s", err.Error())
@@ -29,13 +36,14 @@ func TestMongo(t *testing.T) {
 	log.Printf("Dialing mongodb at %s", url)
 	sess, err := mgo.Dial(url)
 	require.Nil(t, err)
+	time.Sleep(Wait1s)
 	require.Nil(t, sess.Ping())
 	require.NotNil(t, sess)
 	defer sess.Close()
 }
 
 func TestMySQL(t *testing.T) {
-	c, ip, port, err := SetupMySQLContainer(time.Second * 10)
+	c, ip, port, err := SetupMySQLContainer(Wait10s)
 	require.Nil(t, err)
 	if err != nil {
 		t.Logf("%s", err.Error())
@@ -47,13 +55,14 @@ func TestMySQL(t *testing.T) {
 	log.Printf("Dialing mysql at %s", url)
 	db, err := sql.Open("mysql", url)
 	require.Nil(t, err)
+	time.Sleep(Wait1s)
 	require.Nil(t, db.Ping())
 	require.NotNil(t, db)
 	defer db.Close()
 }
 
 func TestPostgres(t *testing.T) {
-	c, ip, port, err := SetupPostgreSQLContainer(time.Second * 10)
+	c, ip, port, err := SetupPostgreSQLContainer(Wait10s)
 	require.Nil(t, err)
 	if err != nil {
 		t.Logf("%s", err.Error())
@@ -65,7 +74,26 @@ func TestPostgres(t *testing.T) {
 	log.Printf("Dialing postgres at %s", url)
 	db, err := sql.Open("postgres", url)
 	require.Nil(t, err)
+	time.Sleep(Wait1s)
 	require.Nil(t, db.Ping())
+	require.NotNil(t, db)
+	defer db.Close()
+}
+
+func TestOpenPostgreSQLContainerConnection(t *testing.T) {
+	db := OpenPostgreSQLContainerConnection(Wait10s, Wait1s)
+	require.NotNil(t, db)
+	defer db.Close()
+}
+
+func TestOpenMySQLContainerConnection(t *testing.T) {
+	db := OpenMySQLContainerConnection(Wait10s, Wait1s)
+	require.NotNil(t, db)
+	defer db.Close()
+}
+
+func TestOpenMongoDBContainerConnection(t *testing.T) {
+	db := OpenMongoDBContainerConnection(Wait1s, Wait1s)
 	require.NotNil(t, db)
 	defer db.Close()
 }

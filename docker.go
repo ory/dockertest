@@ -30,8 +30,10 @@ import (
 	"time"
 
 	"camlistore.org/pkg/netutil"
+	"database/sql"
 	"github.com/ory-am/common/env"
 	"github.com/pborman/uuid"
+	"gopkg.in/mgo.v2"
 	"math/rand"
 	"regexp"
 )
@@ -305,4 +307,65 @@ func SetupPostgreSQLContainer(sleep time.Duration) (c ContainerID, ip string, po
 	})
 	time.Sleep(sleep)
 	return
+}
+
+func OpenPostgreSQLContainerConnection(sleep time.Duration, pingSleep time.Duration) *sql.DB {
+	c, ip, port, err := SetupPostgreSQLContainer(sleep)
+	if err != nil {
+		log.Fatalf("Could not set up PostgreSQL container: %v", err)
+	}
+	defer c.KillRemove()
+
+	url := fmt.Sprintf("postgres://%s:%s@%s:%d/postgres?sslmode=disable", PostgresUsername, PostgresPassword, ip, port)
+	db, err := sql.Open("postgres", url)
+	if err != nil {
+		log.Fatalf("Could not set up PostgreSQL container: %v", err)
+	}
+
+	time.Sleep(pingSleep)
+	if err = db.Ping(); err != nil {
+		log.Fatalf("Could not ping database: %v", err)
+	}
+	return db
+}
+
+func OpenMongoDBContainerConnection(sleep time.Duration, pingSleep time.Duration) *mgo.Session {
+	c, ip, port, err := SetupMongoContainer(sleep)
+	if err != nil {
+		log.Fatalf("Could not set up MongoDB container: %v", err)
+	}
+	defer c.KillRemove()
+
+	url := fmt.Sprintf("%s:%d", ip, port)
+	sess, err := mgo.Dial(url)
+	if err != nil {
+		log.Fatalf("Could not set up MongoDB container: %v", err)
+	}
+
+	time.Sleep(pingSleep)
+	if err = sess.Ping(); err != nil {
+		log.Fatalf("Could not ping database: %v", err)
+	}
+
+	return sess
+}
+
+func OpenMySQLContainerConnection(sleep time.Duration, pingSleep time.Duration) *sql.DB {
+	c, ip, port, err := SetupMySQLContainer(sleep)
+	if err != nil {
+		log.Fatalf("Could not set up MySQL container: %v", err)
+	}
+	defer c.KillRemove()
+
+	url := fmt.Sprintf("%s:%s@tcp(%s:%d)/mysql", MySQLUsername, MySQLPassword, ip, port)
+	db, err := sql.Open("mysql", url)
+	if err != nil {
+		log.Fatalf("Could not set up MySQL container: %v", err)
+	}
+
+	time.Sleep(pingSleep)
+	if err = db.Ping(); err != nil {
+		log.Fatalf("Could not ping database: %v", err)
+	}
+	return db
 }
