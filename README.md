@@ -5,7 +5,7 @@
 Use docker to run your Go language (integration) tests against persistent services like **MySQL, Postgres or MongoDB** on **Microsoft Windows, Mac OSX and Linux**! Dockertest uses [docker-machine](https://docs.docker.com/machine/) (aka [Docker Toolbox](https://www.docker.com/toolbox)) to spin up images on Windows and Mac OSX as well!
 
 A suite for testing with docker. Based on  [docker.go](https://github.com/camlistore/camlistore/blob/master/pkg/test/dockertest/docker.go) from [camlistore](https://github.com/camlistore/camlistore).
-This fork detects automatically, if [docker-machine](https://docs.docker.com/machine/) is installed. If it is, you are able to use the docker integration on Windows and Mac OSX as well without any additional work. To avoid port collisions when using docker-machine, dockertest chooses a random port to bind the requested image to.
+This fork detects automatically, if [Docker Toolbo](https://www.docker.com/toolbox) is installed. If it is, you are able to use the docker integration on Windows and Mac OSX as well without any additional work. To avoid port collisions when using docker-machine, dockertest chooses a random port to bind the requested image to.
 
 ## Why should I use dockertest?
 
@@ -15,6 +15,8 @@ To avoid this, it is smarter to test these specific services against a real data
 ## Usage
 
 The usage of dockertest is very simple. For now, MongoDB, Postgres and MySQL containers are supported out of the box. Feel free to extend this list by contributing.
+
+**Note:** If you're using the Docker Toolbox (Windows / OSX), make sure that the VM ist started by running `docker-machine start default`.
 
 ### MongoDB Container
 
