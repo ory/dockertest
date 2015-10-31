@@ -27,7 +27,7 @@ import "time"
 
 func Foobar() {
   // Start MongoDB Docker container. Wait 1 second for the image to load.
-  containerID, ip, port, err := dockertest.SetupMongoContainer(time.Duration * 10)
+  containerID, ip, port, err := dockertest.SetupMongoContainer()
 
   if err != nil {
     return err
@@ -57,7 +57,7 @@ import "time"
 
 func Foobar() {
     // Wait 10 seconds for the image to load.
-    c, ip, port, err := dockertest.SetupMySQLContainer(time.Second * 10)
+    c, ip, port, err := dockertest.SetupMySQLContainer()
     if err != nil {
         return
     }
@@ -83,7 +83,7 @@ import "time"
 
 func Foobar() {
     // Wait 10 seconds for the image to load.
-    c, ip, port, err := dockertest.SetupPostgreSQLContainer(time.Second * 10)
+    c, ip, port, err := dockertest.SetupPostgreSQLContainer()
     if err != nil {
         return
     }
@@ -120,7 +120,7 @@ import (
 var db *sql.DB
 
 func TestMain(m *testing.M) {
-	c, ip, port, err := dockertest.SetupPostgreSQLContainer(time.Second * 5)
+	c, ip, port, err := dockertest.SetupPostgreSQLContainer()
 	if err != nil {
 		log.Fatalf("Could not set up PostgreSQL container: %v", err)
 	}
