@@ -83,7 +83,7 @@ import "time"
 
 func Foobar() {
     // Wait 10 seconds for the image to load.
-    c, ip, port, err := dockertest.SetupPostgresContainer(time.Second * 10)
+    c, ip, port, err := dockertest.SetupPostgreSQLContainer(time.Second * 10)
     if err != nil {
         return
     }
