@@ -29,13 +29,14 @@ import (
 	"strings"
 	"time"
 
-	"camlistore.org/pkg/netutil"
 	"database/sql"
+	"math/rand"
+	"regexp"
+
+	"camlistore.org/pkg/netutil"
 	"github.com/ory-am/common/env"
 	"github.com/pborman/uuid"
 	"gopkg.in/mgo.v2"
-	"math/rand"
-	"regexp"
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
@@ -59,7 +60,7 @@ func runLongTest(image string) error {
 	if haveDockerMachine() {
 		DockerMachineAvailable = startDockerMachine()
 		if !DockerMachineAvailable {
-			return errors.New("'docker-machine' available but command failed to execute")
+			return errors.New("'docker-machine' available but command failed to execute. Make sure the machine '" + DockerMachineName + "' exists")
 		}
 	} else if !haveDocker() {
 		return errors.New("Neither 'docker' nor 'docker-machine' available on this system.")
