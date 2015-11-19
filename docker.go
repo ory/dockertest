@@ -383,7 +383,6 @@ func OpenMySQLContainerConnection(tries int, delay time.Duration) (c ContainerID
 	if err != nil {
 		return c, nil, fmt.Errorf("Could not set up MySQL container: %v", err)
 	}
-	defer c.KillRemove()
 
 	for try := 0; try <= tries; try++ {
 		time.Sleep(delay)
@@ -399,4 +398,55 @@ func OpenMySQLContainerConnection(tries int, delay time.Duration) (c ContainerID
 		log.Printf("Try %d: Could not set up MySQL container: %v", try, err)
 	}
 	return c, nil, errors.New("Could not set up MySQL container.")
+}
+
+func ConnectToPostgreSQL(tries int, delay time.Duration, connector func(url string) bool) (c ContainerID, err error) {
+	c, ip, port, err := SetupPostgreSQLContainer()
+	if err != nil {
+		return c, fmt.Errorf("Could not set up PostgreSQL container: %v", err)
+	}
+
+	for try := 0; try <= tries; try++ {
+		time.Sleep(delay)
+		url := fmt.Sprintf("postgres://%s:%s@%s:%d/postgres?sslmode=disable", PostgresUsername, PostgresPassword, ip, port)
+		if connector(url) {
+			return c, nil
+		}
+		log.Printf("Try %d failed. Retrying.", try)
+	}
+	return c, errors.New("Could not set up PostgreSQL container.")
+}
+
+func ConnectToMongoDB(tries int, delay time.Duration, connector func(url string) bool) (c ContainerID, err error) {
+	c, ip, port, err := SetupMongoContainer()
+	if err != nil {
+		return c, fmt.Errorf("Could not set up MongoDB container: %v", err)
+	}
+
+	for try := 0; try <= tries; try++ {
+		time.Sleep(delay)
+		url := fmt.Sprintf("%s:%d", ip, port)
+		if connector(url) {
+			return c, nil
+		}
+		log.Printf("Try %d failed. Retrying.", try)
+	}
+	return c, errors.New("Could not set up MongoDB container.")
+}
+
+func ConnectToMySQL(tries int, delay time.Duration, connector func(url string) bool) (c ContainerID, err error) {
+	c, ip, port, err := SetupMySQLContainer()
+	if err != nil {
+		return c, fmt.Errorf("Could not set up MySQL container: %v", err)
+	}
+
+	for try := 0; try <= tries; try++ {
+		time.Sleep(delay)
+		url := fmt.Sprintf("%s:%d", ip, port)
+		if connector(url) {
+			return c, nil
+		}
+		log.Printf("Try %d failed. Retrying.", try)
+	}
+	return c, errors.New("Could not set up MySQL container.")
 }
