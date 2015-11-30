@@ -23,5 +23,5 @@ install:
 
 script:
   - go vet -x *.go
-  - go lint ./
+  - golint ./
   - ./coverage --coveralls
