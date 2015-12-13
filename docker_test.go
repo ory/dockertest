@@ -2,11 +2,15 @@ package dockertest_test
 
 import (
 	"database/sql"
-	. "github.com/ory-am/dockertest"
-	"github.com/stretchr/testify/require"
-	"gopkg.in/mgo.v2"
+	"strings"
 	"testing"
 	"time"
+
+	"gopkg.in/mgo.v2"
+
+	"github.com/mattbaird/elastigo/lib"
+	. "github.com/ninnemana/dockertest"
+	"github.com/stretchr/testify/require"
 )
 
 func TestOpenPostgreSQLContainerConnection(t *testing.T) {
@@ -35,6 +39,16 @@ func TestOpenMongoDBContainerConnection(t *testing.T) {
 	_, err = db.DatabaseNames()
 	require.Nil(t, err)
 	defer db.Close()
+}
+
+func TestOpenElasticSearchContainerConnection(t *testing.T) {
+	c, conn, err := OpenElasticSearchContainerConnection(15, time.Millisecond*500)
+	require.Nil(t, err)
+	defer c.KillRemove()
+	require.NotNil(t, conn)
+	_, err = conn.Health("")
+	require.Nil(t, err)
+	defer conn.Close()
 }
 
 func TestConnectToPostgreSQL(t *testing.T) {
@@ -70,6 +84,30 @@ func TestConnectToMongoDB(t *testing.T) {
 			return false
 		}
 		defer db.Close()
+		return true
+	})
+	require.Nil(t, err)
+	defer c.KillRemove()
+}
+
+func TestConnectToElasticSearch(t *testing.T) {
+	c, err := ConnectToElasticSearch(15, time.Millisecond*500, func(url string) bool {
+		segs := strings.Split(url, ":")
+		if len(segs) != 2 {
+			return false
+		}
+
+		conn := elastigo.NewConn()
+		conn.Domain = segs[0]
+		conn.Port = segs[1]
+		resp, err := conn.Health()
+		if err != nil {
+			return false
+		}
+		if resp.Status != "green" {
+			return false
+		}
+		defer conn.Close()
 		return true
 	})
 	require.Nil(t, err)

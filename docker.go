@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"log"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -30,6 +31,7 @@ import (
 	"math/rand"
 	"regexp"
 
+	"github.com/mattbaird/elastigo/lib"
 	"github.com/pborman/uuid"
 	"gopkg.in/mgo.v2"
 
@@ -260,6 +262,21 @@ func SetupPostgreSQLContainer() (c ContainerID, ip string, port int, err error) 
 	return
 }
 
+// SetupElasticSearchContainer sets up a real ElasticSearch instance for testing purposes
+// using a Docker container. It returns the container ID and its IP address,
+// or makes the test fail on error.
+func SetupElasticSearchContainer() (c ContainerID, ip string, port int, err error) {
+	port = randInt(1024, 49150)
+	forward := fmt.Sprintf("%d:%d", port, 9200)
+	if BindDockerToLocalhost != "" {
+		forward = "127.0.0.1:" + forward
+	}
+	c, ip, err = setupContainer(elasticsearchImage, port, 15*time.Second, func() (string, error) {
+		return run("--name", uuid.New(), "-d", "-P", "-p", forward, elasticsearchImage)
+	})
+	return
+}
+
 // OpenPostgreSQLContainerConnection is supported for legacy reasons. Don't use it.
 func OpenPostgreSQLContainerConnection(tries int, delay time.Duration) (c ContainerID, db *sql.DB, err error) {
 	c, ip, port, err := SetupPostgreSQLContainer()
@@ -329,6 +346,33 @@ func OpenMySQLContainerConnection(tries int, delay time.Duration) (c ContainerID
 	return c, nil, errors.New("Could not set up MySQL container.")
 }
 
+// OpenElasticSearchContainerConnection is supported for legacy reasons. Don't use it.
+func OpenElasticSearchContainerConnection(tries int, delay time.Duration) (c ContainerID, con *elastigo.Conn, err error) {
+	c, ip, port, err := SetupElasticSearchContainer()
+	if err != nil {
+		return c, nil, fmt.Errorf("Could not set up ElasticSearch container: %v", err)
+	}
+
+	for try := 0; try <= tries; try++ {
+		time.Sleep(delay)
+		url := fmt.Sprintf("%s:%d", ip, port)
+		log.Printf("Try %d: Connecting %s", try, url)
+
+		conn := elastigo.NewConn()
+		conn.Domain = ip
+		conn.Port = strconv.Itoa(port)
+
+		resp, err := conn.Health("")
+		if err == nil && resp.Status != "" {
+			log.Printf("Try %d: Successfully connected to %v", try, conn.Domain)
+			return c, conn, nil
+		}
+
+		log.Printf("Try %d: Could not set up ElasticSearch container: %v", try, err)
+	}
+	return c, nil, errors.New("Could not set up ElasticSearch container.")
+}
+
 // ConnectToPostgreSQL starts a PostgreSQL image and passes the database url to the connector callback.
 func ConnectToPostgreSQL(tries int, delay time.Duration, connector func(url string) bool) (c ContainerID, err error) {
 	c, ip, port, err := SetupPostgreSQLContainer()
@@ -383,4 +427,23 @@ func ConnectToMySQL(tries int, delay time.Duration, connector func(url string) b
 		log.Printf("Try %d failed. Retrying.", try)
 	}
 	return c, errors.New("Could not set up MySQL container.")
+}
+
+// ConnectToElasticSearch starts an ElasticSearch image and passes the database url to the connector callback function.
+// The url will match the ip:port pattern (e.g. 123.123.123.123:4241)
+func ConnectToElasticSearch(tries int, delay time.Duration, connector func(url string) bool) (c ContainerID, err error) {
+	c, ip, port, err := SetupElasticSearchContainer()
+	if err != nil {
+		return c, fmt.Errorf("Could not set up ElasticSearch container: %v", err)
+	}
+
+	for try := 0; try <= tries; try++ {
+		time.Sleep(delay)
+		url := fmt.Sprintf("%s:%d", ip, port)
+		if connector(url) {
+			return c, nil
+		}
+		log.Printf("Try %d failed. Retrying.", try)
+	}
+	return c, errors.New("Could not set up ElasticSearch container.")
 }

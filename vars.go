@@ -20,9 +20,10 @@ var (
 )
 
 const (
-	mongoImage    = "mongo"
-	mysqlImage    = "mysql"
-	postgresImage = "postgres"
+	mongoImage         = "mongo"
+	mysqlImage         = "mysql"
+	postgresImage      = "postgres"
+	elasticsearchImage = "elasticsearch"
 
 	// MySQLUsername must be passed as username when connecting to mysql
 	MySQLUsername = "root"
