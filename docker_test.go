@@ -9,7 +9,7 @@ import (
 	"gopkg.in/mgo.v2"
 
 	"github.com/mattbaird/elastigo/lib"
-	. "github.com/ninnemana/dockertest"
+	. "github.com/ory-am/dockertest"
 	"github.com/stretchr/testify/require"
 )
 
