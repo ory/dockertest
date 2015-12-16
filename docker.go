@@ -32,6 +32,7 @@ import (
 	"regexp"
 
 	"github.com/mattbaird/elastigo/lib"
+	"github.com/mediocregopher/radix.v2/redis"
 	"github.com/pborman/uuid"
 	"gopkg.in/mgo.v2"
 
@@ -277,6 +278,21 @@ func SetupElasticSearchContainer() (c ContainerID, ip string, port int, err erro
 	return
 }
 
+// SetupRedisContainer sets up a real Redis instance for testing purposes
+// using a Docker container. It returns the container ID and its IP address,
+// or makes the test fail on error.
+func SetupRedisContainer() (c ContainerID, ip string, port int, err error) {
+	port = randInt(1024, 49150)
+	forward := fmt.Sprintf("%d:%d", port, 6379)
+	if BindDockerToLocalhost != "" {
+		forward = "127.0.0.1:" + forward
+	}
+	c, ip, err = setupContainer(redisImage, port, 15*time.Second, func() (string, error) {
+		return run("--name", uuid.New(), "-d", "-P", "-p", forward, redisImage)
+	})
+	return
+}
+
 // OpenPostgreSQLContainerConnection is supported for legacy reasons. Don't use it.
 func OpenPostgreSQLContainerConnection(tries int, delay time.Duration) (c ContainerID, db *sql.DB, err error) {
 	c, ip, port, err := SetupPostgreSQLContainer()
@@ -373,6 +389,29 @@ func OpenElasticSearchContainerConnection(tries int, delay time.Duration) (c Con
 	return c, nil, errors.New("Could not set up ElasticSearch container.")
 }
 
+// OpenRedisContainerConnection is supported for legacy reasons. Don't use it.
+func OpenRedisContainerConnection(tries int, delay time.Duration) (c ContainerID, client *redis.Client, err error) {
+	c, ip, port, err := SetupRedisContainer()
+	if err != nil {
+		return c, nil, fmt.Errorf("Could not set up Redis container: %v", err)
+	}
+
+	for try := 0; try <= tries; try++ {
+		time.Sleep(delay)
+		url := fmt.Sprintf("%s:%d", ip, port)
+		log.Printf("Try %d: Connecting %s", try, url)
+
+		client, err := redis.DialTimeout("tcp", url, 10*time.Second)
+		if err == nil {
+			log.Printf("Try %d: Successfully connected to %v", try, client.Addr)
+			return c, client, nil
+		}
+
+		log.Printf("Try %d: Could not set up Redis container: %v", try, err)
+	}
+	return c, nil, errors.New("Could not set up Redis container.")
+}
+
 // ConnectToPostgreSQL starts a PostgreSQL image and passes the database url to the connector callback.
 func ConnectToPostgreSQL(tries int, delay time.Duration, connector func(url string) bool) (c ContainerID, err error) {
 	c, ip, port, err := SetupPostgreSQLContainer()
@@ -446,4 +485,23 @@ func ConnectToElasticSearch(tries int, delay time.Duration, connector func(url s
 		log.Printf("Try %d failed. Retrying.", try)
 	}
 	return c, errors.New("Could not set up ElasticSearch container.")
+}
+
+// ConnectToRedis starts a Redis image and passes the database url to the connector callback function.
+// The url will match the ip:port pattern (e.g. 123.123.123.123:6379)
+func ConnectToRedis(tries int, delay time.Duration, connector func(url string) bool) (c ContainerID, err error) {
+	c, ip, port, err := SetupRedisContainer()
+	if err != nil {
+		return c, fmt.Errorf("Could not set up Redis container: %v", err)
+	}
+
+	for try := 0; try <= tries; try++ {
+		time.Sleep(delay)
+		url := fmt.Sprintf("%s:%d", ip, port)
+		if connector(url) {
+			return c, nil
+		}
+		log.Printf("Try %d failed. Retrying.", try)
+	}
+	return c, errors.New("Could not set up Redis container.")
 }

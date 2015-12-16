@@ -9,7 +9,9 @@ import (
 	"gopkg.in/mgo.v2"
 
 	"github.com/mattbaird/elastigo/lib"
+	"github.com/mediocregopher/radix.v2/redis"
 	. "github.com/ory-am/dockertest"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -49,6 +51,19 @@ func TestOpenElasticSearchContainerConnection(t *testing.T) {
 	_, err = conn.Health("")
 	require.Nil(t, err)
 	defer conn.Close()
+}
+
+func TestOpenRedisContainerConnection(t *testing.T) {
+	c, client, err := OpenRedisContainerConnection(15, time.Millisecond*500)
+	require.Nil(t, err)
+	defer c.KillRemove()
+	require.NotNil(t, client)
+
+	v, err := client.Cmd("echo", "Hello, World!").Str()
+	require.Nil(t, err)
+	assert.Equal(t, "Hello, World!", v)
+
+	defer client.Close()
 }
 
 func TestConnectToPostgreSQL(t *testing.T) {
@@ -108,6 +123,23 @@ func TestConnectToElasticSearch(t *testing.T) {
 			return false
 		}
 		defer conn.Close()
+		return true
+	})
+	require.Nil(t, err)
+	defer c.KillRemove()
+}
+
+func TestConnectToRedis(t *testing.T) {
+	c, err := ConnectToRedis(15, time.Millisecond*500, func(url string) bool {
+		client, err := redis.DialTimeout("tcp", url, 10*time.Second)
+		require.Nil(t, err)
+		require.NotNil(t, client)
+
+		v, err := client.Cmd("echo", "Hello, World!").Str()
+		require.Nil(t, err)
+		assert.Equal(t, "Hello, World!", v)
+
+		defer client.Close()
 		return true
 	})
 	require.Nil(t, err)
