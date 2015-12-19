@@ -7,6 +7,21 @@ Use Docker to run your Go language integration tests against persistent data sto
 A suite for testing with Docker. Based on  [docker.go](https://github.com/camlistore/camlistore/blob/master/pkg/test/dockertest/docker.go) from [camlistore](https://github.com/camlistore/camlistore).
 This fork detects automatically, if [Docker Toolbox](https://www.docker.com/toolbox) is installed. If it is, Docker integration on Windows and Mac OSX can be used without any additional work. To avoid port collisions when using docker-machine, Dockertest chooses a random port to bind the requested image.
 
+<!-- START doctoc generated TOC please keep comment here to allow auto update -->
+<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+**Table of Contents**
+
+- [Why should I use Dockertest?](#why-should-i-use-dockertest)
+- [Using Dockertest](#using-dockertest)
+  - [Start a container](#start-a-container)
+- [Write awesome tests](#write-awesome-tests)
+  - [Setting up Travis-CI](#setting-up-travis-ci)
+- [Troubleshoot](#troubleshoot)
+  - [Out of disk space](#out-of-disk-space)
+  - [Removing old containers](#removing-old-containers)
+
+<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+
 ## Why should I use Dockertest?
 
 When developing applications, it is often necessary to use services that talk to a database system. Unit Testing these services can be cumbersome because mocking database/DBAL is strenuous. Making slight changes to the schema implies rewriting at least some, if not all of the mocks. The same goes for API changes in the DBAL.  
@@ -102,4 +117,15 @@ env:
 
 ```
 
-Thanks to our sponsors: Ory GmbH & Imarum GmbH
+## Troubleshoot
+
+### Out of disk space
+
+Try cleaning up the images with [docker-cleanup-volumes](https://github.com/chadoe/docker-cleanup-volumes).
+
+### Removing old containers
+
+Sometimes container clean up fails. Check out
+[this stackoverflow question](http://stackoverflow.com/questions/21398087/how-to-delete-dockers-images) on how to fix this.
+
+*Thanks to our sponsors: Ory GmbH & Imarum GmbH*
