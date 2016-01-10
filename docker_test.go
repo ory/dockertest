@@ -11,8 +11,8 @@ import (
 	"gopkg.in/mgo.v2"
 
 	"github.com/garyburd/redigo/redis"
-	. "github.com/ninnemana/dockertest"
-	"github.com/ory-am/elastigo/lib"
+	"github.com/mattbaird/elastigo/lib"
+	. "github.com/ory-am/dockertest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
