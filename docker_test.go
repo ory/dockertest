@@ -2,14 +2,16 @@ package dockertest_test
 
 import (
 	"database/sql"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	"gopkg.in/mgo.v2"
 
+	"github.com/garyburd/redigo/redis"
 	"github.com/mattbaird/elastigo/lib"
-	"github.com/mediocregopher/radix.v2/redis"
 	. "github.com/ory-am/dockertest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -64,6 +66,36 @@ func TestOpenRedisContainerConnection(t *testing.T) {
 	assert.Equal(t, "Hello, World!", v)
 
 	defer client.Close()
+}
+
+func TestOpenNSQLookupdContainerConnection(t *testing.T) {
+
+	c, ip, tcpPort, httpPort, err := OpenNSQLookupdContainerConnection(15, time.Millisecond*500)
+	require.Nil(t, err)
+	defer c.KillRemove()
+	require.NotEmpty(t, ip)
+	require.NotZero(t, tcpPort)
+	require.NotZero(t, httpPort)
+
+	resp, err := http.Get(fmt.Sprintf("http://%s:%d/ping", ip, httpPort))
+	require.Nil(t, err)
+	require.Equal(t, resp.StatusCode, 200)
+
+}
+
+func TestOpenNSQContainerConnection(t *testing.T) {
+
+	c, ip, tcpPort, httpPort, err := OpenNSQdContainerConnection(15, time.Millisecond*500)
+	require.Nil(t, err)
+	defer c.KillRemove()
+	require.NotEmpty(t, ip)
+	require.NotZero(t, tcpPort)
+	require.NotZero(t, httpPort)
+
+	resp, err := http.Get(fmt.Sprintf("http://%s:%d/ping", ip, httpPort))
+	require.Nil(t, err)
+	require.Equal(t, resp.StatusCode, 200)
+
 }
 
 func TestConnectToPostgreSQL(t *testing.T) {
@@ -122,7 +154,7 @@ func TestConnectToElasticSearch(t *testing.T) {
 		if resp.Status != "green" {
 			return false
 		}
-		defer conn.Close()
+		// defer conn.Close()
 		return true
 	})
 	require.Nil(t, err)
@@ -131,15 +163,40 @@ func TestConnectToElasticSearch(t *testing.T) {
 
 func TestConnectToRedis(t *testing.T) {
 	c, err := ConnectToRedis(15, time.Millisecond*500, func(url string) bool {
-		client, err := redis.DialTimeout("tcp", url, 10*time.Second)
+		client, err := redis.DialTimeout("tcp", url, 10*time.Second, 10*time.Second, 10*time.Second)
 		require.Nil(t, err)
 		require.NotNil(t, client)
 
-		v, err := client.Cmd("echo", "Hello, World!").Str()
+		reply, err := redis.String(client.Do("echo", "Hello, World!"))
+
 		require.Nil(t, err)
-		assert.Equal(t, "Hello, World!", v)
+		assert.Equal(t, "Hello, World!", reply)
 
 		defer client.Close()
+		return true
+	})
+	require.Nil(t, err)
+	defer c.KillRemove()
+}
+
+func TestConnectToNSQLookupd(t *testing.T) {
+	c, err := ConnectToNSQLookupd(15, time.Millisecond*500, func(ip string, httpPort int, tcpPort int) bool {
+		resp, err := http.Get(fmt.Sprintf("http://%s:%d/ping", ip, httpPort))
+		require.Nil(t, err)
+		require.Equal(t, resp.StatusCode, 200)
+
+		return true
+	})
+	require.Nil(t, err)
+	defer c.KillRemove()
+}
+
+func TestConnectToNSQd(t *testing.T) {
+	c, err := ConnectToNSQd(15, time.Millisecond*500, func(ip string, httpPort int, tcpPort int) bool {
+		resp, err := http.Get(fmt.Sprintf("http://%s:%d/ping", ip, httpPort))
+		require.Nil(t, err)
+		require.Equal(t, resp.StatusCode, 200)
+
 		return true
 	})
 	require.Nil(t, err)
