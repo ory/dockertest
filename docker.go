@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -293,6 +294,54 @@ func SetupRedisContainer() (c ContainerID, ip string, port int, err error) {
 	return
 }
 
+// SetupNSQLookupdContainer sets up a real NSQ instance for testing purposes
+// using a Docker container and executing `/nsqlookupd`. It returns the container ID and its IP address,
+// or makes the test fail on error.
+func SetupNSQLookupdContainer() (c ContainerID, ip string, tcpPort int, httpPort int, err error) {
+
+	// docker run --name lookupd -p 4160:4160 -p 4161:4161 nsqio/nsq /nsqlookupd
+	tcpPort = randInt(1024, 49150)
+	httpPort = randInt(1024, 49150)
+	tcpForward := fmt.Sprintf("%d:%d", tcpPort, 4160)
+	if BindDockerToLocalhost != "" {
+		tcpForward = "127.0.0.1:" + tcpForward
+	}
+
+	httpForward := fmt.Sprintf("%d:%d", httpPort, 4161)
+	if BindDockerToLocalhost != "" {
+		httpForward = "127.0.0.1:" + httpForward
+	}
+
+	c, ip, err = setupContainer(nsqImage, tcpPort, 15*time.Second, func() (string, error) {
+		return run("--name", uuid.New(), "-d", "-P", "-p", tcpForward, "-p", httpForward, nsqImage, "/nsqlookupd")
+	})
+	return
+}
+
+// SetupNSQdContainer sets up a real NSQ instance for testing purposes
+// using a Docker container and executing `/nsqd`. It returns the container ID and its IP address,
+// or makes the test fail on error.
+func SetupNSQdContainer() (c ContainerID, ip string, tcpPort int, httpPort int, err error) {
+
+	// --name nsqd -p 4150:4150 -p 4151:4151 nsqio/nsq /nsqd --broadcast-address=192.168.99.100 --lookupd-tcp-address=192.168.99.100:4160
+	tcpPort = randInt(1024, 49150)
+	httpPort = randInt(1024, 49150)
+	tcpForward := fmt.Sprintf("%d:%d", tcpPort, 4150)
+	if BindDockerToLocalhost != "" {
+		tcpForward = "127.0.0.1:" + tcpForward
+	}
+
+	httpForward := fmt.Sprintf("%d:%d", httpPort, 4151)
+	if BindDockerToLocalhost != "" {
+		httpForward = "127.0.0.1:" + httpForward
+	}
+
+	c, ip, err = setupContainer(nsqImage, tcpPort, 15*time.Second, func() (string, error) {
+		return run("--name", uuid.New(), "-d", "-P", "-p", tcpForward, "-p", httpForward, nsqImage, "/nsqd", fmt.Sprintf("--broadcast-address=%s", ip), fmt.Sprintf("--lookupd-tcp-address=%s:4160", ip))
+	})
+	return
+}
+
 // OpenPostgreSQLContainerConnection is supported for legacy reasons. Don't use it.
 func OpenPostgreSQLContainerConnection(tries int, delay time.Duration) (c ContainerID, db *sql.DB, err error) {
 	c, ip, port, err := SetupPostgreSQLContainer()
@@ -412,6 +461,52 @@ func OpenRedisContainerConnection(tries int, delay time.Duration) (c ContainerID
 	return c, nil, errors.New("Could not set up Redis container.")
 }
 
+// OpenNSQLookupdContainerConnection is supported for legacy reasons. Don't use it.
+func OpenNSQLookupdContainerConnection(tries int, delay time.Duration) (c ContainerID, ip string, tcpPort int, httpPort int, err error) {
+	c, ip, tcpPort, httpPort, err = SetupNSQLookupdContainer()
+	if err != nil {
+		return c, "", 0, 0, fmt.Errorf("Could not set up NSQLookupd container: %v", err)
+	}
+
+	for try := 0; try <= tries; try++ {
+		time.Sleep(delay)
+		httpURL := fmt.Sprintf("http://%s:%d", ip, httpPort)
+		log.Printf("Try %d: Connecting %s", try, httpURL)
+
+		resp, err := http.Get(fmt.Sprintf("%s/topics", httpURL))
+		if err == nil && resp.StatusCode == 200 {
+			log.Printf("Try %d: Successfully connected to %v", try, httpURL)
+			return c, ip, tcpPort, httpPort, nil
+		}
+
+		log.Printf("Try %d: Could not set up NSQLookupd container: %v", try, err)
+	}
+	return c, "", 0, 0, errors.New("Could not set up NSQLookupd container.")
+}
+
+// OpenNSQdContainerConnection is supported for legacy reasons. Don't use it.
+func OpenNSQdContainerConnection(tries int, delay time.Duration) (c ContainerID, ip string, tcpPort int, httpPort int, err error) {
+	c, ip, tcpPort, httpPort, err = SetupNSQLookupdContainer()
+	if err != nil {
+		return c, "", 0, 0, fmt.Errorf("Could not set up NSQd container: %v", err)
+	}
+
+	for try := 0; try <= tries; try++ {
+		time.Sleep(delay)
+		httpURL := fmt.Sprintf("http://%s:%d", ip, httpPort)
+		log.Printf("Try %d: Connecting %s", try, httpURL)
+
+		resp, err := http.Get(fmt.Sprintf("%s/ping", httpURL))
+		if err == nil && resp.StatusCode == 200 {
+			log.Printf("Try %d: Successfully connected to %v", try, httpURL)
+			return c, ip, tcpPort, httpPort, nil
+		}
+
+		log.Printf("Try %d: Could not set up NSQd container: %v", try, err)
+	}
+	return c, "", 0, 0, errors.New("Could not set up NSQd container.")
+}
+
 // ConnectToPostgreSQL starts a PostgreSQL image and passes the database url to the connector callback.
 func ConnectToPostgreSQL(tries int, delay time.Duration, connector func(url string) bool) (c ContainerID, err error) {
 	c, ip, port, err := SetupPostgreSQLContainer()
@@ -504,4 +599,40 @@ func ConnectToRedis(tries int, delay time.Duration, connector func(url string) b
 		log.Printf("Try %d failed. Retrying.", try)
 	}
 	return c, errors.New("Could not set up Redis container.")
+}
+
+// ConnectToNSQLookupd starts a NSQ image with `/nsqlookupd` running and passes the IP, HTTP port, and TCP port to the connector callback function.
+// The url will match the ip pattern (e.g. 123.123.123.123).
+func ConnectToNSQLookupd(tries int, delay time.Duration, connector func(ip string, httpPort int, tcpPort int) bool) (c ContainerID, err error) {
+	c, ip, tcpPort, httpPort, err := SetupNSQLookupdContainer()
+	if err != nil {
+		return c, fmt.Errorf("Could not set up NSQLookupd container: %v", err)
+	}
+
+	for try := 0; try <= tries; try++ {
+		time.Sleep(delay)
+		if connector(ip, httpPort, tcpPort) {
+			return c, nil
+		}
+		log.Printf("Try %d failed. Retrying.", try)
+	}
+	return c, errors.New("Could not set up NSQLookupd container.")
+}
+
+// ConnectToNSQd starts a NSQ image with `/nsqd` running and passes the IP, HTTP port, and TCP port to the connector callback function.
+// The url will match the ip pattern (e.g. 123.123.123.123).
+func ConnectToNSQd(tries int, delay time.Duration, connector func(ip string, httpPort int, tcpPort int) bool) (c ContainerID, err error) {
+	c, ip, tcpPort, httpPort, err := SetupNSQdContainer()
+	if err != nil {
+		return c, fmt.Errorf("Could not set up NSQd container: %v", err)
+	}
+
+	for try := 0; try <= tries; try++ {
+		time.Sleep(delay)
+		if connector(ip, httpPort, tcpPort) {
+			return c, nil
+		}
+		log.Printf("Try %d failed. Retrying.", try)
+	}
+	return c, errors.New("Could not set up NSQd container.")
 }
