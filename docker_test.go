@@ -12,7 +12,7 @@ import (
 
 	"github.com/garyburd/redigo/redis"
 	. "github.com/ninnemana/dockertest"
-	"github.com/ninnemana/elastigo/lib"
+	"github.com/ory-am/elastigo/lib"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
