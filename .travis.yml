@@ -19,9 +19,11 @@ install:
   - go get github.com/mattn/goveralls
   - go get golang.org/x/tools/cmd/cover
   - go get -u github.com/golang/lint/golint
+  - go get github.com/pierrre/gotestcover
   - go get -t ./...
 
 script:
   - go vet -x *.go
   - golint ./
-  - ./coverage --coveralls
+  - gotestcover -coverprofile="cover.out" -race -covermode="count" ./...
+  - goveralls -coverprofile="cover.out"
