@@ -2,7 +2,15 @@
 
 [![Build Status](https://travis-ci.org/ory-am/dockertest.svg)](https://travis-ci.org/ory-am/dockertest) [![Coverage Status](https://coveralls.io/repos/ory-am/dockertest/badge.svg?branch=master&service=github)](https://coveralls.io/github/ory-am/dockertest?branch=master)
 
-Use Docker to run your Go language integration tests against persistent data storage services like **MySQL, Postgres or MongoDB** on **Microsoft Windows, Mac OSX and Linux**! Dockertest uses [docker-machine](https://docs.docker.com/machine/) (aka [Docker Toolbox](https://www.docker.com/toolbox)) to spin up images on Windows and Mac OSX as well.
+Use Docker to run your Go language integration tests against third party services on **Microsoft Windows, Mac OSX and Linux**! Dockertest uses [docker-machine](https://docs.docker.com/machine/) (aka [Docker Toolbox](https://www.docker.com/toolbox)) to spin up images on Windows and Mac OSX as well.
+
+Supports:
+* PostgreSQL
+* MySQL
+* MongoDB
+* NSQ
+* Redis
+* Elastic Search
 
 A suite for testing with Docker. Based on  [docker.go](https://github.com/camlistore/camlistore/blob/master/pkg/test/dockertest/docker.go) from [camlistore](https://github.com/camlistore/camlistore).
 This fork detects automatically, if [Docker Toolbox](https://www.docker.com/toolbox) is installed. If it is, Docker integration on Windows and Mac OSX can be used without any additional work. To avoid port collisions when using docker-machine, Dockertest chooses a random port to bind the requested image.
@@ -29,7 +37,7 @@ To avoid this, it is smarter to test these specific services against a real data
 
 ## Using Dockertest
 
-Using Dockertest is straightforward and  simple. At present, Dockertest supports MongoDB, Postgres and MySQL containers out of the box. Feel free to extend this list by contributing to this project.
+Using Dockertest is straightforward and  simple. 
 
 **Note:** When using the Docker Toolbox (Windows / OSX), make sure that the VM is started by running `docker-machine start default`.
 
