@@ -11,13 +11,13 @@ import (
 // using a Docker container. It returns the container ID and its IP address,
 // or makes the test fail on error.
 func SetupElasticSearchContainer() (c ContainerID, ip string, port int, err error) {
-	port = randomPort()
+	port = RandomPort()
 	forward := fmt.Sprintf("%d:%d", port, 9200)
 	if BindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}
-	c, ip, err = setupContainer(ElasticSearchImageName, port, 15*time.Second, func() (string, error) {
-		return run("--name", generateContainerID(), "-d", "-P", "-p", forward, ElasticSearchImageName)
+	c, ip, err = SetupContainer(ElasticSearchImageName, port, 15*time.Second, func() (string, error) {
+		return run("--name", GenerateContainerID(), "-d", "-P", "-p", forward, ElasticSearchImageName)
 	})
 	return
 }

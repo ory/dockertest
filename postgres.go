@@ -11,13 +11,13 @@ import (
 // using a Docker container. It returns the container ID and its IP address,
 // or makes the test fail on error.
 func SetupPostgreSQLContainer() (c ContainerID, ip string, port int, err error) {
-	port = randomPort()
+	port = RandomPort()
 	forward := fmt.Sprintf("%d:%d", port, 5432)
 	if BindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}
-	c, ip, err = setupContainer(PostgresImageName, port, 15*time.Second, func() (string, error) {
-		return run("--name", generateContainerID(), "-d", "-p", forward, "-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", PostgresPassword), PostgresImageName)
+	c, ip, err = SetupContainer(PostgresImageName, port, 15*time.Second, func() (string, error) {
+		return run("--name", GenerateContainerID(), "-d", "-p", forward, "-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", PostgresPassword), PostgresImageName)
 	})
 	return
 }

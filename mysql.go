@@ -11,13 +11,13 @@ import (
 // using a Docker container. It returns the container ID and its IP address,
 // or makes the test fail on error.
 func SetupMySQLContainer() (c ContainerID, ip string, port int, err error) {
-	port = randomPort()
+	port = RandomPort()
 	forward := fmt.Sprintf("%d:%d", port, 3306)
 	if BindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}
-	c, ip, err = setupContainer(MySQLImageName, port, 10*time.Second, func() (string, error) {
-		return run("--name", generateContainerID(), "-d", "-p", forward, "-e", fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", MySQLPassword), MySQLImageName)
+	c, ip, err = SetupContainer(MySQLImageName, port, 10*time.Second, func() (string, error) {
+		return run("--name", GenerateContainerID(), "-d", "-p", forward, "-e", fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", MySQLPassword), MySQLImageName)
 	})
 	return
 }

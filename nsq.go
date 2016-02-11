@@ -12,8 +12,8 @@ import (
 // or makes the test fail on error.
 func SetupNSQdContainer() (c ContainerID, ip string, tcpPort int, httpPort int, err error) {
 	// --name nsqd -p 4150:4150 -p 4151:4151 nsqio/nsq /nsqd --broadcast-address=192.168.99.100 --lookupd-tcp-address=192.168.99.100:4160
-	tcpPort = randomPort()
-	httpPort = randomPort()
+	tcpPort = RandomPort()
+	httpPort = RandomPort()
 	tcpForward := fmt.Sprintf("%d:%d", tcpPort, 4150)
 	if BindDockerToLocalhost != "" {
 		tcpForward = "127.0.0.1:" + tcpForward
@@ -24,8 +24,8 @@ func SetupNSQdContainer() (c ContainerID, ip string, tcpPort int, httpPort int, 
 		httpForward = "127.0.0.1:" + httpForward
 	}
 
-	c, ip, err = setupContainer(NSQImageName, tcpPort, 15*time.Second, func() (string, error) {
-		return run("--name", generateContainerID(), "-d", "-P", "-p", tcpForward, "-p", httpForward, NSQImageName, "/nsqd", fmt.Sprintf("--broadcast-address=%s", ip), fmt.Sprintf("--lookupd-tcp-address=%s:4160", ip))
+	c, ip, err = SetupContainer(NSQImageName, tcpPort, 15*time.Second, func() (string, error) {
+		return run("--name", GenerateContainerID(), "-d", "-P", "-p", tcpForward, "-p", httpForward, NSQImageName, "/nsqd", fmt.Sprintf("--broadcast-address=%s", ip), fmt.Sprintf("--lookupd-tcp-address=%s:4160", ip))
 	})
 	return
 }
@@ -35,8 +35,8 @@ func SetupNSQdContainer() (c ContainerID, ip string, tcpPort int, httpPort int, 
 // or makes the test fail on error.
 func SetupNSQLookupdContainer() (c ContainerID, ip string, tcpPort int, httpPort int, err error) {
 	// docker run --name lookupd -p 4160:4160 -p 4161:4161 nsqio/nsq /nsqlookupd
-	tcpPort = randomPort()
-	httpPort = randomPort()
+	tcpPort = RandomPort()
+	httpPort = RandomPort()
 	tcpForward := fmt.Sprintf("%d:%d", tcpPort, 4160)
 	if BindDockerToLocalhost != "" {
 		tcpForward = "127.0.0.1:" + tcpForward
@@ -47,8 +47,8 @@ func SetupNSQLookupdContainer() (c ContainerID, ip string, tcpPort int, httpPort
 		httpForward = "127.0.0.1:" + httpForward
 	}
 
-	c, ip, err = setupContainer(NSQImageName, tcpPort, 15*time.Second, func() (string, error) {
-		return run("--name", generateContainerID(), "-d", "-P", "-p", tcpForward, "-p", httpForward, NSQImageName, "/nsqlookupd")
+	c, ip, err = SetupContainer(NSQImageName, tcpPort, 15*time.Second, func() (string, error) {
+		return run("--name", GenerateContainerID(), "-d", "-P", "-p", tcpForward, "-p", httpForward, NSQImageName, "/nsqlookupd")
 	})
 	return
 }
