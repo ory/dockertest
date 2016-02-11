@@ -13,15 +13,6 @@ go:
   - 1.5
   - tip
 
-before_install:
-  - docker pull postgres
-  - docker pull mysql
-  - docker pull postgres
-  - docker pull elasticsearch
-  - docker pull redis
-  - docker pull nsqio/nsq
-  - docker pull rethinkdb
-
 
 matrix:
   allow_failures:
