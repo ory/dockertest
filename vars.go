@@ -2,6 +2,7 @@ package dockertest
 
 import "github.com/ory-am/common/env"
 
+// Dockertest configuration
 var (
 	// Debug if set, prevents any container from being removed.
 	Debug bool
@@ -17,16 +18,37 @@ var (
 	// You can set this variable either directly or by defining a DOCKERTEST_BIND_LOCALHOST env variable.
 	// FIXME DOCKER_BIND_LOCALHOST remove legacy support
 	BindDockerToLocalhost = env.Getenv("DOCKERTEST_BIND_LOCALHOST", env.Getenv("DOCKER_BIND_LOCALHOST", ""))
+
+	// ContainerPrefix will be prepended to all containers started by dockertest to make identification of these "test images" hassle-free.
+	ContainerPrefix = env.Getenv("DOCKERTEST_CONTAINER_PREFIX", "dockertest-")
 )
 
-const (
-	mongoImage         = "mongo"
-	mysqlImage         = "mysql"
-	postgresImage      = "postgres"
-	elasticsearchImage = "elasticsearch"
-	redisImage         = "redis"
-	nsqImage           = "nsqio/nsq"
+// Image configuration
+var (
+	// MongoDBImageName is the MongoDB image name on dockerhub.
+	MongoDBImageName = env.Getenv("DOCKERTEST_MONGODB_IMAGE_NAME", "mongo")
 
+	// MySQLImageName is the MySQL image name on dockerhub.
+	MySQLImageName = env.Getenv("DOCKERTEST_MYSQL_IMAGE_NAME", "mysql")
+
+	// PostgresImageName is the PostgreSQL image name on dockerhub.
+	PostgresImageName = env.Getenv("DOCKERTEST_POSTGRES_IMAGE_NAME", "postgres")
+
+	// ElasticSearchImageName is the ElasticSearch image name on dockerhub.
+	ElasticSearchImageName = env.Getenv("DOCKERTEST_ELASTICSEARCH_IMAGE_NAME", "elasticsearch")
+
+	// RedisImageName is the Redis image name on dockerhub.
+	RedisImageName = env.Getenv("DOCKERTEST_REDIS_IMAGE_NAME", "redis")
+
+	// NSQImageName is the NSQ image name on dockerhub.
+	NSQImageName = env.Getenv("DOCKERTEST_NSQ_IMAGE_NAME", "nsqio/nsq")
+
+	// RethinkDBImageName is the RethinkDB image name on dockerhub.
+	RethinkDBImageName = env.Getenv("DOCKERTEST_RETHINKDB_IMAGE_NAME", "rethinkdb")
+)
+
+// Username and password configuration
+var (
 	// MySQLUsername must be passed as username when connecting to mysql
 	MySQLUsername = "root"
 
@@ -35,6 +57,7 @@ const (
 
 	// PostgresUsername must be passed as username when connecting to postgres
 	PostgresUsername = "postgres"
+
 	// PostgresPassword must be passed as password when connecting to postgres
 	PostgresPassword = "docker"
 )
