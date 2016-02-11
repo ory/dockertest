@@ -15,87 +15,23 @@ import (
 	. "github.com/ory-am/dockertest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	rethink "github.com/dancannon/gorethink"
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 )
 
-func TestOpenPostgreSQLContainerConnection(t *testing.T) {
-	c, db, err := OpenPostgreSQLContainerConnection(15, time.Millisecond*500)
-	require.Nil(t, err)
+func TestConnectToRethinkDB(t *testing.T) {
+	c, err := ConnectToRethinkDB(20, time.Second, func(url string) bool {
+		session, err := rethink.Connect(rethink.ConnectOpts{Address: url})
+		if err != nil {
+			return false
+		}
+		defer session.Close()
+		return true
+	})
+	assert.Nil(t, err)
 	defer c.KillRemove()
-	require.Nil(t, db.Ping())
-	require.NotNil(t, db)
-	defer db.Close()
-}
-
-func TestOpenMySQLContainerConnection(t *testing.T) {
-	c, db, err := OpenMySQLContainerConnection(15, time.Millisecond*500)
-	require.Nil(t, err)
-	defer c.KillRemove()
-	require.Nil(t, db.Ping())
-	require.NotNil(t, db)
-	defer db.Close()
-}
-
-func TestOpenMongoDBContainerConnection(t *testing.T) {
-	c, db, err := OpenMongoDBContainerConnection(15, time.Millisecond*500)
-	require.Nil(t, err)
-	defer c.KillRemove()
-	require.NotNil(t, db)
-	_, err = db.DatabaseNames()
-	require.Nil(t, err)
-	defer db.Close()
-}
-
-func TestOpenElasticSearchContainerConnection(t *testing.T) {
-	c, conn, err := OpenElasticSearchContainerConnection(15, time.Millisecond*500)
-	require.Nil(t, err)
-	defer c.KillRemove()
-	require.NotNil(t, conn)
-	_, err = conn.Health("")
-	require.Nil(t, err)
-	defer conn.Close()
-}
-
-func TestOpenRedisContainerConnection(t *testing.T) {
-	c, client, err := OpenRedisContainerConnection(15, time.Millisecond*500)
-	require.Nil(t, err)
-	defer c.KillRemove()
-	require.NotNil(t, client)
-
-	v, err := client.Cmd("echo", "Hello, World!").Str()
-	require.Nil(t, err)
-	assert.Equal(t, "Hello, World!", v)
-
-	defer client.Close()
-}
-
-func TestOpenNSQLookupdContainerConnection(t *testing.T) {
-
-	c, ip, tcpPort, httpPort, err := OpenNSQLookupdContainerConnection(15, time.Millisecond*500)
-	require.Nil(t, err)
-	defer c.KillRemove()
-	require.NotEmpty(t, ip)
-	require.NotZero(t, tcpPort)
-	require.NotZero(t, httpPort)
-
-	resp, err := http.Get(fmt.Sprintf("http://%s:%d/ping", ip, httpPort))
-	require.Nil(t, err)
-	require.Equal(t, resp.StatusCode, 200)
-
-}
-
-func TestOpenNSQContainerConnection(t *testing.T) {
-
-	c, ip, tcpPort, httpPort, err := OpenNSQdContainerConnection(15, time.Millisecond*500)
-	require.Nil(t, err)
-	defer c.KillRemove()
-	require.NotEmpty(t, ip)
-	require.NotZero(t, tcpPort)
-	require.NotZero(t, httpPort)
-
-	resp, err := http.Get(fmt.Sprintf("http://%s:%d/ping", ip, httpPort))
-	require.Nil(t, err)
-	require.Equal(t, resp.StatusCode, 200)
-
 }
 
 func TestConnectToPostgreSQL(t *testing.T) {
@@ -107,12 +43,12 @@ func TestConnectToPostgreSQL(t *testing.T) {
 		defer db.Close()
 		return true
 	})
-	require.Nil(t, err)
+	assert.Nil(t, err)
 	defer c.KillRemove()
 }
 
 func TestConnectToMySQL(t *testing.T) {
-	c, err := ConnectToMySQL(15, time.Millisecond*500, func(url string) bool {
+	c, err := ConnectToMySQL(20, time.Second, func(url string) bool {
 		db, err := sql.Open("mysql", url)
 		if err != nil {
 			return false
@@ -120,7 +56,7 @@ func TestConnectToMySQL(t *testing.T) {
 		defer db.Close()
 		return true
 	})
-	require.Nil(t, err)
+	assert.Nil(t, err)
 	defer c.KillRemove()
 }
 
@@ -133,7 +69,7 @@ func TestConnectToMongoDB(t *testing.T) {
 		defer db.Close()
 		return true
 	})
-	require.Nil(t, err)
+	assert.Nil(t, err)
 	defer c.KillRemove()
 }
 
@@ -157,7 +93,7 @@ func TestConnectToElasticSearch(t *testing.T) {
 		// defer conn.Close()
 		return true
 	})
-	require.Nil(t, err)
+	assert.Nil(t, err)
 	defer c.KillRemove()
 }
 
@@ -175,7 +111,7 @@ func TestConnectToRedis(t *testing.T) {
 		defer client.Close()
 		return true
 	})
-	require.Nil(t, err)
+	assert.Nil(t, err)
 	defer c.KillRemove()
 }
 
@@ -187,7 +123,7 @@ func TestConnectToNSQLookupd(t *testing.T) {
 
 		return true
 	})
-	require.Nil(t, err)
+	assert.Nil(t, err)
 	defer c.KillRemove()
 }
 
@@ -196,9 +132,8 @@ func TestConnectToNSQd(t *testing.T) {
 		resp, err := http.Get(fmt.Sprintf("http://%s:%d/ping", ip, httpPort))
 		require.Nil(t, err)
 		require.Equal(t, resp.StatusCode, 200)
-
 		return true
 	})
-	require.Nil(t, err)
+	assert.Nil(t, err)
 	defer c.KillRemove()
 }
