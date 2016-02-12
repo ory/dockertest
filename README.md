@@ -79,15 +79,29 @@ import "time"
 
 func main() {
 	c, err := ConnectToMongoDB(15, time.Millisecond*500, func(url string) bool {
+	    // This callback function checks if the image's process is responsive.
+	    // Sometimes, docker images are booted but the process (in this case MongoDB) is still doing maintenance
+	    // before being fully responsive which might cause issues like "TCP Connection reset by peer".	
 		db, err := mgo.Dial(url)
 		if err != nil {
 			return false
 		}
-		defer db.Close()
-		return true
+		
+		// Sometimes, dialing the database is not enough because the port is already open but the process is not responsive.
+		// Most database conenctors implement a ping function which can be used to test if the process is responsive.
+		// Alternatively, you could execute a query to see if an error occurs or not.
+		return db.Ping() != nil
 	})
-	require.Nil(t, err)
+	
+	if err != nil {
+	    log.Fatalf("Could not connect to database: %s", err)
+	}
+	
+	// Close db connection and kill the container when we leave this function body.
+    defer db.Close()
 	defer c.KillRemove()
+	
+	// The image is now responsive.
 }
 ```
 
@@ -102,7 +116,7 @@ It is a good idea to start up the container only once when running tests.
 import (
 	"fmt"
 	"testing"
-   "log"
+    "log"
 	"os"
 
 	"database/sql"
@@ -114,6 +128,7 @@ var db *sql.DB
 
 func TestMain(m *testing.M) {
 	if c, err := dockertest.ConnectToPostgreSQL(15, time.Second, func(url string) bool {
+	    // Check if postgres is responsive...
 		var err error
 		db, err = sql.Open("postgres", url)
 		if err != nil {
@@ -123,8 +138,20 @@ func TestMain(m *testing.M) {
 	}); err != nil {
 		log.Fatalf("Could not connect to database: %s", err)
 	}
-	defer c.KillRemove()
-	os.Exit(m.Run())
+	
+	// Execute tasks like setting up schemata.
+	
+	// Run tests
+	result := m.Run()
+	
+	// Close database connection.
+	db.Close()
+	
+	// Clean up image.
+	c.KillRemove()
+	
+	// Exit tests.
+	os.Exit(result)
 }
 
 func TestFunction(t *testing.T) {
