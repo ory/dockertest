@@ -23,7 +23,7 @@ func SetupRabbitMQContainer() (c ContainerID, ip string, port int, err error) {
 	return
 }
 
-// Connect starts a RabbitMQ image and passes the amqp url to the connector callback.
+// ConnectToRabbitMQ starts a RabbitMQ image and passes the amqp url to the connector callback.
 // The url will match the ip:port pattern (e.g. 123.123.123.123:4241)
 func ConnectToRabbitMQ(tries int, delay time.Duration, connector func(url string) bool) (c ContainerID, err error) {
 	c, ip, port, err := SetupRabbitMQContainer()
