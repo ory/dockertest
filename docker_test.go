@@ -13,6 +13,7 @@ import (
 	"github.com/garyburd/redigo/redis"
 	"github.com/mattbaird/elastigo/lib"
 	. "github.com/ory-am/dockertest"
+	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -41,6 +42,19 @@ func TestConnectToPostgreSQL(t *testing.T) {
 			return false
 		}
 		defer db.Close()
+		return true
+	})
+	assert.Nil(t, err)
+	defer c.KillRemove()
+}
+
+func TestConnectToRabbitMQ(t *testing.T) {
+	c, err := ConnectToRabbitMQ(15, time.Millisecond*500, func(url string) bool {
+		amqp, err := amqp.Dial(fmt.Sprintf("amqp://%v", url))
+		if err != nil {
+			return false
+		}
+		defer amqp.Close()
 		return true
 	})
 	assert.Nil(t, err)

@@ -45,6 +45,9 @@ var (
 
 	// RethinkDBImageName is the RethinkDB image name on dockerhub.
 	RethinkDBImageName = env.Getenv("DOCKERTEST_RETHINKDB_IMAGE_NAME", "rethinkdb")
+
+	// RabbitMQImage name is the RabbitMQ image name on dockerhub.
+	RabbitMQImageName = env.Getenv("DOCKERTEST_RABBITMQ_IMAGE_NAME", "rabbitmq")
 )
 
 // Username and password configuration
