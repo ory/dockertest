@@ -110,7 +110,7 @@ You can start PostgreSQL and MySQL in a similar fashion.
 
 It is also possible to start a custom container (in this example, a RabbitMQ container):
 
-```
+```go
 	c, ip, port, err := SetupCustomContainer("rabbitmq", 5672, 10*time.Second)
 	if err != nil {
 		log.Fatalf("Could not setup container: %s", err
