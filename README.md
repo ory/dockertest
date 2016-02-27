@@ -106,7 +106,28 @@ func main() {
 }
 ```
 
-You can start PostgreSQL and MySQL in a similar fashion with
+You can start PostgreSQL and MySQL in a similar fashion.
+
+It is also possible to start a custom container (in this example, a RabbitMQ container):
+
+```go
+	c, ip, port, err := SetupCustomContainer("rabbitmq", 5672, 10*time.Second)
+	if err != nil {
+		log.Fatalf("Could not setup container: %s", err
+	}
+	defer c.KillRemove()
+
+	err = ConnectToCustomContainer(fmt.Sprintf("%v:%v", ip, port), 15, time.Millisecond*500, func(url string) bool {
+		amqp, err := amqp.Dial(fmt.Sprintf("amqp://%v", url))
+		if err != nil {
+			return false
+		}
+		defer amqp.Close()
+		return true
+	})
+
+	...
+```
 
 ## Write awesome tests
 
