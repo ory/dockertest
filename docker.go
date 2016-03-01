@@ -91,7 +91,24 @@ func haveImage(name string) (ok bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	return bytes.Contains(out, []byte(name)), nil
+
+	var tag string
+	if fields := strings.Split(name, ":"); len(fields) == 2 {
+		name, tag = fields[0], fields[1]
+	}
+
+	lines := strings.Split(string(out), "\n")
+	for idx, line := range lines {
+		if idx == 0 {
+			continue // skip first line with columns names
+		}
+		cols := strings.Fields(line)
+		if len(cols) > 1 && cols[0] == name && (tag == "" || cols[1] == tag) {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func run(args ...string) (containerID string, err error) {
