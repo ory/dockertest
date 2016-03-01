@@ -16,7 +16,7 @@ func SetupCustomContainer(imageName string, exposedPort int, timeOut time.Durati
 	if BindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}
-	c, ip, err = SetupContainer(RethinkDBImageName, localPort, timeOut, func() (string, error) {
+	c, ip, err = SetupContainer(imageName, localPort, timeOut, func() (string, error) {
 		args := make([]string, 0, len(extraDockerArgs)+7)
 		args = append(args, "--name", GenerateContainerID(), "-d", "-P", "-p", forward)
 		args = append(args, extraDockerArgs...)
