@@ -86,29 +86,66 @@ func haveDocker() bool {
 	return err == nil
 }
 
-func haveImage(name string) (ok bool, err error) {
+type dockerImage struct {
+	repo string
+	tag  string
+}
+
+type dockerImageList []dockerImage
+
+func (l dockerImageList) contains(repo string, tag string) bool {
+	if tag == "" {
+		tag = "latest"
+	}
+	for _, image := range l {
+		if image.repo == repo && image.tag == tag {
+			return true
+		}
+	}
+	return false
+}
+
+func parseDockerImagesOutput(data []byte) (images dockerImageList) {
+	lines := strings.Split(string(data), "\n")
+	if len(lines) < 2 {
+		return
+	}
+
+	// skip first line with columns names
+	images = make(dockerImageList, 0, len(lines)-1)
+	for _, line := range lines[1:] {
+		cols := strings.Fields(line)
+		if len(cols) < 2 {
+			continue
+		}
+
+		image := dockerImage{
+			repo: cols[0],
+			tag:  cols[1],
+		}
+		images = append(images, image)
+	}
+
+	return
+}
+
+func parseImageName(name string) (repo string, tag string) {
+	if fields := strings.SplitN(name, ":", 2); len(fields) == 2 {
+		repo, tag = fields[0], fields[1]
+	} else {
+		repo = name
+	}
+	return
+}
+
+func haveImage(name string) (bool, error) {
 	out, err := runDockerCommand("docker", "images", "--no-trunc").Output()
 	if err != nil {
 		return false, err
 	}
-
-	var tag string
-	if fields := strings.Split(name, ":"); len(fields) == 2 {
-		name, tag = fields[0], fields[1]
-	}
-
-	lines := strings.Split(string(out), "\n")
-	for idx, line := range lines {
-		if idx == 0 {
-			continue // skip first line with columns names
-		}
-		cols := strings.Fields(line)
-		if len(cols) > 1 && cols[0] == name && (tag == "" || cols[1] == tag) {
-			return true, nil
-		}
-	}
-
-	return false, nil
+	repo, tag := parseImageName(name)
+	images := parseDockerImagesOutput(out)
+	return images.contains(repo, tag), nil
 }
 
 func run(args ...string) (containerID string, err error) {
