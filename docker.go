@@ -47,7 +47,7 @@ Tests will fail if the image does not exist.`, DockerMachineName)
 	} else if !haveDocker() {
 		return errors.New("Neither 'docker' nor 'docker-machine' available on this system.")
 	}
-	if ok, err := haveImage(image); !ok || err != nil {
+	if ok, err := HaveImage(image); !ok || err != nil {
 		if err != nil {
 			return fmt.Errorf("Error checking for docker image %s: %v", image, err)
 		}
@@ -138,7 +138,8 @@ func parseImageName(name string) (repo string, tag string) {
 	return
 }
 
-func haveImage(name string) (bool, error) {
+// HaveImage reports if docker have image 'name'.
+func HaveImage(name string) (bool, error) {
 	out, err := runDockerCommand("docker", "images", "--no-trunc").Output()
 	if err != nil {
 		return false, err
