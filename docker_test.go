@@ -1,169 +1,124 @@
-package dockertest_test
+package dockertest
 
 import (
-	"database/sql"
 	"fmt"
-	"net/http"
-	"strings"
 	"testing"
-	"time"
 
-	"gopkg.in/mgo.v2"
-
-	"github.com/garyburd/redigo/redis"
-	. "github.com/ory-am/dockertest"
-	"github.com/mattbaird/elastigo/lib"
-	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
-	rethink "github.com/dancannon/gorethink"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 )
 
-func TestConnectToRethinkDB(t *testing.T) {
-	c, err := ConnectToRethinkDB(20, time.Second, func(url string) bool {
-		session, err := rethink.Connect(rethink.ConnectOpts{Address: url})
-		if err != nil {
-			return false
-		}
-		defer session.Close()
-		return true
-	})
-	assert.Nil(t, err)
-	defer c.KillRemove()
+func TestParseImageName(t *testing.T) {
+	assert := assert.New(t)
+
+	tests := []struct {
+		name string
+		repo string
+		tag  string
+	}{
+		{
+			name: "postgres",
+			repo: "postgres",
+			tag:  "",
+		},
+		{
+			name: "postgres:9.4.6",
+			repo: "postgres",
+			tag:  "9.4.6",
+		},
+		{
+			name: "postgres:1:2",
+			repo: "postgres",
+			tag:  "1:2",
+		},
+		{
+			name: "",
+			repo: "",
+			tag:  "",
+		},
+	}
+
+	for idx, tt := range tests {
+		indexStr := fmt.Sprintf("test index: %d", idx)
+		repo, tag := parseImageName(tt.name)
+		assert.Equal(tt.repo, repo, indexStr)
+		assert.Equal(tt.tag, tag, indexStr)
+	}
 }
 
-func TestConnectToPostgreSQL(t *testing.T) {
-	c, err := ConnectToPostgreSQL(15, time.Millisecond*500, func(url string) bool {
-		db, err := sql.Open("postgres", url)
-		if err != nil {
-			return false
-		}
-		defer db.Close()
-		return true
-	})
-	assert.Nil(t, err)
-	defer c.KillRemove()
+func TestDockerImagesContains(t *testing.T) {
+	assert := assert.New(t)
+
+	images := dockerImageList{
+		dockerImage{repo: "postgres", tag: "latest"},
+		dockerImage{repo: "postgres", tag: "9.4.6"},
+	}
+
+	tests := []struct {
+		repo     string
+		tag      string
+		contains bool
+	}{
+		{
+			repo:     "postgres",
+			tag:      "latest",
+			contains: true,
+		},
+		{
+			repo:     "postgres",
+			tag:      "",
+			contains: true,
+		},
+		{
+			repo:     "postgres",
+			tag:      "9.4.6",
+			contains: true,
+		},
+		{
+			repo:     "postgres",
+			tag:      "9.4",
+			contains: false,
+		},
+		{
+			repo:     "postgres1",
+			tag:      "",
+			contains: false,
+		},
+		{
+			repo:     "",
+			tag:      "",
+			contains: false,
+		},
+	}
+
+	for idx, tt := range tests {
+		indexStr := fmt.Sprintf("test index: %d", idx)
+		assert.Equal(tt.contains, images.contains(tt.repo, tt.tag), indexStr)
+	}
 }
 
-func TestConnectToRabbitMQ(t *testing.T) {
-	c, err := ConnectToRabbitMQ(15, time.Millisecond*500, func(url string) bool {
-		amqp, err := amqp.Dial(fmt.Sprintf("amqp://%v", url))
-		if err != nil {
-			return false
-		}
-		defer amqp.Close()
-		return true
-	})
-	assert.Nil(t, err)
-	defer c.KillRemove()
-}
+func TestParseDockerImagesOutput(t *testing.T) {
+	assert := assert.New(t)
 
-func TestConnectToMySQL(t *testing.T) {
-	c, err := ConnectToMySQL(20, time.Second, func(url string) bool {
-		db, err := sql.Open("mysql", url)
-		if err != nil {
-			return false
-		}
-		defer db.Close()
-		return true
-	})
-	assert.Nil(t, err)
-	defer c.KillRemove()
-}
+	normalOutput := []byte(`REPOSITORY          TAG                 IMAGE ID                                                                  CREATED             VIRTUAL SIZE
+postgres            latest              sha256:da194fb234df1b69ac5d93032c2f9304ba1d6d85b1a8b5dd94824c4978d0b3d9   2 weeks ago         264.1 MB
+postgres            9.4.6               sha256:ad2fc7b9d681789490dfc6b91ef446fc23268572df328158ab542255311a7359   2 weeks ago         263.1 MB
+`)
 
-func TestConnectToMongoDB(t *testing.T) {
-	c, err := ConnectToMongoDB(15, time.Millisecond*500, func(url string) bool {
-		db, err := mgo.Dial(url)
-		if err != nil {
-			return false
-		}
-		defer db.Close()
-		return true
-	})
-	assert.Nil(t, err)
-	defer c.KillRemove()
-}
+	assert.Equal(
+		dockerImageList{
+			dockerImage{repo: "postgres", tag: "latest"},
+			dockerImage{repo: "postgres", tag: "9.4.6"},
+		},
+		parseDockerImagesOutput(normalOutput),
+	)
 
-func TestConnectToElasticSearch(t *testing.T) {
-	c, err := ConnectToElasticSearch(15, time.Millisecond*500, func(url string) bool {
-		segs := strings.Split(url, ":")
-		if len(segs) != 2 {
-			return false
-		}
+	zeroOutput := []byte(`REPOSITORY          TAG                 IMAGE ID            CREATED             VIRTUAL SIZE
+`)
+	assert.Empty(parseDockerImagesOutput(zeroOutput))
 
-		conn := elastigo.NewConn()
-		conn.Domain = segs[0]
-		conn.Port = segs[1]
-		resp, err := conn.Health()
-		if err != nil {
-			return false
-		}
-		if resp.Status != "green" {
-			return false
-		}
-		// defer conn.Close()
-		return true
-	})
-	assert.Nil(t, err)
-	defer c.KillRemove()
-}
-
-func TestConnectToRedis(t *testing.T) {
-	c, err := ConnectToRedis(15, time.Millisecond*500, func(url string) bool {
-		client, err := redis.DialTimeout("tcp", url, 10*time.Second, 10*time.Second, 10*time.Second)
-		require.Nil(t, err)
-		require.NotNil(t, client)
-
-		reply, err := redis.String(client.Do("echo", "Hello, World!"))
-
-		require.Nil(t, err)
-		assert.Equal(t, "Hello, World!", reply)
-
-		defer client.Close()
-		return true
-	})
-	assert.Nil(t, err)
-	defer c.KillRemove()
-}
-
-func TestConnectToNSQLookupd(t *testing.T) {
-	c, err := ConnectToNSQLookupd(15, time.Millisecond*500, func(ip string, httpPort int, tcpPort int) bool {
-		resp, err := http.Get(fmt.Sprintf("http://%s:%d/ping", ip, httpPort))
-		require.Nil(t, err)
-		require.Equal(t, resp.StatusCode, 200)
-
-		return true
-	})
-	assert.Nil(t, err)
-	defer c.KillRemove()
-}
-
-func TestConnectToNSQd(t *testing.T) {
-	c, err := ConnectToNSQd(15, time.Millisecond*500, func(ip string, httpPort int, tcpPort int) bool {
-		resp, err := http.Get(fmt.Sprintf("http://%s:%d/ping", ip, httpPort))
-		require.Nil(t, err)
-		require.Equal(t, resp.StatusCode, 200)
-		return true
-	})
-	assert.Nil(t, err)
-	defer c.KillRemove()
-}
-
-func TestCustomContainer(t *testing.T) {
-	c1, ip, port, err := SetupCustomContainer("rabbitmq", 5672, 10*time.Second)
-	assert.Nil(t, err)
-	defer c1.KillRemove()
-
-	err = ConnectToCustomContainer(fmt.Sprintf("%v:%v", ip, port), 15, time.Millisecond*500, func(url string) bool {
-		amqp, err := amqp.Dial(fmt.Sprintf("amqp://%v", url))
-		if err != nil {
-			return false
-		}
-		defer amqp.Close()
-		return true
-	})
-	assert.Nil(t, err)
+	emptyOutput := []byte{}
+	assert.Empty(parseDockerImagesOutput(emptyOutput))
 }
