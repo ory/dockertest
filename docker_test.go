@@ -259,9 +259,9 @@ func TestDockerImagesContains(t *testing.T) {
 func TestParseDockerImagesOutput(t *testing.T) {
 	assert := assert.New(t)
 
-	normalOutput := []byte(`REPOSITORY          TAG                 IMAGE ID            CREATED             VIRTUAL SIZE
-postgres            latest              sha256:da194        13 days ago         264.1 MB
-postgres            9.4.6               sha256:ad2fc        13 days ago         263.1 MB
+	normalOutput := []byte(`REPOSITORY          TAG                 IMAGE ID                                                                  CREATED             VIRTUAL SIZE
+postgres            latest              sha256:da194fb234df1b69ac5d93032c2f9304ba1d6d85b1a8b5dd94824c4978d0b3d9   2 weeks ago         264.1 MB
+postgres            9.4.6               sha256:ad2fc7b9d681789490dfc6b91ef446fc23268572df328158ab542255311a7359   2 weeks ago         263.1 MB
 `)
 
 	assert.Equal(
