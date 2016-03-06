@@ -74,9 +74,11 @@ When using the Docker Toolbox (Windows / OSX), make sure that the VM is started 
 ```go
 package main
 
-import "gopkg.in/ory-am/dockertest.v2"
-import "gopkg.in/mgo.v2"
-import "time"
+import (
+	"gopkg.in/ory-am/dockertest.v2"
+	"gopkg.in/mgo.v2"
+	"time"
+)
 
 func main() {
 	var db *mgo.Session
