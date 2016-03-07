@@ -48,6 +48,9 @@ var (
 
 	// RabbitMQImage name is the RabbitMQ image name on dockerhub.
 	RabbitMQImageName = env.Getenv("DOCKERTEST_RABBITMQ_IMAGE_NAME", "rabbitmq")
+
+	// MockserverImageName name is the Mockserver image name on dockerhub.
+	MockserverImageName = env.Getenv("DOCKERTEST_MOCKSERVER_IMAGE_NAME", "jamesdbloom/mockserver")
 )
 
 // Username and password configuration

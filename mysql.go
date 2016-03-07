@@ -16,7 +16,7 @@ func SetupMySQLContainer() (c ContainerID, ip string, port int, err error) {
 	if BindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}
-	c, ip, err = SetupContainer(MySQLImageName, port, 10*time.Second, func() (string, error) {
+	c, ip, err = SetupContainer(MySQLImageName, []int{port}, 10*time.Second, func() (string, error) {
 		return run("--name", GenerateContainerID(), "-d", "-p", forward, "-e", fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", MySQLPassword), MySQLImageName)
 	})
 	return

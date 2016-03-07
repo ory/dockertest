@@ -16,7 +16,7 @@ func SetupElasticSearchContainer() (c ContainerID, ip string, port int, err erro
 	if BindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}
-	c, ip, err = SetupContainer(ElasticSearchImageName, port, 15*time.Second, func() (string, error) {
+	c, ip, err = SetupContainer(ElasticSearchImageName, []int{port}, 15*time.Second, func() (string, error) {
 		return run("--name", GenerateContainerID(), "-d", "-P", "-p", forward, ElasticSearchImageName)
 	})
 	return

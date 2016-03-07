@@ -213,9 +213,9 @@ func IP(containerID string) (string, error) {
 
 // SetupContainer sets up a container, using the start function to run the given image.
 // It also looks up the IP address of the container, and tests this address with the given
-// port and timeout. It returns the container ID and its IP address, or makes the test
+// ports and timeout. It returns the container ID and its IP address, or makes the test
 // fail on error.
-func SetupContainer(image string, port int, timeout time.Duration, start func() (string, error)) (c ContainerID, ip string, err error) {
+func SetupContainer(image string, ports []int, timeout time.Duration, start func() (string, error)) (c ContainerID, ip string, err error) {
 	err = runLongTest(image)
 	if err != nil {
 		return "", "", err
@@ -227,7 +227,7 @@ func SetupContainer(image string, port int, timeout time.Duration, start func() 
 	}
 
 	c = ContainerID(containerID)
-	ip, err = c.lookup(port, timeout)
+	ip, err = c.lookup(ports, timeout)
 	if err != nil {
 		c.KillRemove()
 		return "", "", err
@@ -239,11 +239,14 @@ func SetupContainer(image string, port int, timeout time.Duration, start func() 
 func RandomPort() int {
 	min := 1025
 	max := 65534
-	rand.Seed(time.Now().UTC().UnixNano())
 	return min + rand.Intn(max-min)
 }
 
 // GenerateContainerID generated a random container id.
 func GenerateContainerID() string {
 	return ContainerPrefix + uuid.New()
+}
+
+func init() {
+	rand.Seed(time.Now().UTC().UnixNano())
 }

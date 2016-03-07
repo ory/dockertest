@@ -40,7 +40,7 @@ func (c ContainerID) KillRemove() error {
 
 // lookup retrieves the ip address of the container, and tries to reach
 // before timeout the tcp address at this ip and given port.
-func (c ContainerID) lookup(port int, timeout time.Duration) (ip string, err error) {
+func (c ContainerID) lookup(ports []int, timeout time.Duration) (ip string, err error) {
 	if DockerMachineAvailable {
 		var out []byte
 		out, err = exec.Command("docker-machine", "ip", DockerMachineName).Output()
@@ -54,7 +54,12 @@ func (c ContainerID) lookup(port int, timeout time.Duration) (ip string, err err
 		err = fmt.Errorf("error getting IP: %v", err)
 		return
 	}
-	addr := fmt.Sprintf("%s:%d", ip, port)
-	err = netutil.AwaitReachable(addr, timeout)
+	for _, port := range ports {
+		addr := fmt.Sprintf("%s:%d", ip, port)
+		err = netutil.AwaitReachable(addr, timeout)
+		if err != nil {
+			return
+		}
+	}
 	return
 }

@@ -16,7 +16,7 @@ func SetupMongoContainer() (c ContainerID, ip string, port int, err error) {
 	if BindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}
-	c, ip, err = SetupContainer(MongoDBImageName, port, 10*time.Second, func() (string, error) {
+	c, ip, err = SetupContainer(MongoDBImageName, []int{port}, 10*time.Second, func() (string, error) {
 		res, err := run("--name", GenerateContainerID(), "-d", "-P", "-p", forward, MongoDBImageName)
 		return res, err
 	})

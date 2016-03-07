@@ -16,7 +16,7 @@ func SetupPostgreSQLContainer() (c ContainerID, ip string, port int, err error) 
 	if BindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}
-	c, ip, err = SetupContainer(PostgresImageName, port, 15*time.Second, func() (string, error) {
+	c, ip, err = SetupContainer(PostgresImageName, []int{port}, 15*time.Second, func() (string, error) {
 		return run("--name", GenerateContainerID(), "-d", "-p", forward, "-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", PostgresPassword), PostgresImageName)
 	})
 	return
