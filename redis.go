@@ -16,7 +16,7 @@ func SetupRedisContainer() (c ContainerID, ip string, port int, err error) {
 	if BindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}
-	c, ip, err = SetupContainer(RedisImageName, []int{port}, 15*time.Second, func() (string, error) {
+	c, ip, err = SetupContainer(RedisImageName, port, 15*time.Second, func() (string, error) {
 		return run("--name", GenerateContainerID(), "-d", "-P", "-p", forward, RedisImageName)
 	})
 	return

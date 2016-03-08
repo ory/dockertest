@@ -16,7 +16,7 @@ func SetupRethinkDBContainer() (c ContainerID, ip string, port int, err error) {
 	if BindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}
-	c, ip, err = SetupContainer(RethinkDBImageName, []int{port}, 10*time.Second, func() (string, error) {
+	c, ip, err = SetupContainer(RethinkDBImageName, port, 10*time.Second, func() (string, error) {
 		res, err := run("--name", GenerateContainerID(), "-d", "-P", "-p", forward, RethinkDBImageName)
 		return res, err
 	})

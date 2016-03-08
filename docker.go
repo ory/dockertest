@@ -211,11 +211,11 @@ func IP(containerID string) (string, error) {
 	return "", errors.New("could not find an IP. Not running?")
 }
 
-// SetupContainer sets up a container, using the start function to run the given image.
+// SetupMultiportContainer sets up a container, using the start function to run the given image.
 // It also looks up the IP address of the container, and tests this address with the given
 // ports and timeout. It returns the container ID and its IP address, or makes the test
 // fail on error.
-func SetupContainer(image string, ports []int, timeout time.Duration, start func() (string, error)) (c ContainerID, ip string, err error) {
+func SetupMultiportContainer(image string, ports []int, timeout time.Duration, start func() (string, error)) (c ContainerID, ip string, err error) {
 	err = runLongTest(image)
 	if err != nil {
 		return "", "", err
@@ -233,6 +233,14 @@ func SetupContainer(image string, ports []int, timeout time.Duration, start func
 		return "", "", err
 	}
 	return c, ip, nil
+}
+
+// SetupContainer sets up a container, using the start function to run the given image.
+// It also looks up the IP address of the container, and tests this address with the given
+// port and timeout. It returns the container ID and its IP address, or makes the test
+// fail on error.
+func SetupContainer(image string, port int, timeout time.Duration, start func() (string, error)) (c ContainerID, ip string, err error) {
+	return SetupMultiportContainer(image, []int{port}, timeout, start)
 }
 
 // RandomPort returns a random non-priviledged port.

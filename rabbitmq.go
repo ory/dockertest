@@ -16,7 +16,7 @@ func SetupRabbitMQContainer() (c ContainerID, ip string, port int, err error) {
 	if BindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}
-	c, ip, err = SetupContainer(RabbitMQImageName, []int{port}, 10*time.Second, func() (string, error) {
+	c, ip, err = SetupContainer(RabbitMQImageName, port, 10*time.Second, func() (string, error) {
 		res, err := run("--name", GenerateContainerID(), "-d", "-P", "-p", forward, RabbitMQImageName)
 		return res, err
 	})
