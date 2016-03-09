@@ -168,6 +168,28 @@ func TestCustomContainer(t *testing.T) {
 	assert.Nil(t, err)
 }
 
+func TestConnectToMockServer(t *testing.T) {
+	c, err := ConnectToMockserver(15, time.Millisecond*500,
+		func(url string) bool {
+			req, err := http.NewRequest("PUT", fmt.Sprintf("%v/reset", url), nil)
+			if err != nil {
+				return false
+			}
+			_, err = http.DefaultClient.Do(req)
+			return err == nil
+		},
+		func(url string) bool {
+			req, err := http.NewRequest("PUT", fmt.Sprintf("%v/reset", url), nil)
+			if err != nil {
+				return false
+			}
+			_, err = http.DefaultClient.Do(req)
+			return err == nil
+		})
+	assert.Nil(t, err)
+	defer c.KillRemove()
+}
+
 func TestHaveImage(t *testing.T) {
 	assert := assert.New(t)
 
