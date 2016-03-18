@@ -1,10 +1,17 @@
 package dockertest
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
 	"time"
+
+	mysql "github.com/go-sql-driver/mysql"
+)
+
+const (
+	defaultMySQLDBName = "mysql"
 )
 
 // SetupMySQLContainer sets up a real MySQL instance for testing purposes,
@@ -39,4 +46,30 @@ func ConnectToMySQL(tries int, delay time.Duration, connector func(url string) b
 		log.Printf("Try %d failed. Retrying.", try)
 	}
 	return c, errors.New("Could not set up MySQL container.")
+}
+
+// SetUpMySQLDatabase connects mysql container with given $connectURL and also creates a new database named $databaseName
+// A modified url used to connect the created database will be returned
+func SetUpMySQLDatabase(databaseName, connectURL string) (url string, err error) {
+	if databaseName == defaultMySQLDBName {
+		return connectURL, nil
+	}
+
+	db, err := sql.Open("mysql", connectURL)
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+	_, err = db.Exec(fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", databaseName))
+	if err != nil {
+		return "", err
+	}
+
+	// parse dsn
+	config, err := mysql.ParseDSN(connectURL)
+	if err != nil {
+		return "", err
+	}
+	config.DBName = databaseName // overwrite database name
+	return config.FormatDSN(), nil
 }
