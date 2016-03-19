@@ -48,6 +48,26 @@ func TestConnectToPostgreSQL(t *testing.T) {
 	defer c.KillRemove()
 }
 
+func TestConnectToPostgreSQLWithCustomizedDB(t *testing.T) {
+	c, err := ConnectToPostgreSQL(15, time.Millisecond*500, func(url string) bool {
+		customizedDB := "db0001"
+		gotURL, err := SetUpPostgreDatabase(customizedDB, url)
+		if err != nil {
+			return false
+		}
+		assert.True(t, strings.Contains(gotURL, customizedDB),
+			fmt.Sprintf("url(%s) should contains tag(%s)", gotURL, customizedDB))
+		db, err := sql.Open("postgres", gotURL)
+		if err != nil {
+			return false
+		}
+		defer db.Close()
+		return true
+	})
+	assert.Nil(t, err)
+	defer c.KillRemove()
+}
+
 func TestConnectToRabbitMQ(t *testing.T) {
 	c, err := ConnectToRabbitMQ(15, time.Millisecond*500, func(url string) bool {
 		amqp, err := amqp.Dial(fmt.Sprintf("amqp://%v", url))
@@ -64,6 +84,26 @@ func TestConnectToRabbitMQ(t *testing.T) {
 func TestConnectToMySQL(t *testing.T) {
 	c, err := ConnectToMySQL(20, time.Second, func(url string) bool {
 		db, err := sql.Open("mysql", url)
+		if err != nil {
+			return false
+		}
+		defer db.Close()
+		return true
+	})
+	assert.Nil(t, err)
+	defer c.KillRemove()
+}
+
+func TestConnectToMySQLWithCustomizedDB(t *testing.T) {
+	customizedDB := "db0001"
+	c, err := ConnectToMySQL(20, time.Second, func(url string) bool {
+		gotURL, err := SetUpMySQLDatabase(customizedDB, url)
+		if err != nil {
+			return false
+		}
+		assert.True(t, strings.Contains(gotURL, customizedDB),
+			fmt.Sprintf("url(%s) should contains tag(%s)", gotURL, customizedDB))
+		db, err := sql.Open("mysql", gotURL)
 		if err != nil {
 			return false
 		}

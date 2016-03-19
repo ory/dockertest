@@ -37,6 +37,7 @@ Dockertest ships with support for these backends:
   - [My build is broken!](#my-build-is-broken)
   - [Out of disk space](#out-of-disk-space)
   - [Removing old containers](#removing-old-containers)
+  - [Customized database] (#Customized-database)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -224,5 +225,32 @@ Try cleaning up the images with [docker-cleanup-volumes](https://github.com/chad
 
 Sometimes container clean up fails. Check out
 [this stackoverflow question](http://stackoverflow.com/questions/21398087/how-to-delete-dockers-images) on how to fix this.
+
+### Customized database
+
+I am using postgres (or mysql) driver, how do I use customized database instead of default one?
+You can alleviate this helper function to do that, see testcase or example below:
+
+```go
+
+func TestMain(m *testing.M) {
+	if c, err := dockertest.ConnectToPostgreSQL(15, time.Second, func(url string) bool {
+        customizedDB := "cherry" // here I am connecting cherry database
+        newURL, err := SetUpPostgreDatabase(customizedDB, url)
+
+        // or use SetUpMysqlDatabase for mysql driver
+
+        if err != nil {
+                log.Fatal(err)
+        }
+        db, err := sql.Open("postgres", newURL)
+        if err != nil {
+            return false
+        }
+        return db.Ping() == nil
+    }); err != nil {
+        log.Fatal(err)
+    }
+```
 
 *Thanks to our sponsors: Ory GmbH & Imarum GmbH*

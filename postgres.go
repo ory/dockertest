@@ -1,10 +1,14 @@
 package dockertest
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"time"
+
+	_ "github.com/lib/pq"
 )
 
 // SetupPostgreSQLContainer sets up a real PostgreSQL instance for testing purposes,
@@ -38,4 +42,39 @@ func ConnectToPostgreSQL(tries int, delay time.Duration, connector func(url stri
 		log.Printf("Try %d failed. Retrying.", try)
 	}
 	return c, errors.New("Could not set up PostgreSQL container.")
+}
+
+// SetUpPostgreDatabase connects postgre container with given $connectURL and also creates a new database named $databaseName
+// A modified url used to connect the created database will be returned
+func SetUpPostgreDatabase(databaseName, connectURL string) (modifiedURL string, err error) {
+	db, err := sql.Open("postgres", connectURL)
+	if err != nil {
+		return "", err
+	}
+	defer db.Close()
+
+	count := 0
+	err = db.QueryRow(
+		fmt.Sprintf("SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname = '%s' ;", databaseName)).
+		Scan(&count)
+	if err != nil {
+		return "", err
+	}
+	if count == 0 {
+		// not found for $databaseName, create it
+		_, err = db.Exec(fmt.Sprintf("CREATE DATABASE %s", databaseName))
+		if err != nil {
+			return "", err
+		}
+	}
+
+	// replace dbname in url
+	// from: postgres://postgres:docker@192.168.99.100:9071/postgres?sslmode=disable
+	// to: postgres://postgres:docker@192.168.99.100:9071/$databaseName?sslmode=disable
+	u, err := url.Parse(connectURL)
+	if err != nil {
+		return "", err
+	}
+	u.Path = fmt.Sprintf("/%s", databaseName)
+	return u.String(), nil
 }
