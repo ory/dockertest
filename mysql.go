@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"strings"
 	"time"
 
 	mysql "github.com/go-sql-driver/mysql"
@@ -23,9 +25,14 @@ func SetupMySQLContainer() (c ContainerID, ip string, port int, err error) {
 	if BindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}
+
+	dir, _ := os.Getwd()
+	currnetDir := strings.Replace(dir, " ", "\\ ", -1)
+
 	c, ip, err = SetupContainer(MySQLImageName, port, 10*time.Second, func() (string, error) {
-		return run("--name", GenerateContainerID(), "-d", "-p", forward, "-e", fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", MySQLPassword), MySQLImageName)
+		return run("--name", GenerateContainerID(), "-d", "-p", forward, "-e", fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", MySQLPassword), "-v", fmt.Sprintf("%s:/docker-entrypoint-initdb.d", currnetDir), MySQLImageName)
 	})
+
 	return
 }
 
@@ -39,7 +46,7 @@ func ConnectToMySQL(tries int, delay time.Duration, connector func(url string) b
 
 	for try := 0; try <= tries; try++ {
 		time.Sleep(delay)
-		url := fmt.Sprintf("%s:%s@tcp(%s:%d)/mysql", MySQLUsername, MySQLPassword, ip, port)
+		url := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s", MySQLUsername, MySQLPassword, ip, port, MySQLDatabse)
 		if connector(url) {
 			return c, nil
 		}
