@@ -26,7 +26,10 @@ func SetupMySQLContainer() (c ContainerID, ip string, port int, err error) {
 		forward = "127.0.0.1:" + forward
 	}
 
-	dir, _ := os.Getwd()
+	dir, err := os.Getwd()
+	if err != nil {
+		panic(err)
+	}
 	currnetDir := strings.Replace(dir, " ", "\\ ", -1)
 
 	c, ip, err = SetupContainer(MySQLImageName, port, 10*time.Second, func() (string, error) {
