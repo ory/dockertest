@@ -26,6 +26,7 @@ func SetupMySQLContainer() (c ContainerID, ip string, port int, err error) {
 		forward = "127.0.0.1:" + forward
 	}
 
+	// geting the curnnet dir.
 	dir, err := os.Getwd()
 	if err != nil {
 		panic(err)
