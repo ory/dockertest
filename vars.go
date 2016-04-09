@@ -61,6 +61,9 @@ var (
 	// MySQLPassword must be passed as password when connecting to mysql
 	MySQLPassword = "root"
 
+	// MySQLDatabse must be passed as database when connecting to mysql
+	MySQLDatabse = "mysql"
+
 	// PostgresUsername must be passed as username when connecting to postgres
 	PostgresUsername = "postgres"
 
