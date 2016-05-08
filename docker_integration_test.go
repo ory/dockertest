@@ -1,4 +1,4 @@
-package dockertest_test
+package dockertest
 
 import (
 	"database/sql"
@@ -12,7 +12,6 @@ import (
 
 	"github.com/garyburd/redigo/redis"
 	"github.com/mattbaird/elastigo/lib"
-	. "github.com/ory-am/dockertest"
 	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
