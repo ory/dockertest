@@ -8,17 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/mgo.v2"
-
+	rethink "github.com/dancannon/gorethink"
 	"github.com/garyburd/redigo/redis"
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
 	"github.com/mattbaird/elastigo/lib"
 	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	rethink "github.com/dancannon/gorethink"
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/lib/pq"
+	"gopkg.in/mgo.v2"
 )
 
 func TestConnectToRethinkDB(t *testing.T) {
