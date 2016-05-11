@@ -111,6 +111,21 @@ func TestConnectToMySQLWithCustomizedDB(t *testing.T) {
 	defer c.KillRemove()
 }
 
+func TestConnectToMySQLWithSqlFile(t *testing.T) {
+
+	MySQLDatabse = "world"
+	c, err := ConnectToMySQL(20, time.Second, func(url string) bool {
+		db, err := sql.Open("mysql", url)
+		if err != nil {
+			return false
+		}
+		defer db.Close()
+		return true
+	})
+	assert.Nil(t, err)
+	defer c.KillRemove()
+}
+
 func TestConnectToMongoDB(t *testing.T) {
 	c, err := ConnectToMongoDB(15, time.Millisecond*500, func(url string) bool {
 		db, err := mgo.Dial(url)
