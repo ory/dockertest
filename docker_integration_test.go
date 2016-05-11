@@ -167,8 +167,8 @@ func TestConnectToRedis(t *testing.T) {
 }
 
 func TestConnectToNSQLookupd(t *testing.T) {
-	c, err := ConnectToNSQLookupd(15, time.Millisecond*500, func(ip string, httpPort int, tcpPort int) bool {
-		resp, err := http.Get(fmt.Sprintf("http://%s:%d/ping", ip, httpPort))
+	c, err := ConnectToNSQLookupd(15, time.Millisecond*500, func(httpPort ServicePort, tcpPort ServicePort) bool {
+		resp, err := http.Get(fmt.Sprintf("http://%s/ping", httpPort))
 		require.Nil(t, err)
 		require.Equal(t, resp.StatusCode, 200)
 
@@ -179,8 +179,8 @@ func TestConnectToNSQLookupd(t *testing.T) {
 }
 
 func TestConnectToNSQd(t *testing.T) {
-	c, err := ConnectToNSQd(15, time.Millisecond*500, func(ip string, httpPort int, tcpPort int) bool {
-		resp, err := http.Get(fmt.Sprintf("http://%s:%d/ping", ip, httpPort))
+	c, err := ConnectToNSQd(15, time.Millisecond*500, func(httpPort ServicePort, tcpPort ServicePort) bool {
+		resp, err := http.Get(fmt.Sprintf("http://%s/ping", httpPort))
 		require.Nil(t, err)
 		require.Equal(t, resp.StatusCode, 200)
 		return true
@@ -190,11 +190,11 @@ func TestConnectToNSQd(t *testing.T) {
 }
 
 func TestCustomContainer(t *testing.T) {
-	c1, ip, port, err := SetupCustomContainer("rabbitmq", 5672, 10*time.Second)
+	c1, svc, err := SetupCustomContainer("rabbitmq", 5672, 10*time.Second)
 	assert.Nil(t, err)
 	defer c1.KillRemove()
 
-	err = ConnectToCustomContainer(fmt.Sprintf("%v:%v", ip, port), 15, time.Millisecond*500, func(url string) bool {
+	err = ConnectToCustomContainer(svc.String(), 15, time.Millisecond*500, func(url string) bool {
 		amqp, err := amqp.Dial(fmt.Sprintf("amqp://%v", url))
 		if err != nil {
 			return false

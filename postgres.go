@@ -12,30 +12,25 @@ import (
 )
 
 // SetupPostgreSQLContainer sets up a real PostgreSQL instance for testing purposes,
-// using a Docker container. It returns the container ID and its IP address,
+// using a Docker container. It returns the container ID and its Service,
 // or makes the test fail on error.
-func SetupPostgreSQLContainer() (c ContainerID, ip string, port int, err error) {
-	port = RandomPort()
-	forward := fmt.Sprintf("%d:%d", port, 5432)
-	if BindDockerToLocalhost != "" {
-		forward = "127.0.0.1:" + forward
-	}
-	c, ip, err = SetupContainer(PostgresImageName, port, 15*time.Second, func() (string, error) {
-		return run("--name", GenerateContainerID(), "-d", "-p", forward, "-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", PostgresPassword), PostgresImageName)
+func SetupPostgreSQLContainer() (c ContainerID, svc ServicePort, err error) {
+	c, svc, err = SetupContainer(PostgresImageName, 5432, 15*time.Second, func() (string, error) {
+		return runService([]int{5432}, "--name", GenerateContainerID(), "-d", "-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", PostgresPassword), PostgresImageName)
 	})
 	return
 }
 
 // ConnectToPostgreSQL starts a PostgreSQL image and passes the database url to the connector callback.
 func ConnectToPostgreSQL(tries int, delay time.Duration, connector func(url string) bool) (c ContainerID, err error) {
-	c, ip, port, err := SetupPostgreSQLContainer()
+	c, svc, err := SetupPostgreSQLContainer()
 	if err != nil {
 		return c, fmt.Errorf("Could not set up PostgreSQL container: %v", err)
 	}
 
 	for try := 0; try <= tries; try++ {
 		time.Sleep(delay)
-		url := fmt.Sprintf("postgres://%s:%s@%s:%d/postgres?sslmode=disable", PostgresUsername, PostgresPassword, ip, port)
+		url := fmt.Sprintf("postgres://%s:%s@%s/postgres?sslmode=disable", PostgresUsername, PostgresPassword, svc)
 		if connector(url) {
 			return c, nil
 		}

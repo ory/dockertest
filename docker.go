@@ -25,6 +25,7 @@ import (
 	"math/rand"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -149,6 +150,18 @@ func HaveImage(name string) (bool, error) {
 	return images.contains(repo, tag), nil
 }
 
+func runService(ports []int, args ...string) (containerID string, err error) {
+	var portMappings []string
+	for _, port := range ports {
+		forward := fmt.Sprintf(":%d", port)
+		if BindDockerToLocalhost != "" {
+			forward = "127.0.0.1:" + forward
+		}
+		portMappings = append(portMappings, "-p", forward)
+	}
+	return run(append(portMappings, args...)...)
+}
+
 func run(args ...string) (containerID string, err error) {
 	var stdout, stderr bytes.Buffer
 	validID := regexp.MustCompile(`^([a-zA-Z0-9]+)$`)
@@ -186,68 +199,83 @@ func Pull(image string) error {
 	return err
 }
 
-// IP returns the IP address of the container.
-func IP(containerID string) (string, error) {
+func inspectContainer(containerID string) (container, error) {
 	out, err := runDockerCommand("docker", "inspect", containerID).Output()
 	if err != nil {
-		return "", err
-	}
-	type networkSettings struct {
-		IPAddress string
-	}
-	type container struct {
-		NetworkSettings networkSettings
+		return container{}, err
 	}
 	var c []container
 	if err := json.NewDecoder(bytes.NewReader(out)).Decode(&c); err != nil {
-		return "", err
+		return container{}, err
 	}
 	if len(c) == 0 {
-		return "", errors.New("no output from docker inspect")
+		return container{}, errors.New("no output from docker inspect")
 	}
-	if ip := c[0].NetworkSettings.IPAddress; ip != "" {
-		return ip, nil
+	return c[0], nil
+}
+
+// Return the exposed Services, on their bound public port
+func Ports(containerID string) (ServicePortMap, error) {
+	c, err := inspectContainer(containerID)
+	if err != nil {
+		return ServicePortMap{}, err
 	}
-	return "", errors.New("could not find an IP. Not running?")
+	if len(c.NetworkSettings.Ports) == 0 {
+		return ServicePortMap{}, errors.New("could not find any exposed ports. Not running?")
+	}
+
+	portMap := make(ServicePortMap)
+	for key, x := range c.NetworkSettings.Ports {
+		ports := strings.Split(key, "/")[0]
+		port, err := strconv.Atoi(ports)
+		if err != nil {
+			return ServicePortMap{}, err
+		}
+
+		if len(x) > 0 {
+			portMap[port] = x[0]
+		} else {
+			ip := c.NetworkSettings.IPAddress
+			portMap[port] = ServicePort{Host: ip, Port: ports}
+		}
+	}
+	return portMap, nil
 }
 
 // SetupMultiportContainer sets up a container, using the start function to run the given image.
 // It also looks up the IP address of the container, and tests this address with the given
-// ports and timeout. It returns the container ID and its IP address, or makes the test
+// ports and timeout. It returns the container ID and exposed services, or makes the test
 // fail on error.
-func SetupMultiportContainer(image string, ports []int, timeout time.Duration, start func() (string, error)) (c ContainerID, ip string, err error) {
-	err = runLongTest(image)
+func SetupMultiportContainer(image string, ports []int, timeout time.Duration, start func() (string, error)) (ContainerID, ServicePorts, error) {
+	err := runLongTest(image)
 	if err != nil {
-		return "", "", err
+		return "", ServicePorts{}, err
 	}
 
 	containerID, err := start()
 	if err != nil {
-		return "", "", err
+		return "", ServicePorts{}, err
 	}
 
-	c = ContainerID(containerID)
-	ip, err = c.lookup(ports, timeout)
+	c := ContainerID(containerID)
+	svcs, err := c.lookup(ports, timeout)
 	if err != nil {
 		c.KillRemove()
-		return "", "", err
+		return "", ServicePorts{}, err
 	}
-	return c, ip, nil
+	return c, svcs, nil
 }
 
 // SetupContainer sets up a container, using the start function to run the given image.
 // It also looks up the IP address of the container, and tests this address with the given
-// port and timeout. It returns the container ID and its IP address, or makes the test
+// port and timeout. It returns the container ID and its Service, or makes the test
 // fail on error.
-func SetupContainer(image string, port int, timeout time.Duration, start func() (string, error)) (c ContainerID, ip string, err error) {
-	return SetupMultiportContainer(image, []int{port}, timeout, start)
-}
-
-// RandomPort returns a random non-priviledged port.
-func RandomPort() int {
-	min := 1025
-	max := 65534
-	return min + rand.Intn(max-min)
+func SetupContainer(image string, port int, timeout time.Duration, start func() (string, error)) (ContainerID, ServicePort, error) {
+	c, svcs, err := SetupMultiportContainer(image, []int{port}, timeout, start)
+	if err != nil {
+		return "", ServicePort{}, err
+	}
+	return c, svcs.First(), nil
 }
 
 // GenerateContainerID generated a random container id.

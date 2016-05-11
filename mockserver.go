@@ -2,29 +2,17 @@ package dockertest
 
 import (
 	"fmt"
-	"time"
-	"log"
 	"github.com/go-errors/errors"
+	"log"
+	"time"
 )
 
 // SetupMockserverContainer sets up a real Mockserver instance for testing purposes
-// using a Docker container. It returns the container ID and its IP address,
-// or makes the test fail on error.
-func SetupMockserverContainer() (c ContainerID, ip string, mockPort, proxyPort int, err error) {
-	mockPort = RandomPort()
-	proxyPort = RandomPort()
-
-	mockForward := fmt.Sprintf("%d:%d", mockPort, 1080)
-	proxyForward := fmt.Sprintf("%d:%d", proxyPort, 1090)
-
-	if BindDockerToLocalhost != "" {
-		mockForward = "127.0.0.1:" + mockForward
-		proxyForward = "127.0.0.1:" + proxyForward
-	}
-
-	c, ip, err = SetupMultiportContainer(RabbitMQImageName, []int{ mockPort, proxyPort}, 10*time.Second, func() (string, error) {
-		res, err := run("--name", GenerateContainerID(), "-d", "-P", "-p", mockForward, "-p", proxyForward, MockserverImageName)
-		return res, err
+// using a Docker container. It returns the exposed services
+func SetupMockserverContainer() (c ContainerID, svcs ServicePorts, err error) {
+	ports := []int{1080, 1090}
+	c, svcs, err = SetupMultiportContainer(RabbitMQImageName, ports, 10*time.Second, func() (string, error) {
+		return runService(ports, "--name", GenerateContainerID(), "-d", "-P", MockserverImageName)
 	})
 	return
 }
@@ -32,10 +20,12 @@ func SetupMockserverContainer() (c ContainerID, ip string, mockPort, proxyPort i
 // ConnectToMockserver starts a Mockserver image and passes the mock and proxy urls to the connector callback functions.
 // The urls will match the http://ip:port pattern (e.g. http://123.123.123.123:4241)
 func ConnectToMockserver(tries int, delay time.Duration, mockConnector func(url string) bool, proxyConnector func(url string) bool) (c ContainerID, err error) {
-	c, ip, mockPort, proxyPort, err := SetupMockserverContainer()
+	c, svcs, err := SetupMockserverContainer()
 	if err != nil {
 		return c, fmt.Errorf("Could not set up Mockserver container: %v", err)
 	}
+	mockPort := svcs[0]
+	proxyPort := svcs[1]
 
 	var mockOk, proxyOk bool
 
@@ -43,14 +33,14 @@ func ConnectToMockserver(tries int, delay time.Duration, mockConnector func(url 
 		time.Sleep(delay)
 
 		if !mockOk {
-			if mockConnector(fmt.Sprintf("http://%s:%d", ip, mockPort)) {
+			if mockConnector(fmt.Sprintf("http://%s", mockPort)) {
 				mockOk = true
 			} else {
 				log.Printf("Try %d failed for mock. Retrying.", try)
 			}
 		}
 		if !proxyOk {
-			if proxyConnector(fmt.Sprintf("http://%s:%d", ip, proxyPort)) {
+			if proxyConnector(fmt.Sprintf("http://%s", proxyPort)) {
 				proxyOk = true
 			} else {
 				log.Printf("Try %d failed for proxy. Retrying.", try)
