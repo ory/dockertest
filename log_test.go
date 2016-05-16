@@ -1,6 +1,7 @@
 package dockertest
 
 import (
+	"io"
 	"sync"
 	"testing"
 	"time"
@@ -35,6 +36,7 @@ func TestLog(t *testing.T) {
 	go func() {
 		time.Sleep(time.Millisecond * 100)
 		log.Write([]byte(test2))
+		log.Close()
 		wg.Done()
 	}()
 	wg.Wait()
@@ -51,4 +53,7 @@ func TestLog(t *testing.T) {
 	assert.Equal(n, len(test1)+len(test2))
 	assert.Equal(string(buf[:n]), test1+test2)
 	assert.False(reader.HasMore())
+
+	n, err = reader.Read(buf)
+	assert.Equal(err, io.EOF)
 }

@@ -2,10 +2,7 @@ package dockertest
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
-	"log"
-	"time"
 
 	mysql "github.com/go-sql-driver/mysql"
 )
@@ -14,38 +11,65 @@ const (
 	defaultMySQLDBName = "mysql"
 )
 
-// SetupMySQLContainer sets up a real MySQL instance for testing purposes,
-// using a Docker container. It returns the container ID and its IP address,
-// or makes the test fail on error.
-func SetupMySQLContainer() (c ContainerID, ip string, port int, err error) {
-	port = RandomPort()
-	forward := fmt.Sprintf("%d:%d", port, 3306)
-	if BindDockerToLocalhost != "" {
-		forward = "127.0.0.1:" + forward
-	}
-	c, ip, err = SetupContainer(MySQLImageName, port, 10*time.Second, func() (string, error) {
-		return run("--name", GenerateContainerID(), "-d", "-p", forward, "-e", fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", MySQLPassword), MySQLImageName)
-	})
-	return
+var (
+	// MySQLUsername must be passed as username when connecting to mysql
+	MySQLUsername = "root"
+
+	// MySQLPassword must be passed as password when connecting to mysql
+	MySQLPassword = "root"
+)
+
+var mysqlWaiter = RegexWaiter(
+	"MySQL init process done. Ready for start up",
+	"mysqld: ready for connections",
+)
+var mysqlServiceMap = SimpleServiceMap{
+	"main": SimpleService(3306, fmt.Sprintf("%s:%s@tcp({{.}})/mysql", MySQLUsername, MySQLPassword)),
+}
+var mysqlEnv = Env{
+	"MYSQL_ROOT_PASSWORD": MySQLPassword,
 }
 
-// ConnectToMySQL starts a MySQL image and passes the database url to the connector callback function.
-// The url will match the username:password@tcp(ip:port) pattern (e.g. `root:root@tcp(123.123.123.123:3131)`)
-func ConnectToMySQL(tries int, delay time.Duration, connector func(url string) bool) (c ContainerID, err error) {
-	c, ip, port, err := SetupMySQLContainer()
-	if err != nil {
-		return c, fmt.Errorf("Could not set up MySQL container: %v", err)
-	}
+var Mysql55 = Specification{
+	Image:    "mysql:5.5",
+	Waiter:   mysqlWaiter,
+	Services: mysqlServiceMap,
+	Env:      mysqlEnv,
+}
 
-	for try := 0; try <= tries; try++ {
-		time.Sleep(delay)
-		url := fmt.Sprintf("%s:%s@tcp(%s:%d)/mysql", MySQLUsername, MySQLPassword, ip, port)
-		if connector(url) {
-			return c, nil
-		}
-		log.Printf("Try %d failed. Retrying.", try)
-	}
-	return c, errors.New("Could not set up MySQL container.")
+var Mysql56 = Specification{
+	Image:    "mysql:5.6",
+	Waiter:   mysqlWaiter,
+	Services: mysqlServiceMap,
+	Env:      mysqlEnv,
+}
+
+var Mysql57 = Specification{
+	Image:    "mysql:5.7",
+	Waiter:   mysqlWaiter,
+	Services: mysqlServiceMap,
+	Env:      mysqlEnv,
+}
+
+var MariaDB55 = Specification{
+	Image:    "mariadb:5.5",
+	Waiter:   mysqlWaiter,
+	Services: mysqlServiceMap,
+	Env:      mysqlEnv,
+}
+
+var MariaDB100 = Specification{
+	Image:    "mariadb:10.0",
+	Waiter:   mysqlWaiter,
+	Services: mysqlServiceMap,
+	Env:      mysqlEnv,
+}
+
+var MariaDB101 = Specification{
+	Image:    "mariadb:10.1",
+	Waiter:   mysqlWaiter,
+	Services: mysqlServiceMap,
+	Env:      mysqlEnv,
 }
 
 // SetUpMySQLDatabase connects mysql container with given $connectURL and also creates a new database named $databaseName

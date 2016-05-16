@@ -1,22 +1,27 @@
 package dockertest
 
 import (
+	"io"
 	"sync"
 )
 
-type Log struct {
-	m   sync.RWMutex
-	c   *sync.Cond
-	buf []byte
+// A single-writer, multi-reader, history-preserving buffer implementation.
+// Data written through Write() will immediately pop-out on waiting Reader:s
+// Late-created readers will start again from the beginning
+type logBuffer struct {
+	m      sync.RWMutex
+	c      *sync.Cond
+	buf    []byte
+	closed bool
 }
 
-func NewLog() *Log {
-	l := &Log{}
+func NewLog() *logBuffer {
+	l := &logBuffer{}
 	l.c = sync.NewCond(l.m.RLocker())
 	return l
 }
 
-func (l *Log) Write(p []byte) (int, error) {
+func (l *logBuffer) Write(p []byte) (int, error) {
 	l.m.Lock()
 	defer l.m.Unlock()
 	l.buf = append(l.buf, p...)
@@ -25,23 +30,35 @@ func (l *Log) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (l *Log) Reader() *LogReader {
-	return &LogReader{l, 0}
+func (l *logBuffer) Close() error {
+	l.m.Lock()
+	defer l.m.Unlock()
+	l.closed = true
+	l.c.Broadcast()
+
+	return nil
 }
 
-type LogReader struct {
-	log *Log
+func (l *logBuffer) Reader() *logReader {
+	return &logReader{l, 0}
+}
+
+type logReader struct {
+	log *logBuffer
 	pos int
 }
 
-func (l *LogReader) HasMore() bool {
+func (l *logReader) HasMore() bool {
 	return l.pos < len(l.log.buf)
 }
 
-func (l *LogReader) Read(tgt []byte) (int, error) {
+func (l *logReader) Read(tgt []byte) (int, error) {
 	l.log.m.RLock()
 	defer l.log.m.RUnlock()
 	for !l.HasMore() {
+		if l.log.closed {
+			return 0, io.EOF
+		}
 		l.log.c.Wait()
 	}
 	copied := copy(tgt, l.log.buf[l.pos:])

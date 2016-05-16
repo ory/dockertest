@@ -21,10 +21,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"os/exec"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -150,30 +150,118 @@ func HaveImage(name string) (bool, error) {
 	return images.contains(repo, tag), nil
 }
 
-func run(args ...string) (containerID string, err error) {
-	var stdout, stderr bytes.Buffer
-	validID := regexp.MustCompile(`^([a-zA-Z0-9]+)$`)
-	cmd := runDockerCommand("docker", append([]string{"run"}, args...)...)
+type Container interface {
+	Destroy() error
 
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err = cmd.Run(); err != nil {
-		err = fmt.Errorf("Error running docker\nStdOut: %s\nStdErr: %s\nError: %v\n\n", stdout.String(), stderr.String(), err)
-		return
-	}
-	containerID = strings.TrimSpace(string(stdout.String()))
-	if !validID.MatchString(containerID) {
-		return "", fmt.Errorf("Error running docker: %s", containerID)
-	}
-	if containerID == "" {
-		return "", errors.New("Unexpected empty output from `docker run`")
-	}
-	return containerID, nil
+	// "Main" service URL in service-specific format
+	ServiceURL() string
+
+	// Should at least contain "main". May contain extra
+	URLs() ServiceURLMap
+
+	Log() io.Reader
 }
 
-// KillContainer runs docker kill on a container.
-func KillContainer(container string) error {
+type dockerContainer struct {
+	id   string
+	log  *logBuffer
+	urls ServiceURLMap
+}
+
+func (c dockerContainer) Destroy() error {
+	return DestroyContainer(c.id)
+}
+
+func (c dockerContainer) ServiceURL() string {
+	return c.URLs()["main"]
+}
+
+func (c dockerContainer) URLs() ServiceURLMap {
+	return c.urls
+}
+
+func (c dockerContainer) Log() io.Reader {
+	return c.log.Reader()
+}
+
+func Deploy(spec Specification) (c Container, err error) {
+	if err := runLongTest(spec.Image); err != nil {
+		return nil, err
+	}
+
+	id := GenerateContainerID()
+	args := []string{"run", "--name", id, "-P"}
+	args = append(args, portMappingArguments(spec.Services.PublishedPorts())...)
+	for k, v := range spec.Env {
+		args = append(args, "-e", fmt.Sprintf("%s=%s", k, v))
+	}
+	args = append(args, spec.Image)
+	args = append(args, spec.ImageArguments...)
+
+	l := NewLog()
+	cmd := runDockerCommand("docker", args...)
+	cmd.Stdout = l
+	cmd.Stderr = l
+	if err := cmd.Start(); err != nil {
+		return nil, fmt.Errorf("Docker command failed: %s", err)
+	}
+	go func() {
+		cmd.Wait()
+		l.Close()
+	}()
+	defer func() {
+		// Dying without returning the container
+		if c == nil {
+			DestroyContainer(id)
+		}
+	}()
+
+	// Wait for first output
+	if _, err := l.Reader().Read([]byte{}); err != nil {
+		return nil, fmt.Errorf("Failed to read any output from command: %s", err)
+	}
+
+	ports, err := ports(id)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to read ports from container: %s", err)
+	}
+	services, err := spec.Services.Map(ports)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to map ports into service URLs: %v", err)
+	}
+
+	c_ := dockerContainer{
+		id:   id,
+		log:  l,
+		urls: services,
+	}
+	if err := spec.Waiter.WaitForReady(c_); err != nil {
+		return nil, fmt.Errorf("Failed to get ready-signal from container: %s", err)
+	}
+
+	if err := ports.Wait(time.Second * 5); err != nil {
+		return nil, fmt.Errorf("Failed to connect to published ports")
+	}
+
+	return c_, nil
+}
+
+func portMappingArguments(ports []int) []string {
+	var portMappings []string
+	for _, port := range ports {
+		forward := fmt.Sprintf(":%d", port)
+		if BindDockerToLocalhost {
+			forward = "127.0.0.1:" + forward
+		}
+		portMappings = append(portMappings, "-p", forward)
+	}
+	return portMappings
+}
+
+// DestroyContainer runs docker rm -f on a container.
+func DestroyContainer(container string) error {
 	if container != "" {
-		return runDockerCommand("docker", "kill", container).Run()
+		return runDockerCommand("docker", "rm", "-f", container).Run()
 	}
 	return nil
 }
@@ -249,45 +337,6 @@ func ports(containerID string) (ServicePortMap, error) {
 
 	}
 	return portMap, nil
-}
-
-// SetupMultiportContainer sets up a container, using the start function to run the given image.
-// It also looks up the IP address of the container, and tests this address with the given
-// ports and timeout. It returns the container ID and its IP address, or makes the test
-// fail on error.
-func SetupMultiportContainer(image string, ports []int, timeout time.Duration, start func() (string, error)) (c ContainerID, ip string, err error) {
-	err = runLongTest(image)
-	if err != nil {
-		return "", "", err
-	}
-
-	containerID, err := start()
-	if err != nil {
-		return "", "", err
-	}
-
-	c = ContainerID(containerID)
-	ip, err = c.lookup(timeout)
-	if err != nil {
-		c.KillRemove()
-		return "", "", err
-	}
-	return c, ip, nil
-}
-
-// SetupContainer sets up a container, using the start function to run the given image.
-// It also looks up the IP address of the container, and tests this address with the given
-// port and timeout. It returns the container ID and its IP address, or makes the test
-// fail on error.
-func SetupContainer(image string, port int, timeout time.Duration, start func() (string, error)) (c ContainerID, ip string, err error) {
-	return SetupMultiportContainer(image, []int{port}, timeout, start)
-}
-
-// RandomPort returns a random non-priviledged port.
-func RandomPort() int {
-	min := 1025
-	max := 65534
-	return min + rand.Intn(max-min)
 }
 
 // GenerateContainerID generated a random container id.
