@@ -122,3 +122,12 @@ postgres            9.4.6               sha256:ad2fc7b9d681789490dfc6b91ef446fc2
 	emptyOutput := []byte{}
 	assert.Empty(parseDockerImagesOutput(emptyOutput))
 }
+
+func TestPortMappingArguments(t *testing.T) {
+	origBind := BindDockerToLocalhost
+	BindDockerToLocalhost = true
+	assert.Equal(t, portMappingArguments([]int{15, 16}), []string{"-p", "127.0.0.1::15", "-p", "127.0.0.1::16"})
+	BindDockerToLocalhost = false
+	assert.Equal(t, portMappingArguments([]int{15, 16}), []string{"-p", ":15", "-p", ":16"})
+	BindDockerToLocalhost = origBind
+}

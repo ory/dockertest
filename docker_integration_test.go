@@ -20,218 +20,184 @@ import (
 )
 
 func TestConnectToRethinkDB(t *testing.T) {
-	c, err := ConnectToRethinkDB(20, time.Second, func(url string) bool {
-		session, err := rethink.Connect(rethink.ConnectOpts{Address: url})
-		if err != nil {
-			return false
-		}
-		defer session.Close()
-		return true
-	})
+	container, err := Deploy(RethinkDB2)
+	require.Nil(t, err)
+	defer container.Destroy()
+
+	session, err := rethink.Connect(rethink.ConnectOpts{Address: container.ServiceURL()})
 	assert.Nil(t, err)
-	defer c.KillRemove()
+	defer session.Close()
 }
 
 func TestConnectToPostgreSQL(t *testing.T) {
-	c, err := ConnectToPostgreSQL(15, time.Millisecond*500, func(url string) bool {
-		db, err := sql.Open("postgres", url)
-		if err != nil {
-			return false
-		}
-		defer db.Close()
-		return true
-	})
+	container, err := Deploy(PostgreSQL9)
+	require.Nil(t, err)
+	defer container.Destroy()
+
+	db, err := sql.Open("postgres", container.ServiceURL())
 	assert.Nil(t, err)
-	defer c.KillRemove()
+	defer db.Close()
 }
 
 func TestConnectToPostgreSQLWithCustomizedDB(t *testing.T) {
-	c, err := ConnectToPostgreSQL(15, time.Millisecond*500, func(url string) bool {
-		customizedDB := "db0001"
-		gotURL, err := SetUpPostgreDatabase(customizedDB, url)
-		if err != nil {
-			return false
-		}
-		assert.True(t, strings.Contains(gotURL, customizedDB),
-			fmt.Sprintf("url(%s) should contains tag(%s)", gotURL, customizedDB))
-		db, err := sql.Open("postgres", gotURL)
-		if err != nil {
-			return false
-		}
-		defer db.Close()
-		return true
-	})
+	container, err := Deploy(PostgreSQL9)
+	require.Nil(t, err)
+	defer container.Destroy()
+
+	customizedDB := "db0001"
+	gotURL, err := SetUpPostgreDatabase(customizedDB, container.ServiceURL())
 	assert.Nil(t, err)
-	defer c.KillRemove()
+	assert.True(t, strings.Contains(gotURL, customizedDB),
+		fmt.Sprintf("url(%s) should contains tag(%s)", gotURL, customizedDB))
+
+	db, err := sql.Open("postgres", container.ServiceURL())
+	assert.Nil(t, err)
+	defer db.Close()
 }
 
 func TestConnectToRabbitMQ(t *testing.T) {
-	c, err := ConnectToRabbitMQ(15, time.Millisecond*500, func(url string) bool {
-		amqp, err := amqp.Dial(fmt.Sprintf("amqp://%v", url))
-		if err != nil {
-			return false
-		}
-		defer amqp.Close()
-		return true
-	})
+	container, err := Deploy(RabbitMQ3)
+	require.Nil(t, err)
+	defer container.Destroy()
+
+	amqp, err := amqp.Dial(container.ServiceURL())
 	assert.Nil(t, err)
-	defer c.KillRemove()
+	defer amqp.Close()
 }
 
 func TestConnectToMySQL(t *testing.T) {
-	c, err := ConnectToMySQL(20, time.Second, func(url string) bool {
-		db, err := sql.Open("mysql", url)
-		if err != nil {
-			return false
-		}
+	for _, spec := range []Specification{MySQL5, MySQL55, MySQL56, MySQL57, MariaDB55, MariaDB10} {
+		container, err := Deploy(spec)
+		require.Nil(t, err, spec.Image)
+		defer container.Destroy()
+
+		db, err := sql.Open("mysql", container.ServiceURL())
+		assert.Nil(t, err)
 		defer db.Close()
-		return true
-	})
-	assert.Nil(t, err)
-	defer c.KillRemove()
+	}
 }
 
 func TestConnectToMySQLWithCustomizedDB(t *testing.T) {
-	customizedDB := "db0001"
-	c, err := ConnectToMySQL(20, time.Second, func(url string) bool {
-		gotURL, err := SetUpMySQLDatabase(customizedDB, url)
-		if err != nil {
-			return false
-		}
+	for _, spec := range []Specification{MySQL5, MySQL55, MySQL56, MySQL57, MariaDB55, MariaDB10} {
+		container, err := Deploy(spec)
+		require.Nil(t, err)
+		defer container.Destroy()
+
+		customizedDB := "db0001"
+		gotURL, err := SetUpMySQLDatabase(customizedDB, container.ServiceURL())
+		assert.Nil(t, err)
 		assert.True(t, strings.Contains(gotURL, customizedDB),
 			fmt.Sprintf("url(%s) should contains tag(%s)", gotURL, customizedDB))
+
 		db, err := sql.Open("mysql", gotURL)
-		if err != nil {
-			return false
-		}
+		assert.Nil(t, err)
 		defer db.Close()
-		return true
-	})
-	assert.Nil(t, err)
-	defer c.KillRemove()
+	}
 }
 
 func TestConnectToMongoDB(t *testing.T) {
-	c, err := ConnectToMongoDB(15, time.Millisecond*500, func(url string) bool {
-		db, err := mgo.Dial(url)
-		if err != nil {
-			return false
-		}
-		defer db.Close()
-		return true
-	})
+	container, err := Deploy(MongoDB3)
+	require.Nil(t, err)
+	defer container.Destroy()
+
+	db, err := mgo.Dial(container.ServiceURL())
 	assert.Nil(t, err)
-	defer c.KillRemove()
+	assert.Nil(t, db.DB("test").C("test").Insert(map[string]string{"test": "test"}))
 }
 
 func TestConnectToElasticSearch(t *testing.T) {
-	c, err := ConnectToElasticSearch(15, time.Millisecond*500, func(url string) bool {
-		segs := strings.Split(url, ":")
-		if len(segs) != 2 {
-			return false
-		}
+	container, err := Deploy(ElasticSearch2)
+	require.Nil(t, err)
+	defer container.Destroy()
 
-		conn := elastigo.NewConn()
-		conn.Domain = segs[0]
-		conn.Port = segs[1]
-		resp, err := conn.Health()
-		if err != nil {
-			return false
-		}
-		if resp.Status != "green" {
-			return false
-		}
-		// defer conn.Close()
-		return true
-	})
+	segs := strings.Split(container.ServiceURL(), ":")
+	require.Len(t, segs, 2)
+
+	conn := elastigo.NewConn()
+	conn.Domain = segs[0]
+	conn.Port = segs[1]
+	resp, err := conn.Health()
+	defer conn.Close()
 	assert.Nil(t, err)
-	defer c.KillRemove()
+	assert.Equal(t, "green", resp.Status)
 }
 
 func TestConnectToRedis(t *testing.T) {
-	c, err := ConnectToRedis(15, time.Millisecond*500, func(url string) bool {
-		client, err := redis.DialTimeout("tcp", url, 10*time.Second, 10*time.Second, 10*time.Second)
+	for _, spec := range []Specification{Redis3, Redis30, Redis32} {
+		container, err := Deploy(spec)
 		require.Nil(t, err)
+		defer container.Destroy()
+
+		client, err := redis.DialTimeout("tcp", container.ServiceURL(), 10*time.Second, 10*time.Second, 10*time.Second)
+		assert.Nil(t, err)
 		require.NotNil(t, client)
 
 		reply, err := redis.String(client.Do("echo", "Hello, World!"))
-
-		require.Nil(t, err)
+		assert.Nil(t, err)
 		assert.Equal(t, "Hello, World!", reply)
 
 		defer client.Close()
-		return true
-	})
-	assert.Nil(t, err)
-	defer c.KillRemove()
+	}
 }
 
 func TestConnectToNSQLookupd(t *testing.T) {
-	c, err := ConnectToNSQLookupd(15, time.Millisecond*500, func(ip string, httpPort int, tcpPort int) bool {
-		resp, err := http.Get(fmt.Sprintf("http://%s:%d/ping", ip, httpPort))
-		require.Nil(t, err)
-		require.Equal(t, resp.StatusCode, 200)
+	container, err := Deploy(NSQLookupd)
+	require.Nil(t, err)
+	defer container.Destroy()
 
-		return true
-	})
-	assert.Nil(t, err)
-	defer c.KillRemove()
+	resp, err := http.Get(fmt.Sprintf("%s/ping", container.URLs()["http"]))
+	require.Nil(t, err)
+	require.Equal(t, resp.StatusCode, 200)
 }
 
 func TestConnectToNSQd(t *testing.T) {
-	c, err := ConnectToNSQd(15, time.Millisecond*500, func(ip string, httpPort int, tcpPort int) bool {
-		resp, err := http.Get(fmt.Sprintf("http://%s:%d/ping", ip, httpPort))
-		require.Nil(t, err)
-		require.Equal(t, resp.StatusCode, 200)
-		return true
-	})
-	assert.Nil(t, err)
-	defer c.KillRemove()
+	container, err := Deploy(NSQd)
+	require.Nil(t, err)
+	defer container.Destroy()
+
+	resp, err := http.Get(fmt.Sprintf("%s/ping", container.URLs()["http"]))
+	require.Nil(t, err)
+	require.Equal(t, resp.StatusCode, 200)
 }
 
 func TestCustomContainer(t *testing.T) {
-	c1, ip, port, err := SetupCustomContainer("rabbitmq", 5672, 10*time.Second)
-	assert.Nil(t, err)
-	defer c1.KillRemove()
+	container, err := Deploy(Specification{
+		Image: "ubuntu:trusty",
+		ImageArguments: []string{"python3", "-c", `import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+PORT = 3000
 
-	err = ConnectToCustomContainer(fmt.Sprintf("%v:%v", ip, port), 15, time.Millisecond*500, func(url string) bool {
-		amqp, err := amqp.Dial(fmt.Sprintf("amqp://%v", url))
-		if err != nil {
-			return false
-		}
-		defer amqp.Close()
-		return true
-	})
-	assert.Nil(t, err)
-}
-
-func TestConnectToMockServer(t *testing.T) {
-	c, err := ConnectToMockserver(15, time.Millisecond*500,
-		func(url string) bool {
-			req, err := http.NewRequest("PUT", fmt.Sprintf("%v/reset", url), nil)
-			if err != nil {
-				return false
-			}
-			_, err = http.DefaultClient.Do(req)
-			return err == nil
+class HelloWorld(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header("Content-type","text/plain")
+        self.end_headers()
+ 
+        self.wfile.write(bytes("Hello world!", "utf8"))
+        return
+httpd = HTTPServer(("", PORT), HelloWorld)
+print("serving at port", PORT)
+sys.stdout.flush()
+httpd.serve_forever()
+`},
+		Waiter: RegexWaiter("serving at port 3000"),
+		Services: SimpleServiceMap{
+			"main": SimpleService(3000, "http://{{.}}"),
 		},
-		func(url string) bool {
-			req, err := http.NewRequest("PUT", fmt.Sprintf("%v/reset", url), nil)
-			if err != nil {
-				return false
-			}
-			_, err = http.DefaultClient.Do(req)
-			return err == nil
-		})
-	assert.Nil(t, err)
-	defer c.KillRemove()
+	})
+	require.Nil(t, err)
+	defer container.Destroy()
+
+	resp, err := http.Get(container.ServiceURL())
+	require.Nil(t, err)
+	require.Equal(t, resp.StatusCode, 200)
 }
 
 func TestHaveImage(t *testing.T) {
 	assert := assert.New(t)
 
-	assert.NoError(Pull("postgres"))
-	assert.NoError(Pull("postgres:9.4.6"))
+	assert.NoError(pull("postgres"))
+	assert.NoError(pull("postgres:9.4.6"))
 
 	tests := []struct {
 		name string
@@ -265,7 +231,7 @@ func TestHaveImage(t *testing.T) {
 
 	for idx, tt := range tests {
 		indexStr := fmt.Sprintf("test index: %d", idx)
-		have, err := HaveImage(tt.name)
+		have, err := haveImage(tt.name)
 		assert.NoError(err, indexStr)
 		assert.Equal(tt.have, have, indexStr)
 	}

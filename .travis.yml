@@ -11,6 +11,7 @@ env:
 go:
   - 1.4
   - 1.5
+  - 1.6
   - tip
 
 
@@ -20,14 +21,12 @@ matrix:
     - go: 1.4
 
 install:
-  - go get github.com/mattn/goveralls
-  - go get golang.org/x/tools/cmd/cover
-  - go get github.com/golang/lint/golint
-  - go get github.com/pierrre/gotestcover
+  - go get github.com/mattn/goveralls golang.org/x/tools/cmd/cover github.com/golang/lint/golint github.com/pierrre/gotestcover
   - go get -t ./...
 
 script:
   - go vet -x .
   - golint .
-  - gotestcover -coverprofile="cover.out" -race -covermode="count" .
+  - go test -race .
+  - gotestcover -coverprofile="cover.out" -covermode="count" .
   - goveralls -coverprofile="cover.out"

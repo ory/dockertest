@@ -1,4 +1,4 @@
-# [ory.am](https://ory.am)/dockertest
+# [ory.am](https://ory.am)/dockertest v3 api preview
 
 [![Build Status](https://travis-ci.org/ory-am/dockertest.svg)](https://travis-ci.org/ory-am/dockertest?branch=master)
 [![Coverage Status](https://coveralls.io/repos/ory-am/dockertest/badge.svg?branch=master&service=github)](https://coveralls.io/github/ory-am/dockertest?branch=master)
@@ -10,7 +10,7 @@ from [camlistore](https://github.com/camlistore/camlistore).
 
 This fork detects automatically, if [Docker Toolbox](https://www.docker.com/toolbox)
 is installed. If it is, Docker integration on Windows and Mac OSX can be used without any additional work.
-To avoid port collisions when using docker-machine, Dockertest chooses a random port to bind the requested image.
+Port collisions when using docker-machine are avoided by letting Docker choose public ports.
 
 Dockertest ships with support for these backends:
 * PostgreSQL

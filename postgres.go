@@ -2,46 +2,32 @@ package dockertest
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
-	"log"
 	"net/url"
-	"time"
 
 	_ "github.com/lib/pq"
 )
 
-// SetupPostgreSQLContainer sets up a real PostgreSQL instance for testing purposes,
-// using a Docker container. It returns the container ID and its IP address,
-// or makes the test fail on error.
-func SetupPostgreSQLContainer() (c ContainerID, ip string, port int, err error) {
-	port = RandomPort()
-	forward := fmt.Sprintf("%d:%d", port, 5432)
-	if BindDockerToLocalhost != "" {
-		forward = "127.0.0.1:" + forward
-	}
-	c, ip, err = SetupContainer(PostgresImageName, port, 15*time.Second, func() (string, error) {
-		return run("--name", GenerateContainerID(), "-d", "-p", forward, "-e", fmt.Sprintf("POSTGRES_PASSWORD=%s", PostgresPassword), PostgresImageName)
-	})
-	return
-}
+var (
+	// postgresUsername must be passed as username when connecting to postgres
+	postgresUsername = "postgres"
 
-// ConnectToPostgreSQL starts a PostgreSQL image and passes the database url to the connector callback.
-func ConnectToPostgreSQL(tries int, delay time.Duration, connector func(url string) bool) (c ContainerID, err error) {
-	c, ip, port, err := SetupPostgreSQLContainer()
-	if err != nil {
-		return c, fmt.Errorf("Could not set up PostgreSQL container: %v", err)
-	}
+	// postgresPassword must be passed as password when connecting to postgres
+	postgresPassword = "docker"
+)
 
-	for try := 0; try <= tries; try++ {
-		time.Sleep(delay)
-		url := fmt.Sprintf("postgres://%s:%s@%s:%d/postgres?sslmode=disable", PostgresUsername, PostgresPassword, ip, port)
-		if connector(url) {
-			return c, nil
-		}
-		log.Printf("Try %d failed. Retrying.", try)
-	}
-	return c, errors.New("Could not set up PostgreSQL container.")
+var PostgreSQL9 = Specification{
+	Image: "postgres:9",
+	Waiter: RegexWaiter(
+		"PostgreSQL init process complete; ready for start up",
+		"database system is ready to accept connections",
+	),
+	Services: SimpleServiceMap{
+		"main": SimpleService(5432, fmt.Sprintf("postgres://%s:%s@{{.}}/postgres?sslmode=disable", postgresUsername, postgresPassword)),
+	},
+	Env: Env{
+		"POSTGRES_PASSWORD": postgresPassword,
+	},
 }
 
 // SetUpPostgreDatabase connects postgre container with given $connectURL and also creates a new database named $databaseName
