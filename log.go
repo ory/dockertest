@@ -15,7 +15,7 @@ type logBuffer struct {
 	closed bool
 }
 
-func NewLog() *logBuffer {
+func newLog() *logBuffer {
 	l := &logBuffer{}
 	l.c = sync.NewCond(l.m.RLocker())
 	return l

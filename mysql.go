@@ -12,32 +12,32 @@ const (
 )
 
 var (
-	// MySQLUsername must be passed as username when connecting to mysql
-	MySQLUsername = "root"
+	// mySQLUsername must be passed as username when connecting to mysql
+	mySQLUsername = "root"
 
-	// MySQLPassword must be passed as password when connecting to mysql
-	MySQLPassword = "root"
+	// mySQLPassword must be passed as password when connecting to mysql
+	mySQLPassword = "root"
 )
 
-var Mysql5 = Specification{
+var MySQL5 = Specification{
 	Image: "mysql:5",
 	Waiter: RegexWaiter(
 		"MySQL init process done. Ready for start up",
 		"mysqld: ready for connections",
 	),
 	Services: SimpleServiceMap{
-		"main": SimpleService(3306, fmt.Sprintf("%s:%s@tcp({{.}})/mysql", MySQLUsername, MySQLPassword)),
+		"main": SimpleService(3306, fmt.Sprintf("%s:%s@tcp({{.}})/mysql", mySQLUsername, mySQLPassword)),
 	},
 	Env: Env{
-		"MYSQL_ROOT_PASSWORD": MySQLPassword,
+		"MYSQL_ROOT_PASSWORD": mySQLPassword,
 	},
 }
 
-var Mysql55 = Mysql5.WithVersion("5.5")
-var Mysql56 = Mysql5.WithVersion("5.6")
-var Mysql57 = Mysql5.WithVersion("5.7")
+var MySQL55 = MySQL5.WithVersion("5.5")
+var MySQL56 = MySQL5.WithVersion("5.6")
+var MySQL57 = MySQL5.WithVersion("5.7")
 
-var MariaDB55 = Mysql5.WithImage("mariadb:5.5")
+var MariaDB55 = MySQL5.WithImage("mariadb:5.5")
 var MariaDB10 = MariaDB55.WithVersion("10")
 
 // SetUpMySQLDatabase connects mysql container with given $connectURL and also creates a new database named $databaseName

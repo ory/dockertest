@@ -48,12 +48,12 @@ Tests will fail if the image does not exist.`, DockerMachineName)
 	} else if !haveDocker() {
 		return errors.New("Neither 'docker' nor 'docker-machine' available on this system.")
 	}
-	if ok, err := HaveImage(image); !ok || err != nil {
+	if ok, err := haveImage(image); !ok || err != nil {
 		if err != nil {
 			return fmt.Errorf("Error checking for docker image %s: %v", image, err)
 		}
 		log.Printf("Pulling docker image %s ...", image)
-		if err := Pull(image); err != nil {
+		if err := pull(image); err != nil {
 			return fmt.Errorf("Error pulling %s: %v", image, err)
 		}
 	}
@@ -139,8 +139,8 @@ func parseImageName(name string) (repo string, tag string) {
 	return
 }
 
-// HaveImage reports if docker have image 'name'.
-func HaveImage(name string) (bool, error) {
+// haveImage reports if docker have image 'name'.
+func haveImage(name string) (bool, error) {
 	out, err := runDockerCommand("docker", "images", "--no-trunc").Output()
 	if err != nil {
 		return false, err
@@ -169,7 +169,7 @@ type dockerContainer struct {
 }
 
 func (c dockerContainer) Destroy() error {
-	return DestroyContainer(c.id)
+	return destroyContainer(c.id)
 }
 
 func (c dockerContainer) ServiceURL() string {
@@ -189,7 +189,7 @@ func Deploy(spec Specification) (c Container, err error) {
 		return nil, err
 	}
 
-	id := GenerateContainerID()
+	id := generateContainerID()
 	args := []string{"run", "--name", id, "-P"}
 	args = append(args, portMappingArguments(spec.Services.PublishedPorts())...)
 	for k, v := range spec.Env {
@@ -198,7 +198,7 @@ func Deploy(spec Specification) (c Container, err error) {
 	args = append(args, spec.Image)
 	args = append(args, spec.ImageArguments...)
 
-	l := NewLog()
+	l := newLog()
 	cmd := runDockerCommand("docker", args...)
 	cmd.Stdout = l
 	cmd.Stderr = l
@@ -212,7 +212,7 @@ func Deploy(spec Specification) (c Container, err error) {
 	defer func() {
 		// Dying without returning the container
 		if c == nil {
-			DestroyContainer(id)
+			destroyContainer(id)
 		}
 	}()
 
@@ -258,16 +258,16 @@ func portMappingArguments(ports []int) []string {
 	return portMappings
 }
 
-// DestroyContainer runs docker rm -f on a container.
-func DestroyContainer(container string) error {
+// destroyContainer runs docker rm -f on a container.
+func destroyContainer(container string) error {
 	if container != "" {
 		return runDockerCommand("docker", "rm", "-f", container).Run()
 	}
 	return nil
 }
 
-// Pull retrieves the docker image with 'docker pull'.
-func Pull(image string) error {
+// pull retrieves the docker image with 'docker pull'.
+func pull(image string) error {
 	out, err := runDockerCommand("docker", "pull", image).CombinedOutput()
 	if err != nil {
 		err = fmt.Errorf("%v: %s", err, out)
@@ -279,7 +279,7 @@ func Pull(image string) error {
 type container struct {
 	NetworkSettings struct {
 		IPAddress string
-		Ports     map[string][]ServicePort
+		Ports     map[string][]PublicPort
 	}
 }
 
@@ -299,13 +299,13 @@ func inspectContainer(containerID string) (container, error) {
 }
 
 // Return the exposed Services, on their bound public port
-func ports(containerID string) (ServicePortMap, error) {
+func ports(containerID string) (PortMap, error) {
 	c, err := inspectContainer(containerID)
 	if err != nil {
-		return ServicePortMap{}, err
+		return PortMap{}, err
 	}
 	if len(c.NetworkSettings.Ports) == 0 {
-		return ServicePortMap{}, errors.New("could not find any exposed ports. Not running?")
+		return PortMap{}, errors.New("could not find any exposed ports. Not running?")
 	}
 
 	var hostIp = "127.0.0.1"
@@ -317,12 +317,12 @@ func ports(containerID string) (ServicePortMap, error) {
 		hostIp = strings.TrimSpace(string(b))
 	}
 
-	portMap := make(ServicePortMap)
+	portMap := make(PortMap)
 	for key, x := range c.NetworkSettings.Ports {
 		ports := strings.Split(key, "/")[0]
 		port, err := strconv.Atoi(ports)
 		if err != nil {
-			return ServicePortMap{}, err
+			return PortMap{}, err
 		}
 
 		if len(x) > 0 {
@@ -332,15 +332,15 @@ func ports(containerID string) (ServicePortMap, error) {
 			portMap[port] = x[0]
 		} else {
 			ip := c.NetworkSettings.IPAddress
-			portMap[port] = ServicePort{Host: ip, Port: ports}
+			portMap[port] = PublicPort{Host: ip, Port: ports}
 		}
 
 	}
 	return portMap, nil
 }
 
-// GenerateContainerID generated a random container id.
-func GenerateContainerID() string {
+// generateContainerID generated a random container id.
+func generateContainerID() string {
 	return ContainerPrefix + uuid.New()
 }
 

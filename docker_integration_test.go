@@ -66,7 +66,7 @@ func TestConnectToRabbitMQ(t *testing.T) {
 }
 
 func TestConnectToMySQL(t *testing.T) {
-	for _, spec := range []Specification{Mysql5, Mysql55, Mysql56, Mysql57, MariaDB55, MariaDB10} {
+	for _, spec := range []Specification{MySQL5, MySQL55, MySQL56, MySQL57, MariaDB55, MariaDB10} {
 		container, err := Deploy(spec)
 		require.Nil(t, err, spec.Image)
 		defer container.Destroy()
@@ -78,7 +78,7 @@ func TestConnectToMySQL(t *testing.T) {
 }
 
 func TestConnectToMySQLWithCustomizedDB(t *testing.T) {
-	for _, spec := range []Specification{Mysql5, Mysql55, Mysql56, Mysql57, MariaDB55, MariaDB10} {
+	for _, spec := range []Specification{MySQL5, MySQL55, MySQL56, MySQL57, MariaDB55, MariaDB10} {
 		container, err := Deploy(spec)
 		require.Nil(t, err)
 		defer container.Destroy()
@@ -196,8 +196,8 @@ httpd.serve_forever()
 func TestHaveImage(t *testing.T) {
 	assert := assert.New(t)
 
-	assert.NoError(Pull("postgres"))
-	assert.NoError(Pull("postgres:9.4.6"))
+	assert.NoError(pull("postgres"))
+	assert.NoError(pull("postgres:9.4.6"))
 
 	tests := []struct {
 		name string
@@ -231,7 +231,7 @@ func TestHaveImage(t *testing.T) {
 
 	for idx, tt := range tests {
 		indexStr := fmt.Sprintf("test index: %d", idx)
-		have, err := HaveImage(tt.name)
+		have, err := haveImage(tt.name)
 		assert.NoError(err, indexStr)
 		assert.Equal(tt.have, have, indexStr)
 	}

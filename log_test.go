@@ -16,7 +16,7 @@ func TestLog(t *testing.T) {
 	test2 := " completely different"
 	buf := make([]byte, 64)
 
-	log := NewLog()
+	log := newLog()
 	log.Write([]byte(test1))
 
 	reader := log.Reader()

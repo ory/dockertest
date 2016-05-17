@@ -15,10 +15,10 @@ type Specification struct {
 	// credentials to connect to services
 	Env Env
 
-	// A ReadyWaiter-implementation. Normally a RegexWaiter should suffice
+	// A ReadyWaiter-implementation. Normally a RegexWaiter
 	Waiter ReadyWaiter
-	// A ServiceMap-implementation. Normally a SimpleServiceMap will suffice
-	Services ServiceMap
+	// A Services-implementation. Normally a SimpleServiceMap
+	Services Services
 }
 
 type Env map[string]string
@@ -29,9 +29,9 @@ type ReadyWaiter interface {
 }
 
 type ServiceURLMap map[string]string
-type ServiceMap interface {
+type Services interface {
 	PublishedPorts() []int
-	Map(ServicePortMap) (ServiceURLMap, error)
+	Map(PortMap) (ServiceURLMap, error)
 }
 
 func (s Specification) WithImage(img string) Specification {

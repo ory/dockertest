@@ -10,18 +10,18 @@ import (
 )
 
 // A structure representing
-type ServicePort struct {
+type PublicPort struct {
 	Host string `json:"HostIP"`
 	Port string `json:"HostPort"`
 }
 
-func (sp ServicePort) String() string {
+func (sp PublicPort) String() string {
 	return net.JoinHostPort(sp.Host, sp.Port)
 }
 
-type ServicePortMap map[int]ServicePort
+type PortMap map[int]PublicPort
 
-func (spm ServicePortMap) Wait(timeout time.Duration) error {
+func (spm PortMap) Wait(timeout time.Duration) error {
 	for _, svc := range spm {
 		if err := netutil.AwaitReachable(svc.String(), timeout); err != nil {
 			return err
@@ -44,7 +44,7 @@ func (p SimpleServiceMap) PublishedPorts() (ports []int) {
 	return ports
 }
 
-func (p SimpleServiceMap) Map(m ServicePortMap) (ServiceURLMap, error) {
+func (p SimpleServiceMap) Map(m PortMap) (ServiceURLMap, error) {
 	res := ServiceURLMap{}
 	for name, spec := range p {
 		var url bytes.Buffer
@@ -57,7 +57,7 @@ func (p SimpleServiceMap) Map(m ServicePortMap) (ServiceURLMap, error) {
 }
 
 // Defines a service by name and a urlTemplate, which is a text/Template called
-// with ServicePort for context
+// with Port for context
 func SimpleService(port int, urlTemplate string) serviceSpec {
 	return serviceSpec{
 		port:        port,

@@ -9,11 +9,11 @@ import (
 )
 
 var (
-	// PostgresUsername must be passed as username when connecting to postgres
-	PostgresUsername = "postgres"
+	// postgresUsername must be passed as username when connecting to postgres
+	postgresUsername = "postgres"
 
-	// PostgresPassword must be passed as password when connecting to postgres
-	PostgresPassword = "docker"
+	// postgresPassword must be passed as password when connecting to postgres
+	postgresPassword = "docker"
 )
 
 var PostgreSQL9 = Specification{
@@ -23,10 +23,10 @@ var PostgreSQL9 = Specification{
 		"database system is ready to accept connections",
 	),
 	Services: SimpleServiceMap{
-		"main": SimpleService(5432, fmt.Sprintf("postgres://%s:%s@{{.}}/postgres?sslmode=disable", PostgresUsername, PostgresPassword)),
+		"main": SimpleService(5432, fmt.Sprintf("postgres://%s:%s@{{.}}/postgres?sslmode=disable", postgresUsername, postgresPassword)),
 	},
 	Env: Env{
-		"POSTGRES_PASSWORD": PostgresPassword,
+		"POSTGRES_PASSWORD": postgresPassword,
 	},
 }
 
