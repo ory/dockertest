@@ -1,4 +1,4 @@
-# [ory.am](https://ory.am)/dockertest
+# [ory.am](https://ory.am)/dockertest v3 api preview
 
 [![Build Status](https://travis-ci.org/ory-am/dockertest.svg)](https://travis-ci.org/ory-am/dockertest?branch=master)
 [![Coverage Status](https://coveralls.io/repos/ory-am/dockertest/badge.svg?branch=master&service=github)](https://coveralls.io/github/ory-am/dockertest?branch=master)
