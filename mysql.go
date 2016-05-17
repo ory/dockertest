@@ -19,58 +19,26 @@ var (
 	MySQLPassword = "root"
 )
 
-var mysqlWaiter = RegexWaiter(
-	"MySQL init process done. Ready for start up",
-	"mysqld: ready for connections",
-)
-var mysqlServiceMap = SimpleServiceMap{
-	"main": SimpleService(3306, fmt.Sprintf("%s:%s@tcp({{.}})/mysql", MySQLUsername, MySQLPassword)),
-}
-var mysqlEnv = Env{
-	"MYSQL_ROOT_PASSWORD": MySQLPassword,
-}
-
-var Mysql55 = Specification{
-	Image:    "mysql:5.5",
-	Waiter:   mysqlWaiter,
-	Services: mysqlServiceMap,
-	Env:      mysqlEnv,
+var Mysql5 = Specification{
+	Image: "mysql:5",
+	Waiter: RegexWaiter(
+		"MySQL init process done. Ready for start up",
+		"mysqld: ready for connections",
+	),
+	Services: SimpleServiceMap{
+		"main": SimpleService(3306, fmt.Sprintf("%s:%s@tcp({{.}})/mysql", MySQLUsername, MySQLPassword)),
+	},
+	Env: Env{
+		"MYSQL_ROOT_PASSWORD": MySQLPassword,
+	},
 }
 
-var Mysql56 = Specification{
-	Image:    "mysql:5.6",
-	Waiter:   mysqlWaiter,
-	Services: mysqlServiceMap,
-	Env:      mysqlEnv,
-}
+var Mysql55 = Mysql5.WithVersion("5.5")
+var Mysql56 = Mysql5.WithVersion("5.6")
+var Mysql57 = Mysql5.WithVersion("5.7")
 
-var Mysql57 = Specification{
-	Image:    "mysql:5.7",
-	Waiter:   mysqlWaiter,
-	Services: mysqlServiceMap,
-	Env:      mysqlEnv,
-}
-
-var MariaDB55 = Specification{
-	Image:    "mariadb:5.5",
-	Waiter:   mysqlWaiter,
-	Services: mysqlServiceMap,
-	Env:      mysqlEnv,
-}
-
-var MariaDB100 = Specification{
-	Image:    "mariadb:10.0",
-	Waiter:   mysqlWaiter,
-	Services: mysqlServiceMap,
-	Env:      mysqlEnv,
-}
-
-var MariaDB101 = Specification{
-	Image:    "mariadb:10.1",
-	Waiter:   mysqlWaiter,
-	Services: mysqlServiceMap,
-	Env:      mysqlEnv,
-}
+var MariaDB55 = Mysql5.WithImage("mariadb:5.5")
+var MariaDB10 = MariaDB55.WithVersion("10")
 
 // SetUpMySQLDatabase connects mysql container with given $connectURL and also creates a new database named $databaseName
 // A modified url used to connect the created database will be returned

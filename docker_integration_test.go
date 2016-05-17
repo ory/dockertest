@@ -66,7 +66,7 @@ func TestConnectToRabbitMQ(t *testing.T) {
 }
 
 func TestConnectToMySQL(t *testing.T) {
-	for _, spec := range []Specification{Mysql55, Mysql56, Mysql57, MariaDB55, MariaDB100, MariaDB101} {
+	for _, spec := range []Specification{Mysql5, Mysql55, Mysql56, Mysql57, MariaDB55, MariaDB10} {
 		container, err := Deploy(spec)
 		require.Nil(t, err, spec.Image)
 		defer container.Destroy()
@@ -78,7 +78,7 @@ func TestConnectToMySQL(t *testing.T) {
 }
 
 func TestConnectToMySQLWithCustomizedDB(t *testing.T) {
-	for _, spec := range []Specification{Mysql55, Mysql56, Mysql57, MariaDB55, MariaDB100, MariaDB101} {
+	for _, spec := range []Specification{Mysql5, Mysql55, Mysql56, Mysql57, MariaDB55, MariaDB10} {
 		container, err := Deploy(spec)
 		require.Nil(t, err)
 		defer container.Destroy()

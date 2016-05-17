@@ -10,15 +10,5 @@ var Redis3 = Specification{
 	Waiter:   redisWaiter,
 	Services: redisSvcMap,
 }
-
-var Redis30 = Specification{
-	Image:    "redis:3.0",
-	Waiter:   redisWaiter,
-	Services: redisSvcMap,
-}
-
-var Redis32 = Specification{
-	Image:    "redis:3.2",
-	Waiter:   redisWaiter,
-	Services: redisSvcMap,
-}
+var Redis30 = Redis3.WithVersion("3.0")
+var Redis32 = Redis3.WithVersion("3.2")

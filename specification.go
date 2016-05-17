@@ -1,5 +1,10 @@
 package dockertest
 
+import (
+	"fmt"
+	"strings"
+)
+
 type Specification struct {
 	// Name of the docker-image to launch from
 	Image string
@@ -27,4 +32,36 @@ type ServiceURLMap map[string]string
 type ServiceMap interface {
 	PublishedPorts() []int
 	Map(ServicePortMap) (ServiceURLMap, error)
+}
+
+func (s Specification) WithImage(img string) Specification {
+	s.Image = img
+	return s
+}
+
+func rightSplit(s, delim string) (head, tail string) {
+	if sep := strings.LastIndex(s, delim); sep != -1 {
+		return s[:sep], s[sep+1:]
+	} else {
+		return s, ""
+	}
+}
+
+func (s Specification) WithTag(t string) Specification {
+	repo, _ := rightSplit(s.Image, ":")
+	return s.WithImage(fmt.Sprintf("%s:%s", repo, t))
+}
+
+// Alias for WithTag(v)
+func (s Specification) WithVersion(v string) Specification {
+	return s.WithTag(v)
+}
+
+func (s Specification) WithArguments(args ...string) Specification {
+	s.ImageArguments = args
+	return s
+}
+
+func (s Specification) WithAddedArguments(args ...string) Specification {
+	return s.WithArguments(append(s.ImageArguments, args...)...)
 }
