@@ -1,20 +1,12 @@
 package dockertest
 
 import (
-	"camlistore.org/pkg/netutil"
 	"fmt"
-	"os/exec"
-	"strings"
 	"time"
 )
 
 // ContainerID represents a container and offers methods like Kill or IP.
 type ContainerID string
-
-// IP retrieves the container's IP address.
-func (c ContainerID) IP() (string, error) {
-	return IP(string(c))
-}
 
 // Kill runs "docker kill" on the container.
 func (c ContainerID) Kill() error {
@@ -40,26 +32,19 @@ func (c ContainerID) KillRemove() error {
 
 // lookup retrieves the ip address of the container, and tries to reach
 // before timeout the tcp address at this ip and given port.
-func (c ContainerID) lookup(ports []int, timeout time.Duration) (ip string, err error) {
-	if DockerMachineAvailable {
-		var out []byte
-		out, err = exec.Command("docker-machine", "ip", DockerMachineName).Output()
-		ip = strings.TrimSpace(string(out))
-	} else if BindDockerToLocalhost != "" {
-		ip = "127.0.0.1"
-	} else {
-		ip, err = c.IP()
-	}
+func (c ContainerID) lookup(timeout time.Duration) (ip string, err error) {
+	portMap, err := ports(string(c))
 	if err != nil {
-		err = fmt.Errorf("error getting IP: %v", err)
+		err = fmt.Errorf("error reading Ports: %v", err)
 		return
 	}
-	for _, port := range ports {
-		addr := fmt.Sprintf("%s:%d", ip, port)
-		err = netutil.AwaitReachable(addr, timeout)
-		if err != nil {
-			return
-		}
+
+	err = portMap.Wait(timeout)
+
+	// Extract some IP
+	for _, v := range portMap {
+		ip = v.Host
+		break
 	}
 	return
 }

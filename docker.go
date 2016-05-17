@@ -25,6 +25,7 @@ import (
 	"math/rand"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -186,29 +187,68 @@ func Pull(image string) error {
 	return err
 }
 
-// IP returns the IP address of the container.
-func IP(containerID string) (string, error) {
+// internal structure used for describing a running container
+type container struct {
+	NetworkSettings struct {
+		IPAddress string
+		Ports     map[string][]ServicePort
+	}
+}
+
+func inspectContainer(containerID string) (container, error) {
 	out, err := runDockerCommand("docker", "inspect", containerID).Output()
 	if err != nil {
-		return "", err
-	}
-	type networkSettings struct {
-		IPAddress string
-	}
-	type container struct {
-		NetworkSettings networkSettings
+		return container{}, err
 	}
 	var c []container
 	if err := json.NewDecoder(bytes.NewReader(out)).Decode(&c); err != nil {
-		return "", err
+		return container{}, err
 	}
 	if len(c) == 0 {
-		return "", errors.New("no output from docker inspect")
+		return container{}, errors.New("no output from docker inspect")
 	}
-	if ip := c[0].NetworkSettings.IPAddress; ip != "" {
-		return ip, nil
+	return c[0], nil
+}
+
+// Return the exposed Services, on their bound public port
+func ports(containerID string) (ServicePortMap, error) {
+	c, err := inspectContainer(containerID)
+	if err != nil {
+		return ServicePortMap{}, err
 	}
-	return "", errors.New("could not find an IP. Not running?")
+	if len(c.NetworkSettings.Ports) == 0 {
+		return ServicePortMap{}, errors.New("could not find any exposed ports. Not running?")
+	}
+
+	var hostIp = "127.0.0.1"
+	if DockerMachineAvailable {
+		b, err := exec.Command("docker-machine", "ip", DockerMachineName).Output()
+		if err != nil {
+			return nil, fmt.Errorf("Failed to get docker-machine ip: %s", err)
+		}
+		hostIp = strings.TrimSpace(string(b))
+	}
+
+	portMap := make(ServicePortMap)
+	for key, x := range c.NetworkSettings.Ports {
+		ports := strings.Split(key, "/")[0]
+		port, err := strconv.Atoi(ports)
+		if err != nil {
+			return ServicePortMap{}, err
+		}
+
+		if len(x) > 0 {
+			if x[0].Host == "0.0.0.0" {
+				x[0].Host = hostIp
+			}
+			portMap[port] = x[0]
+		} else {
+			ip := c.NetworkSettings.IPAddress
+			portMap[port] = ServicePort{Host: ip, Port: ports}
+		}
+
+	}
+	return portMap, nil
 }
 
 // SetupMultiportContainer sets up a container, using the start function to run the given image.
@@ -227,7 +267,7 @@ func SetupMultiportContainer(image string, ports []int, timeout time.Duration, s
 	}
 
 	c = ContainerID(containerID)
-	ip, err = c.lookup(ports, timeout)
+	ip, err = c.lookup(timeout)
 	if err != nil {
 		c.KillRemove()
 		return "", "", err
