@@ -163,13 +163,14 @@ type Container interface {
 }
 
 type dockerContainer struct {
-	id   string
-	log  *logBuffer
-	urls ServiceURLMap
+	docker *dockerRunner
+	id     string
+	log    *logBuffer
+	urls   ServiceURLMap
 }
 
 func (c dockerContainer) Destroy() error {
-	return destroyContainer(c.id)
+	return c.docker.Destroy(c.id)
 }
 
 func (c dockerContainer) ServiceURL() string {
@@ -184,7 +185,13 @@ func (c dockerContainer) Log() io.Reader {
 	return c.log.Reader()
 }
 
-func Deploy(spec Specification) (c Container, err error) {
+type dockerRunner struct{}
+
+func (dockerRunner) Destroy(containerId string) error {
+	return runDockerCommand("docker", "rm", "-f", containerId).Run()
+}
+
+func (r dockerRunner) Deploy(spec Specification) (c Container, err error) {
 	if err := runLongTest(spec.Image); err != nil {
 		return nil, err
 	}
@@ -212,7 +219,7 @@ func Deploy(spec Specification) (c Container, err error) {
 	defer func() {
 		// Dying without returning the container
 		if c == nil {
-			destroyContainer(id)
+			r.Destroy(id)
 		}
 	}()
 
@@ -231,9 +238,10 @@ func Deploy(spec Specification) (c Container, err error) {
 	}
 
 	c_ := dockerContainer{
-		id:   id,
-		log:  l,
-		urls: services,
+		docker: &r,
+		id:     id,
+		log:    l,
+		urls:   services,
 	}
 	if err := spec.Waiter.WaitForReady(c_); err != nil {
 		return nil, fmt.Errorf("Failed to get ready-signal from container: %s", err)
@@ -256,14 +264,6 @@ func portMappingArguments(ports []int) []string {
 		portMappings = append(portMappings, "-p", forward)
 	}
 	return portMappings
-}
-
-// destroyContainer runs docker rm -f on a container.
-func destroyContainer(container string) error {
-	if container != "" {
-		return runDockerCommand("docker", "rm", "-f", container).Run()
-	}
-	return nil
 }
 
 // pull retrieves the docker image with 'docker pull'.
