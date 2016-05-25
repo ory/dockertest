@@ -49,6 +49,9 @@ var (
 	// RabbitMQImage name is the RabbitMQ image name on dockerhub.
 	RabbitMQImageName = env.Getenv("DOCKERTEST_RABBITMQ_IMAGE_NAME", "rabbitmq")
 
+	// ActiveMQImage name is the ActiveMQ image name on dockerhub.
+	ActiveMQImageName = env.Getenv("DOCKERTEST_ACTIVEMQ_IMAGE_NAME", "webcenter/activemq")
+
 	// MockserverImageName name is the Mockserver image name on dockerhub.
 	MockserverImageName = env.Getenv("DOCKERTEST_MOCKSERVER_IMAGE_NAME", "jamesdbloom/mockserver")
 )

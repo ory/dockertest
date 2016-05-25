@@ -11,8 +11,9 @@ import (
 	rethink "github.com/dancannon/gorethink"
 	"github.com/garyburd/redigo/redis"
 	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-stomp/stomp"
 	_ "github.com/lib/pq"
-	"github.com/mattbaird/elastigo/lib"
+	elastigo "github.com/mattbaird/elastigo/lib"
 	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -72,6 +73,19 @@ func TestConnectToRabbitMQ(t *testing.T) {
 			return false
 		}
 		defer amqp.Close()
+		return true
+	})
+	assert.Nil(t, err)
+	defer c.KillRemove()
+}
+
+func TestConnectToActiveMQ(t *testing.T) {
+	c, err := ConnectToActiveMQ(15, time.Millisecond*500, func(url string) bool {
+		conn, err := stomp.Dial("tcp", url, stomp.ConnOpt.Login("admin", "admin"))
+		if err != nil {
+			return false
+		}
+		defer conn.Disconnect()
 		return true
 	})
 	assert.Nil(t, err)
