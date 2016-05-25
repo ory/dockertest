@@ -12,7 +12,7 @@ import (
 // or makes the test fail on error.
 func SetupActiveMQContainer() (c ContainerID, ip string, port int, err error) {
 	port = RandomPort()
-	forward := fmt.Sprintf("%d:%d", port, 61616)
+	forward := fmt.Sprintf("%d:%d", port, 61613)
 	if BindDockerToLocalhost != "" {
 		forward = "127.0.0.1:" + forward
 	}

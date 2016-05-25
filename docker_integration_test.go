@@ -81,7 +81,7 @@ func TestConnectToRabbitMQ(t *testing.T) {
 
 func TestConnectToActiveMQ(t *testing.T) {
 	c, err := ConnectToActiveMQ(15, time.Millisecond*500, func(url string) bool {
-		conn, err := stomp.Dial("tcp", url)
+		conn, err := stomp.Dial("tcp", url, stomp.ConnOpt.Login("admin", "admin"))
 		if err != nil {
 			return false
 		}
