@@ -156,7 +156,7 @@ import (
 var db *sql.DB
 
 func TestMain(m *testing.M) {
-	if c, err := dockertest.ConnectToPostgreSQL(15, time.Second, func(url string) bool {
+	c, err := dockertest.ConnectToPostgreSQL(15, time.Second, func(url string) bool {
 	    // Check if postgres is responsive...
 		var err error
 		db, err = sql.Open("postgres", url)
@@ -164,7 +164,8 @@ func TestMain(m *testing.M) {
 			return false
 		}
 		return db.Ping() == nil
-	}); err != nil {
+	})
+	if err != nil {
 		log.Fatalf("Could not connect to database: %s", err)
 	}
 	
