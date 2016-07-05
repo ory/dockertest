@@ -8,16 +8,18 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/mgo.v2"
+
 	rethink "github.com/dancannon/gorethink"
 	"github.com/garyburd/redigo/redis"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/go-stomp/stomp"
+	consulapi "github.com/hashicorp/consul/api"
 	_ "github.com/lib/pq"
 	elastigo "github.com/mattbaird/elastigo/lib"
 	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/mgo.v2"
 )
 
 func TestConnectToRethinkDB(t *testing.T) {
@@ -197,6 +199,31 @@ func TestConnectToNSQd(t *testing.T) {
 		resp, err := http.Get(fmt.Sprintf("http://%s:%d/ping", ip, httpPort))
 		require.Nil(t, err)
 		require.Equal(t, resp.StatusCode, 200)
+		return true
+	})
+	assert.Nil(t, err)
+	defer c.KillRemove()
+}
+
+func TestConnectToConsul(t *testing.T) {
+	BindDockerToLocalhost = "true"
+	c, err := ConnectToConsul(30, time.Millisecond*500, func(address string) bool {
+		config := consulapi.DefaultConfig()
+		config.Address = address
+		config.Token = ConsulACLMasterToken
+		client, err := consulapi.NewClient(config)
+		if err != nil {
+			return false
+		}
+
+		_, err = client.KV().Put(&consulapi.KVPair{
+			Key:   "setuptest",
+			Value: []byte("setuptest"),
+		}, nil)
+		if err != nil {
+			return false
+		}
+
 		return true
 	})
 	assert.Nil(t, err)
