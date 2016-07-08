@@ -57,6 +57,9 @@ var (
 
 	// ConsulImageName is the Consul image name on dockerhub.
 	ConsulImageName = env.Getenv("DOCKERTEST_CONSUL_IMAGE_NAME", "consul")
+
+	// ZooKeeperImageName is the ZooKeeper image name on dockerhub.
+	ZooKeeperImageName = env.Getenv("DOCKERTEST_ZOOKEEPER_IMAGE_NAME", "jplock/zookeeper")
 )
 
 // Username and password configuration

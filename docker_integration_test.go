@@ -17,6 +17,7 @@ import (
 	consulapi "github.com/hashicorp/consul/api"
 	_ "github.com/lib/pq"
 	elastigo "github.com/mattbaird/elastigo/lib"
+	"github.com/samuel/go-zookeeper/zk"
 	"github.com/streadway/amqp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -264,6 +265,33 @@ func TestConnectToMockServer(t *testing.T) {
 			_, err = http.DefaultClient.Do(req)
 			return err == nil
 		})
+	assert.Nil(t, err)
+	defer c.KillRemove()
+}
+
+func TestConnectToZooKeeper(t *testing.T) {
+	c, err := ConnectToZooKeeper(15, time.Millisecond*500, func(url string) bool {
+		conn, _, err := zk.Connect([]string{url}, time.Second)
+		if err != nil {
+			return false
+		}
+		defer conn.Close()
+
+		// Verify that we can perform operations, and that it's
+		// a clean slate (/zookeeper should be the only path)
+		children, _, err := conn.Children("/")
+		if err != nil {
+			return false
+		}
+		if len(children) != 1 {
+			return false
+		}
+		if children[0] != "zookeeper" {
+			return false
+		}
+
+		return true
+	})
 	assert.Nil(t, err)
 	defer c.KillRemove()
 }
