@@ -14,6 +14,7 @@ import (
 	"github.com/garyburd/redigo/redis"
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/go-stomp/stomp"
+	"github.com/gocql/gocql"
 	consulapi "github.com/hashicorp/consul/api"
 	_ "github.com/lib/pq"
 	elastigo "github.com/mattbaird/elastigo/lib"
@@ -287,6 +288,37 @@ func TestConnectToZooKeeper(t *testing.T) {
 			return false
 		}
 		if children[0] != "zookeeper" {
+			return false
+		}
+
+		return true
+	})
+	assert.Nil(t, err)
+	defer c.KillRemove()
+}
+
+func TestConnectToCassandra(t *testing.T) {
+	// Cassandra seems to have issues if this is not set.
+	// See: http://stackoverflow.com/questions/34645846/cannot-connect-to-cassandra-docker-with-cqlsh
+	BindDockerToLocalhost = "true"
+
+	// Cassandra takes a while to start up, so we have a longer retry window
+	c, err := ConnectToCassandra("3.7", 15, time.Second*5, func(url string) bool {
+		cluster := gocql.NewCluster(url)
+		cluster.Keyspace = "system"
+		cluster.ProtoVersion = 4 // Required for cassandra 3.x
+
+		session, err := cluster.CreateSession()
+		if err != nil {
+			return false
+		}
+		defer session.Close()
+
+		// Query one of the system tables as a basic test.
+		it := session.Query("select * from local").Iter()
+		defer it.Close()
+
+		if it.NumRows() == 0 {
 			return false
 		}
 
