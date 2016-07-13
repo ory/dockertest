@@ -23,7 +23,7 @@ func SetupZooKeeperContainer() (c ContainerID, ip string, port int, err error) {
 	return
 }
 
-// ConnectToZooKeeper starts a MySQL image and passes the nodes connection string to the connector callback function.
+// ConnectToZooKeeper starts a ZooKeeper image and passes the nodes connection string to the connector callback function.
 // The connection string will match the ip:port pattern.
 func ConnectToZooKeeper(tries int, delay time.Duration, connector func(url string) bool) (c ContainerID, err error) {
 	c, ip, port, err := SetupZooKeeperContainer()
