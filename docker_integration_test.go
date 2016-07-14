@@ -302,8 +302,13 @@ func TestConnectToCassandra(t *testing.T) {
 	// See: http://stackoverflow.com/questions/34645846/cannot-connect-to-cassandra-docker-with-cqlsh
 	BindDockerToLocalhost = "true"
 
+	env := []string{
+		"-e", "CASSANDRA_RACK=TEST_RACK",
+		"-e", "CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch",
+	}
+
 	// Cassandra takes a while to start up, so we have a longer retry window
-	c, err := ConnectToCassandra("3.7", 15, time.Second*5, func(url string) bool {
+	c, err := ConnectToCassandra("3.7", 20, time.Second*5, func(url string) bool {
 		cluster := gocql.NewCluster(url)
 		cluster.Keyspace = "system"
 		cluster.ProtoVersion = 4 // Required for cassandra 3.x
@@ -314,16 +319,20 @@ func TestConnectToCassandra(t *testing.T) {
 		}
 		defer session.Close()
 
-		// Query one of the system tables as a basic test.
-		it := session.Query("select * from local").Iter()
+		// Verify that the environment property was applied correctly,
+		// and that querying the node works.
+		it := session.Query("select rack from local").Iter()
 		defer it.Close()
 
-		if it.NumRows() == 0 {
-			return false
+		var rackName string
+		for it.Scan(&rackName) {
+			if rackName != "TEST_RACK" {
+				return false
+			}
 		}
 
 		return true
-	})
+	}, env...)
 	assert.Nil(t, err)
 	defer c.KillRemove()
 }
