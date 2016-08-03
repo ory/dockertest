@@ -37,7 +37,7 @@ import (
 // based on image.
 func runLongTest(image string) error {
 	DockerMachineAvailable = false
-	if haveDockerMachine() {
+	if haveDockerMachine() && UseDockerMachine != "" {
 		DockerMachineAvailable = true
 		if !startDockerMachine() {
 			log.Printf(`Starting docker machine "%s" failed.
