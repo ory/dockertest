@@ -36,11 +36,12 @@ Dockertest ships with support for these backends:
 - [Write awesome tests](#write-awesome-tests)
   - [Setting up Travis-CI](#setting-up-travis-ci)
 - [Troubleshoot & FAQ](#troubleshoot-&-faq)
-  - [I want to use a specific image version](#i-want-to-use-a-specific-image-version)
+  - [I need to use a specific container version for XYZ](#i-need-to-use-a-specific-container-version-for-xyz)
   - [My build is broken!](#my-build-is-broken)
   - [Out of disk space](#out-of-disk-space)
+  - [I am using docker machine (OSX / Linux)](#i-am-using-docker-machine-osx--linux)
   - [Removing old containers](#removing-old-containers)
-  - [Customized database] (#Customized-database)
+  - [Customized database](#customized-database)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -224,6 +225,13 @@ If you relied on these, run `go get gopkg.in/ory-am/dockertest.v1` and replace
 ### Out of disk space
 
 Try cleaning up the images with [docker-cleanup-volumes](https://github.com/chadoe/docker-cleanup-volumes).
+
+### I am using docker machine (OSX / Linux)
+
+First of all, consider upgrading! If that's not an option, there are some steps you need to take:
+
+* Set `dockertest.UseDockerMachine = "1"` or set the environment variable `DOCKERTEST_LEGACY_DOCKER_MACHINE=1`
+* Set `docker.BindDockerToLocalhost = ""` or alternatively `DOCKER_BIND_LOCALHOST=`
 
 ### Removing old containers
 
