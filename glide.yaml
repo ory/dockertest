@@ -17,7 +17,7 @@ testImport:
   subpackages:
   - redis
 - package: github.com/go-stomp/stomp
-  version: ~1.0.1
+  version: 364e36fe21291dd5aec3cba10ea15b0e654d9b40
 - package: github.com/gocql/gocql
 - package: github.com/hashicorp/consul
   version: ~0.7.0-test2

@@ -1,5 +1,5 @@
-hash: 7b5e7c8a90e42237f370b2c6b3802354527bb0a57ee17346c9eda8cae1cd25f6
-updated: 2016-08-08T16:42:33.573194097+02:00
+hash: ea1ce82416f8736cf3fd1f562146f135ee5071c7aed0dcbb4e33b4c18cdeaf6d
+updated: 2016-08-08T16:52:24.58116408+02:00
 imports:
 - name: github.com/go-errors/errors
   version: a41850380601eeb43f4350f7d17c6bbd8944aaf8
@@ -34,7 +34,9 @@ testImports:
   - internal
   - redis
 - name: github.com/go-stomp/stomp
-  version: f9009d7baa4d1b59edb7c0dcfc8e7a798ac07533
+  version: 364e36fe21291dd5aec3cba10ea15b0e654d9b40
+  subpackages:
+  - frame
 - name: github.com/gocql/gocql
   version: b2caded3d0f457e42515c06d4092c02055cebaa0
   subpackages:
@@ -110,7 +112,3 @@ testImports:
   - internal/json
   - internal/sasl
   - internal/scram
-- name: gopkg.in/stomp.v1
-  version: f9009d7baa4d1b59edb7c0dcfc8e7a798ac07533
-  subpackages:
-  - frame
