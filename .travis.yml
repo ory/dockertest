@@ -6,8 +6,7 @@ services:
   - docker
 
 env:
-  - DOCKER_BIND_LOCALHOST=true
-  - GO15VENDOREXPERIMENT=1
+  - DOCKER_BIND_LOCALHOST=true GO15VENDOREXPERIMENT=1
 
 go:
   - 1.4
