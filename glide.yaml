@@ -24,7 +24,7 @@ testImport:
   subpackages:
   - api
 - package: github.com/mattbaird/elastigo
-  version: ~1.0.0
+  version: 34c4c4d8425cbdcbc8e257943a2044d5e9f7dab5
   subpackages:
   - lib
 - package: github.com/samuel/go-zookeeper
