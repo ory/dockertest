@@ -1,10 +1,10 @@
-hash: 4a01fa85d8851d5170b72c43e7f2533b04e576041d4627e28a4ea1237b216b19
-updated: 2016-08-08T16:07:59.357812966+02:00
+hash: 7b5e7c8a90e42237f370b2c6b3802354527bb0a57ee17346c9eda8cae1cd25f6
+updated: 2016-08-08T16:42:33.573194097+02:00
 imports:
 - name: github.com/go-errors/errors
   version: a41850380601eeb43f4350f7d17c6bbd8944aaf8
 - name: github.com/go-sql-driver/mysql
-  version: a732e14c62dde3285440047bba97581bc472ae18
+  version: 0b58b37b664c21f3010e836f1b931e1d0b0b0685
 - name: github.com/lib/pq
   version: 80f8150043c80fb52dee6bc863a709cdac7ec8f8
   subpackages:
@@ -34,7 +34,7 @@ testImports:
   - internal
   - redis
 - name: github.com/go-stomp/stomp
-  version: 364e36fe21291dd5aec3cba10ea15b0e654d9b40
+  version: f9009d7baa4d1b59edb7c0dcfc8e7a798ac07533
 - name: github.com/gocql/gocql
   version: b2caded3d0f457e42515c06d4092c02055cebaa0
   subpackages:
