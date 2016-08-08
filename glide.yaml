@@ -1,0 +1,39 @@
+package: github.com/ory-am/dockertest
+import:
+- package: github.com/go-errors/errors
+- package: github.com/go-sql-driver/mysql
+  version: ~1.2.0
+- package: github.com/lib/pq
+- package: github.com/ory-am/common
+  subpackages:
+  - env
+- package: github.com/pborman/uuid
+  version: ~1.0.0
+testImport:
+- package: github.com/dancannon/gorethink
+  version: ~2.1.3
+- package: github.com/garyburd/redigo
+  version: ~1.0.0
+  subpackages:
+  - redis
+- package: github.com/go-stomp/stomp
+  version: ~1.0.1
+- package: github.com/gocql/gocql
+- package: github.com/hashicorp/consul
+  version: ~0.7.0-test2
+  subpackages:
+  - api
+- package: github.com/mattbaird/elastigo
+  version: ~1.0.0
+  subpackages:
+  - lib
+- package: github.com/samuel/go-zookeeper
+  subpackages:
+  - zk
+- package: github.com/streadway/amqp
+- package: github.com/stretchr/testify
+  version: ~1.1.3
+  subpackages:
+  - assert
+  - require
+- package: gopkg.in/mgo.v2
