@@ -34,7 +34,7 @@ testImports:
   - internal
   - redis
 - name: github.com/go-stomp/stomp
-  version: f9009d7baa4d1b59edb7c0dcfc8e7a798ac07533
+  version: 364e36fe21291dd5aec3cba10ea15b0e654d9b40
 - name: github.com/gocql/gocql
   version: b2caded3d0f457e42515c06d4092c02055cebaa0
   subpackages:
