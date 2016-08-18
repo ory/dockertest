@@ -2,10 +2,10 @@ package dockertest
 
 import (
 	"fmt"
+	"net"
 	"os/exec"
 	"strings"
 	"time"
-	"net"
 )
 
 // AwaitReachable tries to make a TCP connection to addr regularly.
@@ -34,6 +34,16 @@ func (c ContainerID) IP() (string, error) {
 // Kill runs "docker kill" on the container.
 func (c ContainerID) Kill() error {
 	return KillContainer(string(c))
+}
+
+// Start runs "docker start" on the container.
+func (c ContainerID) Start() error {
+	return StartContainer(string(c))
+}
+
+// Stop runs "docker stop" on the container.
+func (c ContainerID) Stop() error {
+	return StopContainer(string(c))
 }
 
 // Remove runs "docker rm" on the container
