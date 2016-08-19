@@ -177,6 +177,22 @@ func KillContainer(container string) error {
 	return nil
 }
 
+// StartContainer runs 'docker start' on a container.
+func StartContainer(container string) error {
+	if container != "" {
+		return runDockerCommand("docker", "start", container).Run()
+	}
+	return nil
+}
+
+// StopContainer runs 'docker stop' on a container.
+func StopContainer(container string) error {
+	if container != "" {
+		return runDockerCommand("docker", "stop", container).Run()
+	}
+	return nil
+}
+
 // Pull retrieves the docker image with 'docker pull'.
 func Pull(image string) error {
 	out, err := runDockerCommand("docker", "pull", image).CombinedOutput()

@@ -337,6 +337,46 @@ func TestConnectToCassandra(t *testing.T) {
 	defer c.KillRemove()
 }
 
+func TestStartStopContainer(t *testing.T) {
+	var hosts []string
+	c, err := ConnectToZooKeeper(15, time.Millisecond*500, func(url string) bool {
+		conn, _, err := zk.Connect([]string{url}, time.Second)
+		if err != nil {
+			return false
+		}
+		defer conn.Close()
+		hosts = []string{url}
+
+		return true
+	})
+	assert.NoError(t, err)
+	defer c.KillRemove()
+
+	conn, _, err := zk.Connect(hosts, time.Second)
+	assert.NoError(t, err)
+
+	testPath := "/test"
+	testData := []byte("hello")
+
+	path, err := conn.Create(testPath, testData, 0, zk.WorldACL(zk.PermAll))
+	assert.NoError(t, err)
+	assert.Equal(t, testPath, path)
+
+	data, _, err := conn.Get(testPath)
+	assert.NoError(t, err)
+	assert.Equal(t, testData, data)
+
+	// Let's stop the container.
+	assert.NoError(t, c.Stop())
+
+	_, _, err = conn.Get(testPath)
+	assert.EqualError(t, err, zk.ErrNoServer.Error())
+
+	assert.NoError(t, c.Start())
+	data, _, err = conn.Get(testPath)
+	assert.Equal(t, testData, data)
+}
+
 func TestHaveImage(t *testing.T) {
 	assert := assert.New(t)
 
