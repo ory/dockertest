@@ -10,6 +10,7 @@ import (
 
 	"gopkg.in/mgo.v2"
 
+	etcd "github.com/coreos/etcd/clientv3"
 	rethink "github.com/dancannon/gorethink"
 	"github.com/garyburd/redigo/redis"
 	_ "github.com/go-sql-driver/mysql"
@@ -333,6 +334,19 @@ func TestConnectToCassandra(t *testing.T) {
 
 		return true
 	}, env...)
+	assert.Nil(t, err)
+	defer c.KillRemove()
+}
+
+func TestConnectToEtcd(t *testing.T) {
+	c, err := ConnectToEtcd(20, time.Second*10, func(address string) bool {
+		client, err := etcd.New(etcd.Config{
+			Endpoints:   []string{address},
+			DialTimeout: 10 * time.Second,
+		})
+		assert.NotNil(t, client)
+		return err == nil
+	})
 	assert.Nil(t, err)
 	defer c.KillRemove()
 }
