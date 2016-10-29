@@ -22,6 +22,7 @@ Dockertest currently supports these backends:
 * ZooKeeper
 * Cassandra
 * Etcd
+* Consul
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
