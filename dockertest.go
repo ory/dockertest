@@ -1,15 +1,15 @@
 package dockertest
 
 import (
+	"fmt"
+	"github.com/cenk/backoff"
 	dc "github.com/fsouza/go-dockerclient"
 	"github.com/pkg/errors"
-	"fmt"
 	"time"
-	"github.com/cenk/backoff"
 )
 
 type Pool struct {
-	Client *dc.Client
+	Client  *dc.Client
 	MaxWait time.Duration
 }
 
@@ -55,7 +55,7 @@ func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
 
 	if err := d.Client.PullImage(dc.PullImageOptions{
 		Repository: repository,
-		Tag: tag,
+		Tag:        tag,
 	}, dc.AuthConfiguration{}); err != nil {
 		return nil, errors.Wrap(err, "")
 	}
@@ -63,7 +63,7 @@ func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
 	c, err := d.Client.CreateContainer(dc.CreateContainerOptions{
 		Config: &dc.Config{
 			Image: fmt.Sprintf("%s:%s", repository, tag),
-			Env: env,
+			Env:   env,
 		},
 		HostConfig: &dc.HostConfig{
 			PublishAllPorts: true,
@@ -92,7 +92,7 @@ func (d *Pool) Purge(r *Resource) error {
 		return errors.Wrap(err, "")
 	}
 
-	if err := d.Client.RemoveContainer(dc.RemoveContainerOptions{ID: r.Container.ID}); err != nil {
+	if err := d.Client.RemoveContainer(dc.RemoveContainerOptions{ID: r.Container.ID, Force: true, RemoveVolumes: true}); err != nil {
 		return errors.Wrap(err, "")
 	}
 
@@ -103,7 +103,7 @@ func (d *Pool) Retry(op func() error) error {
 	if d.MaxWait == 0 {
 		d.MaxWait = time.Minute / 2
 	}
-	bo :=  backoff.NewExponentialBackOff()
+	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = time.Second * 5
 	bo.MaxElapsedTime = d.MaxWait
 	return backoff.Retry(op, bo)
