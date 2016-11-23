@@ -70,25 +70,23 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Could not start resource: %s", err)
 	}
 
-	defer func() {
-		if err := pool.Purge(resource); err != nil {
-			log.Fatalf("Could not purge resource: %s", err)
-		}
-	}()
-
-	err = pool.Retry(func() error {
+	if err := pool.Retry(func() error {
 		var err error
 		db, err = sql.Open("mysql", fmt.Sprintf("root:secret@(localhost:%s)/mysql", resource.GetPort("3306/tcp")))
 		if err != nil {
 			return err
 		}
 		return db.Ping()
-	})
-	if err != nil {
+	}); err != nil {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
 
-	os.Exit(m.Run())
+    code := m.Run()
+    // Unfortunately you can't put this in a defer function because os.Exit terminates immediately.
+    if err := pool.Purge(resource); err != nil {
+        log.Fatalf("Could not purge resource: %s", err)
+    }
+	os.Exit(code)
 }
 
 func TestSomething(t *testing.T) {
