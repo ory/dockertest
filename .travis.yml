@@ -5,13 +5,9 @@ language: go
 services:
   - docker
 
-env:
-  - DOCKER_BIND_LOCALHOST=true GO15VENDOREXPERIMENT=1
-
 go:
-  - 1.4
-  - 1.5
   - 1.6
+  - 1.7
   - tip
 
 matrix:
@@ -20,8 +16,8 @@ matrix:
     - go: 1.4
 
 install:
-  - go get github.com/mattn/goveralls golang.org/x/tools/cmd/cover github.com/pierrre/gotestcover github.com/Masterminds/glide
-  - glide install
+  - go get github.com/mattn/goveralls golang.org/x/tools/cmd/cover github.com/pierrre/gotestcover
+  - go get .
 
 script:
   - go vet -x .
