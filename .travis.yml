@@ -5,13 +5,9 @@ language: go
 services:
   - docker
 
-env:
-  - DOCKER_BIND_LOCALHOST=true GO15VENDOREXPERIMENT=1
-
 go:
-  - 1.4
-  - 1.5
   - 1.6
+  - 1.7
   - tip
 
 matrix:
