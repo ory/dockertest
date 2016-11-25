@@ -1,15 +1,15 @@
 package dockertest
 
 import (
-	"testing"
-	"os"
-	"log"
-	"github.com/stretchr/testify/require"
-	"github.com/stretchr/testify/assert"
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/lib/pq"
 	"database/sql"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"log"
+	"os"
+	"testing"
 )
 
 var docker = os.Getenv("DOCKER_URL")
