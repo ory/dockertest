@@ -43,7 +43,7 @@ func (r *Resource) GetPort(id string) string {
 // variable DOCKER_URL or if that is not defined a sensible default for the operating system you are on.
 func NewPool(endpoint string) (*Pool, error) {
 	if endpoint == "" {
-		if os.Getenv("DOCKER_URL") {
+		if os.Getenv("DOCKER_URL") != "" {
 			endpoint = os.Getenv("DOCKER_URL")
 		} else if runtime.GOOS == "windows" {
 			endpoint = "http://localhost:2375"
@@ -51,6 +51,7 @@ func NewPool(endpoint string) (*Pool, error) {
 			endpoint = "unix:///var/run/docker.sock"
 		}
 	}
+
 	client, err := dc.NewClient(endpoint)
 	if err != nil {
 		return nil, errors.Wrap(err, "")
