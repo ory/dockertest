@@ -25,7 +25,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestMySQL(t *testing.T) {
-	resource, err := pool.Run("mysql", "5.7", []string{"MYSQL_ROOT_PASSWORD=secret"})
+	resource, err := pool.Run("mysql", "5.6", []string{"MYSQL_ROOT_PASSWORD=secret"})
 	require.Nil(t, err)
 	assert.NotEmpty(t, resource.GetPort("3306/tcp"))
 
@@ -41,7 +41,7 @@ func TestMySQL(t *testing.T) {
 }
 
 func TestPostgres(t *testing.T) {
-	resource, err := pool.Run("postgres", "9.6", nil)
+	resource, err := pool.Run("postgres", "9.5", nil)
 	require.Nil(t, err)
 	assert.NotEmpty(t, resource.GetPort("5432/tcp"))
 

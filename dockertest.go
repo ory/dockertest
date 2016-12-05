@@ -70,11 +70,14 @@ func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
 		tag = "latest"
 	}
 
-	if err := d.Client.PullImage(dc.PullImageOptions{
-		Repository: repository,
-		Tag:        tag,
-	}, dc.AuthConfiguration{}); err != nil {
-		return nil, errors.Wrap(err, "")
+	_, err := d.Client.InspectImage(fmt.Sprintf("%s:%s", repository, tag))
+	if err != nil {
+		if err := d.Client.PullImage(dc.PullImageOptions{
+			Repository: repository,
+			Tag:        tag,
+		}, dc.AuthConfiguration{}); err != nil {
+			return nil, errors.Wrap(err, "")
+		}
 	}
 
 	c, err := d.Client.CreateContainer(dc.CreateContainerOptions{
@@ -121,7 +124,7 @@ func (d *Pool) Purge(r *Resource) error {
 // Retry is an exponential backoff retry helper. You can use it to wait for e.g. mysql to boot up.
 func (d *Pool) Retry(op func() error) error {
 	if d.MaxWait == 0 {
-		d.MaxWait = time.Minute / 2
+		d.MaxWait = time.Minute
 	}
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = time.Second * 5
