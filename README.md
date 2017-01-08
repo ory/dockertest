@@ -12,6 +12,7 @@ Use Docker to run your Go language integration tests against third party service
 - [Why should I use Dockertest?](#why-should-i-use-dockertest)
 - [Installing and using Dockertest](#installing-and-using-dockertest)
   - [Using Dockertest](#using-dockertest)
+  - [Examples](#examples)
   - [Setting up Travis-CI](#setting-up-travis-ci)
 - [Troubleshoot & FAQ](#troubleshoot-&-faq)
   - [Out of disk space](#out-of-disk-space)
