@@ -12,6 +12,7 @@ Use Docker to run your Go language integration tests against third party service
 - [Why should I use Dockertest?](#why-should-i-use-dockertest)
 - [Installing and using Dockertest](#installing-and-using-dockertest)
   - [Using Dockertest](#using-dockertest)
+  - [Examples](#examples)
   - [Setting up Travis-CI](#setting-up-travis-ci)
 - [Troubleshoot & FAQ](#troubleshoot-&-faq)
   - [Out of disk space](#out-of-disk-space)
@@ -41,7 +42,6 @@ go get gopkg.in/ory-am/dockertest.v3
 ```
 
 ### Using Dockertest
-
 
 ```go
 package dockertest_test
@@ -97,6 +97,10 @@ func TestSomething(t *testing.T) {
 	// db.Query()
 }
 ```
+
+### Examples
+
+We provide code examples for well known services in the [examples](examples/) directory, check them out!
 
 ### Setting up Travis-CI
 
