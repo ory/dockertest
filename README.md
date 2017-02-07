@@ -1,7 +1,7 @@
 # [ory.am](https://ory.am)/dockertest
 
-[![Build Status](https://travis-ci.org/ory-am/dockertest.svg)](https://travis-ci.org/ory-am/dockertest?branch=master)
-[![Coverage Status](https://coveralls.io/repos/ory-am/dockertest/badge.svg?branch=master&service=github)](https://coveralls.io/github/ory-am/dockertest?branch=master)
+[![Build Status](https://travis-ci.org/ory/dockertest.svg)](https://travis-ci.org/ory/dockertest?branch=master)
+[![Coverage Status](https://coveralls.io/repos/ory/dockertest/badge.svg?branch=master&service=github)](https://coveralls.io/github/ory/dockertest?branch=master)
 
 Use Docker to run your Go language integration tests against third party services on **Microsoft Windows, Mac OSX and Linux**!
 
@@ -32,13 +32,13 @@ them for your tests.
 
 ## Installing and using Dockertest
 
-Using Dockertest is straightforward and simple. Check the [releases tab](https://github.com/ory-am/dockertest/releases)
+Using Dockertest is straightforward and simple. Check the [releases tab](https://github.com/ory/dockertest/releases)
 for available releases.
 
 To install dockertest, run
 
 ```
-go get gopkg.in/ory-am/dockertest.v3
+go get gopkg.in/ory/dockertest.v3
 ```
 
 ### Using Dockertest
@@ -49,7 +49,7 @@ package dockertest_test
 import (
 	"testing"
 	"log"
-	"gopkg.in/ory-am/dockertest.v3"
+	"gopkg.in/ory/dockertest.v3"
 	_ "github.com/go-sql-driver/mysql"
 	"database/sql"
 	"fmt"

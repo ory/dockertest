@@ -29,7 +29,7 @@ There are many ways to help dockertest besides contributing code:
 
 ## Contributing Code
 
-Unless you are fixing a known bug, we **strongly** recommend discussing it with the core team via a GitHub issue or [dockertest on Gitter.im](https://gitter.im/ory-am/dockertest) before getting started to ensure your work is consistent with dockertest's roadmap and architecture.
+Unless you are fixing a known bug, we **strongly** recommend discussing it with the core team via a GitHub issue or [dockertest on Gitter.im](https://gitter.im/ory/dockertest) before getting started to ensure your work is consistent with dockertest's roadmap and architecture.
 
 All contributions are made via pull request. Note that **all patches from all contributors get reviewed**. After a pull request is made other contributors will offer feedback, and if the patch passes review a maintainer will accept it with a comment. When pull requests fail testing, authors are expected to update their pull requests to address the failures until the tests pass and the pull request merges successfully.
 
@@ -124,4 +124,4 @@ Whether you are a regular contributor or a newcomer, we care about making this c
 * Private harassment is also unacceptable. No matter who you are, if you feel you have been or are being harassed or made uncomfortable by a community member, please contact one of the channel ops or a member of the dockertest core team immediately.
 * Likewise any spamming, trolling, flaming, baiting or other attention-stealing behaviour is not welcome.
 
-We welcome discussion about creating a welcoming, safe, and productive environment for the community. If you have any questions, feedback, or concerns [please let us know](https://gitter.im/ory-am/dockertest).
+We welcome discussion about creating a welcoming, safe, and productive environment for the community. If you have any questions, feedback, or concerns [please let us know](https://gitter.im/ory/dockertest).

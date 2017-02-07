@@ -1,4 +1,4 @@
-package: github.com/ory-am/dockertest
+package: github.com/ory/dockertest
 import:
 - package: github.com/cenk/backoff
   version: v1.0.0
