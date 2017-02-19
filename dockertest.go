@@ -52,7 +52,13 @@ func NewPool(endpoint string) (*Pool, error) {
 		}
 	}
 
-	client, err := dc.NewClient(endpoint)
+	// docker machine cert path, not sure how it applies to non-docker machine scenarios
+	path := os.Getenv("DOCKER_CERT_PATH")
+	ca :=  fmt.Sprintf("%s/ca.pem", path)
+	cert := fmt.Sprintf("%s/cert.pem", path)
+	key := fmt.Sprintf("%s/key.pem", path)
+
+	client, err := dc.NewTLSClient(endpoint, cert, key, ca)
 	if err != nil {
 		return nil, errors.Wrap(err, "")
 	}
