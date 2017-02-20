@@ -6,14 +6,13 @@ services:
   - docker
 
 go:
-  - 1.6
   - 1.7
+  - 1.8
   - tip
 
 matrix:
   allow_failures:
     - go: tip
-    - go: 1.4
 
 install:
   - go get github.com/mattn/goveralls golang.org/x/tools/cmd/cover github.com/pierrre/gotestcover github.com/go-sql-driver/mysql github.com/lib/pq github.com/stretchr/testify/require github.com/stretchr/testify/assert
