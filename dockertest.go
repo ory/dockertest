@@ -2,12 +2,13 @@ package dockertest
 
 import (
 	"fmt"
+	"os"
+	"runtime"
+	"time"
+
 	"github.com/cenk/backoff"
 	dc "github.com/fsouza/go-dockerclient"
 	"github.com/pkg/errors"
-	"time"
-	"runtime"
-	"os"
 )
 
 // Pool represents a connection to the docker API and is used to create and remove docker images.
@@ -40,11 +41,18 @@ func (r *Resource) GetPort(id string) string {
 }
 
 // NewPool creates a new pool. You can pass an empty string to use the default, which is taken from the environment
-// variable DOCKER_URL or if that is not defined a sensible default for the operating system you are on.
+// variable DOCKER_URL, or from docker-machine if the environment variable DOCKER_MACHINE_NAME is set,
+// or if neither is defined a sensible default for the operating system you are on.
 func NewPool(endpoint string) (*Pool, error) {
+	var client *dc.Client
+	var err error
+
 	if endpoint == "" {
 		if os.Getenv("DOCKER_URL") != "" {
 			endpoint = os.Getenv("DOCKER_URL")
+		} else if os.Getenv("DOCKER_MACHINE_NAME") != "" {
+			client, err = dc.NewClientFromEnv()
+			goto error_check
 		} else if runtime.GOOS == "windows" {
 			endpoint = "http://localhost:2375"
 		} else {
@@ -52,7 +60,8 @@ func NewPool(endpoint string) (*Pool, error) {
 		}
 	}
 
-	client, err := dc.NewClient(endpoint)
+	client, err = dc.NewClient(endpoint)
+error_check:
 	if err != nil {
 		return nil, errors.Wrap(err, "")
 	}
@@ -106,7 +115,6 @@ func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
 		Container: c,
 	}, nil
 }
-
 
 // Purge removes a container and linked volumes from docker.
 func (d *Pool) Purge(r *Resource) error {
