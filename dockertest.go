@@ -69,7 +69,7 @@ func NewPool(endpoint string) (*Pool, error) {
 		}
 	}
 	
-	client, err := dc.NewClient(endpoint, cert, key, ca)
+	client, err := dc.NewClient(endpoint)
 	if err != nil {
 		return nil, errors.Wrap(err, "")
 	}
