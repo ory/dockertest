@@ -44,15 +44,16 @@ func (r *Resource) GetPort(id string) string {
 // variable DOCKER_URL, or from docker-machine if the environment variable DOCKER_MACHINE_NAME is set,
 // or if neither is defined a sensible default for the operating system you are on.
 func NewPool(endpoint string) (*Pool, error) {
-	var client *dc.Client
-	var err error
-
 	if endpoint == "" {
 		if os.Getenv("DOCKER_URL") != "" {
 			endpoint = os.Getenv("DOCKER_URL")
 		} else if os.Getenv("DOCKER_MACHINE_NAME") != "" {
-			client, err = dc.NewClientFromEnv()
-			goto error_check
+			client, err := dc.NewClientFromEnv()
+			if err != nil {
+				return nil, errors.Wrap(err, "")
+			}
+
+			return &Pool{Client: client}, nil
 		} else if runtime.GOOS == "windows" {
 			endpoint = "http://localhost:2375"
 		} else {
@@ -60,8 +61,7 @@ func NewPool(endpoint string) (*Pool, error) {
 		}
 	}
 
-	client, err = dc.NewClient(endpoint)
-error_check:
+	client, err := dc.NewClient(endpoint)
 	if err != nil {
 		return nil, errors.Wrap(err, "")
 	}
