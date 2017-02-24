@@ -39,6 +39,23 @@ func (r *Resource) GetPort(id string) string {
 	return m[0].HostPort
 }
 
+// NewTLSPool creates a new pool given an endpoint and the certificate path. This is required for endpoints that 
+// require TLS communication.
+func NewTLSPool(endpoint, certpath string) (*Pool, error) {
+	ca := fmt.Sprintf("%s/ca.pem", certpath)
+	cert := fmt.Sprintf("%s/cert.pem", certpath)
+	key := fmt.Sprintf("%s/key.pem", certpath)
+	
+	client, err := dc.NewTLSClient(endpoint, cert, key, ca)
+	if err != nil {
+		return nil, errors.Wrap(err, "")
+	}
+	
+	return &Pool{
+		Client: client,
+	}, nil
+}
+
 // NewPool creates a new pool. You can pass an empty string to use the default, which is taken from the environment
 // variable DOCKER_URL or if that is not defined a sensible default for the operating system you are on.
 func NewPool(endpoint string) (*Pool, error) {
@@ -51,7 +68,7 @@ func NewPool(endpoint string) (*Pool, error) {
 			endpoint = "unix:///var/run/docker.sock"
 		}
 	}
-
+	
 	client, err := dc.NewClient(endpoint)
 	if err != nil {
 		return nil, errors.Wrap(err, "")
