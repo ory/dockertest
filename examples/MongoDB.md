@@ -7,7 +7,7 @@ if err != nil {
     log.Fatalf("Could not connect to docker: %s", err)
 }
 
-resource, err := pool.Run("mongo", "3.0", []string{""})
+resource, err := pool.Run("mongo", "3.0", nil)
 if err != nil {
     log.Fatalf("Could not start resource: %s", err)
 }
