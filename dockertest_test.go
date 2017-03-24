@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"log"
+	"net/http"
 	"os"
 	"testing"
 )
@@ -51,6 +52,25 @@ func TestPostgres(t *testing.T) {
 			return err
 		}
 		return db.Ping()
+	})
+	require.Nil(t, err)
+	require.Nil(t, pool.Purge(resource))
+}
+
+func TestPool_RunWithOptions(t *testing.T) {
+	options := RunOptions{
+		Repository: "mongo",
+		Tag:        "3.3.12",
+		Cmd:        []string{"mongod", "--smallfiles"},
+	}
+	resource, err := pool.RunWithOptions(options)
+	require.Nil(t, err)
+	port := resource.GetPort("27017/tcp")
+	assert.NotEmpty(t, port)
+
+	err = pool.Retry(func() error {
+		_, err := http.Get(fmt.Sprintf("http://127.0.0.1:%s", port))
+		return err
 	})
 	require.Nil(t, err)
 	require.Nil(t, pool.Purge(resource))
