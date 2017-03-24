@@ -57,7 +57,7 @@ func TestPostgres(t *testing.T) {
 	require.Nil(t, pool.Purge(resource))
 }
 
-func TestPool_RunWithOptions(t *testing.T) {
+func TestMongo(t *testing.T) {
 	options := RunOptions{
 		Repository: "mongo",
 		Tag:        "3.3.12",
