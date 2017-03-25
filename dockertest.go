@@ -40,18 +40,18 @@ func (r *Resource) GetPort(id string) string {
 	return m[0].HostPort
 }
 
-// NewTLSPool creates a new pool given an endpoint and the certificate path. This is required for endpoints that 
+// NewTLSPool creates a new pool given an endpoint and the certificate path. This is required for endpoints that
 // require TLS communication.
 func NewTLSPool(endpoint, certpath string) (*Pool, error) {
 	ca := fmt.Sprintf("%s/ca.pem", certpath)
 	cert := fmt.Sprintf("%s/cert.pem", certpath)
 	key := fmt.Sprintf("%s/key.pem", certpath)
-	
+
 	client, err := dc.NewTLSClient(endpoint, cert, key, ca)
 	if err != nil {
 		return nil, errors.Wrap(err, "")
 	}
-	
+
 	return &Pool{
 		Client: client,
 	}, nil
@@ -77,7 +77,7 @@ func NewPool(endpoint string) (*Pool, error) {
 			endpoint = "unix:///var/run/docker.sock"
 		}
 	}
-	
+
 	client, err := dc.NewClient(endpoint)
 	if err != nil {
 		return nil, errors.Wrap(err, "")
@@ -88,10 +88,22 @@ func NewPool(endpoint string) (*Pool, error) {
 	}, nil
 }
 
-// Run starts a docker container.
+type RunOptions struct {
+	Repository string
+	Tag        string
+	Env        []string
+	Cmd        []string
+}
+
+// RunWithOptions starts a docker container.
 //
-//  pool.Run("mysql", "5.3", []string{"FOO=BAR", "BAR=BAZ"})
-func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
+// pool.Run(RunOptions{Repository: "mongo", Cmd: []string{"mongod", "--smallfiles"}})
+func (d *Pool) RunWithOptions(opts RunOptions) (*Resource, error) {
+	repository := opts.Repository
+	tag := opts.Tag
+	env := opts.Env
+	cmd := opts.Cmd
+
 	if tag == "" {
 		tag = "latest"
 	}
@@ -110,6 +122,7 @@ func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
 		Config: &dc.Config{
 			Image: fmt.Sprintf("%s:%s", repository, tag),
 			Env:   env,
+			Cmd:   cmd,
 		},
 		HostConfig: &dc.HostConfig{
 			PublishAllPorts: true,
@@ -131,6 +144,13 @@ func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
 	return &Resource{
 		Container: c,
 	}, nil
+}
+
+// Run starts a docker container.
+//
+//  pool.Run("mysql", "5.3", []string{"FOO=BAR", "BAR=BAZ"})
+func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
+	return d.RunWithOptions(RunOptions{Repository: repository, Tag: tag, Env: env})
 }
 
 // Purge removes a container and linked volumes from docker.
