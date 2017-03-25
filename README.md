@@ -32,13 +32,13 @@ them for your tests.
 
 ## Installing and using Dockertest
 
-Using Dockertest is straightforward and simple. Check the [releases tab](https://github.com/ory-am/dockertest/releases)
+Using Dockertest is straightforward and simple. Check the [releases tab](https://github.com/ory/dockertest/releases)
 for available releases.
 
 To install dockertest, run
 
 ```
-go get gopkg.in/ory-am/dockertest.v3
+go get gopkg.in/ory/dockertest.v3
 ```
 
 ### Using Dockertest
@@ -49,7 +49,7 @@ package dockertest_test
 import (
 	"testing"
 	"log"
-	"gopkg.in/ory-am/dockertest.v3"
+	"gopkg.in/ory/dockertest.v3"
 	_ "github.com/go-sql-driver/mysql"
 	"database/sql"
 	"fmt"
