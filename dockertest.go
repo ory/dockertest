@@ -150,13 +150,7 @@ func (d *Pool) RunWithOptions(opts RunOptions) (*Resource, error) {
 //
 //  pool.Run("mysql", "5.3", []string{"FOO=BAR", "BAR=BAZ"})
 func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
-	opts := RunOptions{
-		Repository: repository,
-		Tag:        tag,
-		Env:        env,
-	}
-
-	return d.RunWithOptions(opts)
+	return d.RunWithOptions(RunOptions{Repository: repository, Tag: tag, Env: env})
 }
 
 // Purge removes a container and linked volumes from docker.

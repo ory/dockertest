@@ -69,8 +69,17 @@ func TestMongo(t *testing.T) {
 	assert.NotEmpty(t, port)
 
 	err = pool.Retry(func() error {
-		_, err := http.Get(fmt.Sprintf("http://127.0.0.1:%s", port))
-		return err
+		response, err := http.Get(fmt.Sprintf("http://127.0.0.1:%s", port))
+
+		if err != nil {
+			return err
+		}
+
+		if response.StatusCode != http.StatusOK {
+			return fmt.Errorf("Could not connect to resource.")
+		}
+
+		return nil
 	})
 	require.Nil(t, err)
 	require.Nil(t, pool.Purge(resource))
