@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"time"
 
+	"strings"
+
 	"github.com/cenk/backoff"
 	dc "github.com/fsouza/go-dockerclient"
 	"github.com/pkg/errors"
@@ -93,6 +95,7 @@ type RunOptions struct {
 	Tag        string
 	Env        []string
 	Cmd        []string
+	Mounts     []string
 }
 
 // RunWithOptions starts a docker container.
@@ -103,6 +106,20 @@ func (d *Pool) RunWithOptions(opts RunOptions) (*Resource, error) {
 	tag := opts.Tag
 	env := opts.Env
 	cmd := opts.Cmd
+
+	mounts := []dc.Mount{}
+
+	for _, m := range opts.Mounts {
+		sd := strings.Split(m, ":")
+		if len(sd) == 2 {
+			mounts = append(mounts, dc.Mount{
+				Source:      sd[0],
+				Destination: sd[1],
+				RW:          true,
+			})
+		}
+		errors.Wrap(fmt.Errorf("invalid mount format"), "")
+	}
 
 	if tag == "" {
 		tag = "latest"
@@ -120,12 +137,14 @@ func (d *Pool) RunWithOptions(opts RunOptions) (*Resource, error) {
 
 	c, err := d.Client.CreateContainer(dc.CreateContainerOptions{
 		Config: &dc.Config{
-			Image: fmt.Sprintf("%s:%s", repository, tag),
-			Env:   env,
-			Cmd:   cmd,
+			Image:  fmt.Sprintf("%s:%s", repository, tag),
+			Env:    env,
+			Cmd:    cmd,
+			Mounts: mounts,
 		},
 		HostConfig: &dc.HostConfig{
 			PublishAllPorts: true,
+			Binds:           opts.Mounts,
 		},
 	})
 	if err != nil {
