@@ -90,6 +90,7 @@ func NewPool(endpoint string) (*Pool, error) {
 	}, nil
 }
 
+// RunOptions is used to pass in optional parameters when running a container.
 type RunOptions struct {
 	Repository string
 	Tag        string
@@ -100,8 +101,8 @@ type RunOptions struct {
 
 // RunWithOptions starts a docker container.
 //
-// pool.Run(RunOptions{Repository: "mongo", Cmd: []string{"mongod", "--smallfiles"}})
-func (d *Pool) RunWithOptions(opts RunOptions) (*Resource, error) {
+// pool.Run(&RunOptions{Repository: "mongo", Cmd: []string{"mongod", "--smallfiles"}})
+func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 	repository := opts.Repository
 	tag := opts.Tag
 	env := opts.Env
@@ -117,8 +118,9 @@ func (d *Pool) RunWithOptions(opts RunOptions) (*Resource, error) {
 				Destination: sd[1],
 				RW:          true,
 			})
+		} else {
+			return nil, errors.Wrap(fmt.Errorf("invalid mount format: got %s, expected <src>:<dst>", m), "")
 		}
-		errors.Wrap(fmt.Errorf("invalid mount format"), "")
 	}
 
 	if tag == "" {
@@ -167,9 +169,9 @@ func (d *Pool) RunWithOptions(opts RunOptions) (*Resource, error) {
 
 // Run starts a docker container.
 //
-//  pool.Run("mysql", "5.3", []string{"FOO=BAR", "BAR=BAZ"})
+// pool.Run("mysql", "5.3", []string{"FOO=BAR", "BAR=BAZ"})
 func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
-	return d.RunWithOptions(RunOptions{Repository: repository, Tag: tag, Env: env})
+	return d.RunWithOptions(&RunOptions{Repository: repository, Tag: tag, Env: env})
 }
 
 // Purge removes a container and linked volumes from docker.
