@@ -3,14 +3,15 @@ package dockertest
 import (
 	"database/sql"
 	"fmt"
-	_ "github.com/go-sql-driver/mysql"
-	_ "github.com/lib/pq"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"log"
 	"net/http"
 	"os"
 	"testing"
+
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/lib/pq"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var docker = os.Getenv("DOCKER_URL")
@@ -58,7 +59,7 @@ func TestPostgres(t *testing.T) {
 }
 
 func TestMongo(t *testing.T) {
-	options := RunOptions{
+	options := &RunOptions{
 		Repository: "mongo",
 		Tag:        "3.3.12",
 		Cmd:        []string{"mongod", "--smallfiles"},
@@ -76,7 +77,7 @@ func TestMongo(t *testing.T) {
 		}
 
 		if response.StatusCode != http.StatusOK {
-			return fmt.Errorf("Could not connect to resource.")
+			return fmt.Errorf("could not connect to resource")
 		}
 
 		return nil

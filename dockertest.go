@@ -6,6 +6,8 @@ import (
 	"runtime"
 	"time"
 
+	"strings"
+
 	"github.com/cenk/backoff"
 	dc "github.com/fsouza/go-dockerclient"
 	"github.com/pkg/errors"
@@ -88,21 +90,38 @@ func NewPool(endpoint string) (*Pool, error) {
 	}, nil
 }
 
+// RunOptions is used to pass in optional parameters when running a container.
 type RunOptions struct {
 	Repository string
 	Tag        string
 	Env        []string
 	Cmd        []string
+	Mounts     []string
 }
 
 // RunWithOptions starts a docker container.
 //
-// pool.Run(RunOptions{Repository: "mongo", Cmd: []string{"mongod", "--smallfiles"}})
-func (d *Pool) RunWithOptions(opts RunOptions) (*Resource, error) {
+// pool.Run(&RunOptions{Repository: "mongo", Cmd: []string{"mongod", "--smallfiles"}})
+func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 	repository := opts.Repository
 	tag := opts.Tag
 	env := opts.Env
 	cmd := opts.Cmd
+
+	mounts := []dc.Mount{}
+
+	for _, m := range opts.Mounts {
+		sd := strings.Split(m, ":")
+		if len(sd) == 2 {
+			mounts = append(mounts, dc.Mount{
+				Source:      sd[0],
+				Destination: sd[1],
+				RW:          true,
+			})
+		} else {
+			return nil, errors.Wrap(fmt.Errorf("invalid mount format: got %s, expected <src>:<dst>", m), "")
+		}
+	}
 
 	if tag == "" {
 		tag = "latest"
@@ -120,12 +139,14 @@ func (d *Pool) RunWithOptions(opts RunOptions) (*Resource, error) {
 
 	c, err := d.Client.CreateContainer(dc.CreateContainerOptions{
 		Config: &dc.Config{
-			Image: fmt.Sprintf("%s:%s", repository, tag),
-			Env:   env,
-			Cmd:   cmd,
+			Image:  fmt.Sprintf("%s:%s", repository, tag),
+			Env:    env,
+			Cmd:    cmd,
+			Mounts: mounts,
 		},
 		HostConfig: &dc.HostConfig{
 			PublishAllPorts: true,
+			Binds:           opts.Mounts,
 		},
 	})
 	if err != nil {
@@ -148,9 +169,9 @@ func (d *Pool) RunWithOptions(opts RunOptions) (*Resource, error) {
 
 // Run starts a docker container.
 //
-//  pool.Run("mysql", "5.3", []string{"FOO=BAR", "BAR=BAZ"})
+// pool.Run("mysql", "5.3", []string{"FOO=BAR", "BAR=BAZ"})
 func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
-	return d.RunWithOptions(RunOptions{Repository: repository, Tag: tag, Env: env})
+	return d.RunWithOptions(&RunOptions{Repository: repository, Tag: tag, Env: env})
 }
 
 // Purge removes a container and linked volumes from docker.
