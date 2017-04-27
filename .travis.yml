@@ -15,7 +15,7 @@ matrix:
     - go: tip
 
 install:
-  - go get github.com/mattn/goveralls golang.org/x/tools/cmd/cover github.com/pierrre/gotestcover github.com/go-sql-driver/mysql github.com/lib/pq github.com/stretchr/testify/require github.com/stretchr/testify/assert
+  - go get github.com/mattn/goveralls golang.org/x/tools/cmd/cover github.com/pierrre/gotestcover
   - go get ./...
 
 script:
