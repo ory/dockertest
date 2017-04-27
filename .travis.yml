@@ -17,8 +17,8 @@ matrix:
     - go: tip
 
 install:
-  - go get github.com/mattn/goveralls golang.org/x/tools/cmd/cover github.com/pierrre/gotestcover
-  - go get ./...
+  - go get github.com/mattn/goveralls golang.org/x/tools/cmd/cover github.com/pierrre/gotestcover github.com/Masterminds/glide
+  - glide install
 
 script:
   - go vet -x .
