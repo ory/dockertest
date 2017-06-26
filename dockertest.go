@@ -97,6 +97,7 @@ type RunOptions struct {
 	Env        []string
 	Cmd        []string
 	Mounts     []string
+	Links      []string
 }
 
 // RunWithOptions starts a docker container.
@@ -147,6 +148,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 		HostConfig: &dc.HostConfig{
 			PublishAllPorts: true,
 			Binds:           opts.Mounts,
+			Links:           opts.Links,
 		},
 	})
 	if err != nil {
