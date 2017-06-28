@@ -62,11 +62,13 @@ func TestMongo(t *testing.T) {
 	options := &RunOptions{
 		Repository: "mongo",
 		Tag:        "3.3.12",
-		Cmd:        []string{"mongod", "--smallfiles"},
+		Cmd:        []string{"mongod", "--smallfiles", "--port", "3000"},
+		// expose a different port
+		ExposedPorts: []string{"3000"},
 	}
 	resource, err := pool.RunWithOptions(options)
 	require.Nil(t, err)
-	port := resource.GetPort("27017/tcp")
+	port := resource.GetPort("3000/tcp")
 	assert.NotEmpty(t, port)
 
 	err = pool.Retry(func() error {

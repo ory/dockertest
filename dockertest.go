@@ -92,12 +92,13 @@ func NewPool(endpoint string) (*Pool, error) {
 
 // RunOptions is used to pass in optional parameters when running a container.
 type RunOptions struct {
-	Repository string
-	Tag        string
-	Env        []string
-	Cmd        []string
-	Mounts     []string
-	Links      []string
+	Repository   string
+	Tag          string
+	Env          []string
+	Cmd          []string
+	Mounts       []string
+	Links        []string
+	ExposedPorts []string
 }
 
 // RunWithOptions starts a docker container.
@@ -108,6 +109,14 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 	tag := opts.Tag
 	env := opts.Env
 	cmd := opts.Cmd
+	var exp map[dc.Port]struct{}
+
+	if len(opts.ExposedPorts) > 0 {
+		exp = map[dc.Port]struct{}{}
+		for _, p := range opts.ExposedPorts {
+			exp[dc.Port(p)] = struct{}{}
+		}
+	}
 
 	mounts := []dc.Mount{}
 
@@ -140,10 +149,11 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 
 	c, err := d.Client.CreateContainer(dc.CreateContainerOptions{
 		Config: &dc.Config{
-			Image:  fmt.Sprintf("%s:%s", repository, tag),
-			Env:    env,
-			Cmd:    cmd,
-			Mounts: mounts,
+			Image:        fmt.Sprintf("%s:%s", repository, tag),
+			Env:          env,
+			Cmd:          cmd,
+			Mounts:       mounts,
+			ExposedPorts: exp,
 		},
 		HostConfig: &dc.HostConfig{
 			PublishAllPorts: true,
