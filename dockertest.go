@@ -95,6 +95,7 @@ type RunOptions struct {
 	Repository   string
 	Tag          string
 	Env          []string
+	Entrypoint   []string
 	Cmd          []string
 	Mounts       []string
 	Links        []string
@@ -109,6 +110,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 	tag := opts.Tag
 	env := opts.Env
 	cmd := opts.Cmd
+	ep := opts.Entrypoint
 	var exp map[dc.Port]struct{}
 
 	if len(opts.ExposedPorts) > 0 {
@@ -151,6 +153,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 		Config: &dc.Config{
 			Image:        fmt.Sprintf("%s:%s", repository, tag),
 			Env:          env,
+			Entrypoint:   ep,
 			Cmd:          cmd,
 			Mounts:       mounts,
 			ExposedPorts: exp,
