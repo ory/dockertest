@@ -100,6 +100,7 @@ type RunOptions struct {
 	Mounts       []string
 	Links        []string
 	ExposedPorts []string
+	Auth         dc.AuthConfiguration
 }
 
 // RunWithOptions starts a docker container.
@@ -144,7 +145,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 		if err := d.Client.PullImage(dc.PullImageOptions{
 			Repository: repository,
 			Tag:        tag,
-		}, dc.AuthConfiguration{}); err != nil {
+		}, opts.Auth); err != nil {
 			return nil, errors.Wrap(err, "")
 		}
 	}
