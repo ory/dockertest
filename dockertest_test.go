@@ -47,6 +47,8 @@ func TestPostgres(t *testing.T) {
 	require.Nil(t, err)
 	assert.NotEmpty(t, resource.GetPort("5432/tcp"))
 
+	assert.NotEmpty(t, resource.GetBoundIP("5432/tcp"))
+
 	err = pool.Retry(func() error {
 		db, err := sql.Open("postgres", fmt.Sprintf("postgres://postgres:secret@localhost:%s/postgres?sslmode=disable", resource.GetPort("5432/tcp")))
 		if err != nil {
