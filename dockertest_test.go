@@ -8,7 +8,6 @@ import (
 	"os"
 	"testing"
 
-	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,22 +23,6 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
 	os.Exit(m.Run())
-}
-
-func TestMySQL(t *testing.T) {
-	resource, err := pool.Run("mysql", "5.6", []string{"MYSQL_ROOT_PASSWORD=secret"})
-	require.Nil(t, err)
-	assert.NotEmpty(t, resource.GetPort("3306/tcp"))
-
-	err = pool.Retry(func() error {
-		db, err := sql.Open("mysql", fmt.Sprintf("root:secret@(localhost:%s)/mysql", resource.GetPort("3306/tcp")))
-		if err != nil {
-			return err
-		}
-		return db.Ping()
-	})
-	require.Nil(t, err)
-	require.Nil(t, pool.Purge(resource))
 }
 
 func TestPostgres(t *testing.T) {
