@@ -8,19 +8,14 @@ services:
   - docker
 
 go:
-  - 1.7
-  - 1.8
-  - tip
-
-matrix:
-  allow_failures:
-    - go: tip
+  - 1.9
 
 install:
-  - go get github.com/mattn/goveralls golang.org/x/tools/cmd/cover github.com/pierrre/gotestcover github.com/Masterminds/glide
-  - glide install
+  - go get github.com/mattn/goveralls golang.org/x/tools/cmd/cover github.com/pierrre/gotestcover
+  - curl -L -s https://github.com/golang/dep/releases/download/v0.3.2/dep-linux-amd64 -o $GOPATH/bin/dep && chmod +x $GOPATH/bin/dep
+  - dep ensure -vendor-only
 
 script:
   - go vet -x .
-  - gotestcover -coverprofile="cover.out" -race -covermode="count" .
+  - gotestcover -coverprofile="cover.out" -race -covermode="atomic" .
   - goveralls -coverprofile="cover.out"

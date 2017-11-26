@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"time"
-
 	"strings"
+	"time"
 
 	"github.com/cenk/backoff"
 	dc "github.com/fsouza/go-dockerclient"
