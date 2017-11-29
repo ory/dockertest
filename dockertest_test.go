@@ -72,3 +72,16 @@ func TestMongo(t *testing.T) {
 	require.Nil(t, err)
 	require.Nil(t, pool.Purge(resource))
 }
+
+func TestContainerWithName(t *testing.T) {
+	resource, err := pool.RunWithOptions(
+		&RunOptions{
+			Name: "db",
+			Repository: "postgres",
+			Tag: "9.5",
+		})
+	require.Nil(t, err)
+	assert.Equal(t,"/db", resource.Container.Name)
+
+	require.Nil(t, pool.Purge(resource))
+}
