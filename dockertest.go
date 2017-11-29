@@ -119,6 +119,8 @@ func shouldPreferTls(endpoint string) bool {
 
 // RunOptions is used to pass in optional parameters when running a container.
 type RunOptions struct {
+	Hostname     string
+	Name         string
 	Repository   string
 	Tag          string
 	Env          []string
@@ -178,7 +180,9 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 	}
 
 	c, err := d.Client.CreateContainer(dc.CreateContainerOptions{
+		Name: opts.Name,
 		Config: &dc.Config{
+			Hostname:     opts.Hostname,
 			Image:        fmt.Sprintf("%s:%s", repository, tag),
 			Env:          env,
 			Entrypoint:   ep,
