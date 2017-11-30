@@ -130,6 +130,7 @@ type RunOptions struct {
 	Links        []string
 	ExposedPorts []string
 	Auth         dc.AuthConfiguration
+	PortBindings map[dc.Port][]dc.PortBinding
 }
 
 // RunWithOptions starts a docker container.
@@ -194,6 +195,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 			PublishAllPorts: true,
 			Binds:           opts.Mounts,
 			Links:           opts.Links,
+			PortBindings:    opts.PortBindings,
 		},
 	})
 	if err != nil {

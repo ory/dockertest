@@ -11,6 +11,7 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	dc "github.com/fsouza/go-dockerclient"
 )
 
 var docker = os.Getenv("DOCKER_URL")
@@ -82,6 +83,21 @@ func TestContainerWithName(t *testing.T) {
 		})
 	require.Nil(t, err)
 	assert.Equal(t,"/db", resource.Container.Name)
+
+	require.Nil(t, pool.Purge(resource))
+}
+
+func TestContainerWithPortBinding(t *testing.T) {
+	resource, err := pool.RunWithOptions(
+		&RunOptions{
+			Repository: "postgres",
+			Tag: "9.5",
+			PortBindings: map[dc.Port][]dc.PortBinding{
+				"5432/tcp": {{HostIP: "", HostPort: "5433"}},
+			},
+		})
+	require.Nil(t, err)
+	assert.Equal(t,"5433", resource.GetPort("5432/tcp"))
 
 	require.Nil(t, pool.Purge(resource))
 }
