@@ -2,7 +2,9 @@ package dockertest
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -131,6 +133,32 @@ type RunOptions struct {
 	ExposedPorts []string
 	Auth         dc.AuthConfiguration
 	PortBindings map[dc.Port][]dc.PortBinding
+}
+
+// BuildAndRunWithOptions builds and starts a docker container
+func (d *Pool) BuildAndRunWithOptions(dockerfilePath string, opts *RunOptions) (*Resource, error) {
+	// Set the Dockerfile folder as build context
+	dir, file := filepath.Split(dockerfilePath)
+
+	err := d.Client.BuildImage(dc.BuildImageOptions{
+		Name:         opts.Name,
+		Dockerfile:   file,
+		OutputStream: ioutil.Discard,
+		ContextDir:   dir,
+	})
+
+	if err != nil {
+		return nil, errors.Wrap(err, "")
+	}
+
+	opts.Repository = opts.Name
+
+	return d.RunWithOptions(opts)
+}
+
+// BuildAndRun builds and starts a docker container
+func (d *Pool) BuildAndRun(name, dockerfilePath string, env []string) (*Resource, error) {
+	return d.BuildAndRunWithOptions(dockerfilePath, &RunOptions{Name: name, Env: env})
 }
 
 // RunWithOptions starts a docker container.
