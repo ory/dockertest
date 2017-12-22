@@ -101,7 +101,7 @@ func NewPool(endpoint string) (*Pool, error) {
 		}
 	}
 
-	if os.Getenv("DOCKER_CERT_PATH") == "" && shouldPreferTls(endpoint) {
+	if os.Getenv("DOCKER_CERT_PATH") != "" && shouldPreferTls(endpoint) {
 		return NewTLSPool(endpoint, os.Getenv("DOCKER_CERT_PATH"))
 	}
 
