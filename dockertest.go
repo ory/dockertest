@@ -83,17 +83,17 @@ func NewTLSPool(endpoint, certpath string) (*Pool, error) {
 // TLS pools are automatically configured if the DOCKER_CERT_PATH environment variable exists.
 func NewPool(endpoint string) (*Pool, error) {
 	if endpoint == "" {
-		if os.Getenv("DOCKER_HOST") != "" {
-			endpoint = os.Getenv("DOCKER_HOST")
-		} else if os.Getenv("DOCKER_URL") != "" {
-			endpoint = os.Getenv("DOCKER_URL")
-		} else if os.Getenv("DOCKER_MACHINE_NAME") != "" {
+		if os.Getenv("DOCKER_MACHINE_NAME") != "" {
 			client, err := dc.NewClientFromEnv()
 			if err != nil {
-				return nil, errors.Wrap(err, "")
+				return nil, errors.Wrap(err, "failed to create client from environment")
 			}
 
 			return &Pool{Client: client}, nil
+		} else if os.Getenv("DOCKER_HOST") != "" {
+			endpoint = os.Getenv("DOCKER_HOST")
+		} else if os.Getenv("DOCKER_URL") != "" {
+			endpoint = os.Getenv("DOCKER_URL")
 		} else if runtime.GOOS == "windows" {
 			endpoint = "http://localhost:2375"
 		} else {
