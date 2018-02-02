@@ -131,6 +131,7 @@ type RunOptions struct {
 	Mounts       []string
 	Links        []string
 	ExposedPorts []string
+	ExtraHosts   []string
 	Auth         dc.AuthConfiguration
 	PortBindings map[dc.Port][]dc.PortBinding
 }
@@ -224,6 +225,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 			Binds:           opts.Mounts,
 			Links:           opts.Links,
 			PortBindings:    opts.PortBindings,
+			ExtraHosts:      opts.ExtraHosts,
 		},
 	})
 	if err != nil {
