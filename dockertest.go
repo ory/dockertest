@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cenk/backoff"
+	"github.com/cenkalti/backoff"
 	dc "github.com/fsouza/go-dockerclient"
 	"github.com/pkg/errors"
 )
