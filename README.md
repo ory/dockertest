@@ -1,4 +1,4 @@
-# ![ORY Dockertest](https://storage.googleapis.com/ory.am/github-banner/ory_01-dockertest.png)
+<h1 align="center"><img src="./docs/images/banner_dockertest.png" alt="ORY Dockertest"></h1>
 
 [![Build Status](https://travis-ci.org/ory/dockertest.svg)](https://travis-ci.org/ory/dockertest?branch=master)
 [![Coverage Status](https://coveralls.io/repos/github/ory/dockertest/badge.svg?branch=v3)](https://coveralls.io/github/ory/dockertest?branch=v3)
