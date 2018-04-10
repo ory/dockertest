@@ -132,6 +132,7 @@ type RunOptions struct {
 	Links        []string
 	ExposedPorts []string
 	ExtraHosts   []string
+	WorkingDir   string
 	Auth         dc.AuthConfiguration
 	PortBindings map[dc.Port][]dc.PortBinding
 }
@@ -171,6 +172,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 	env := opts.Env
 	cmd := opts.Cmd
 	ep := opts.Entrypoint
+	wd := opts.WorkingDir
 	var exp map[dc.Port]struct{}
 
 	if len(opts.ExposedPorts) > 0 {
@@ -219,6 +221,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 			Cmd:          cmd,
 			Mounts:       mounts,
 			ExposedPorts: exp,
+			WorkingDir: wd,
 		},
 		HostConfig: &dc.HostConfig{
 			PublishAllPorts: true,
