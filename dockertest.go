@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	dc "github.com/fsouza/go-dockerclient"
+	dc "github.com/ory/dockertest/docker"
 	"github.com/pkg/errors"
 )
 
