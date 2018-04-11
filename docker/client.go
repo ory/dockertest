@@ -31,10 +31,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/docker/docker/opts"
-	"github.com/docker/docker/pkg/homedir"
-	"github.com/docker/docker/pkg/jsonmessage"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/ory/dockertest/docker/opts"
+	"github.com/ory/dockertest/docker/pkg/homedir"
+	"github.com/ory/dockertest/docker/pkg/jsonmessage"
+	"github.com/ory/dockertest/docker/pkg/stdcopy"
 )
 
 const (

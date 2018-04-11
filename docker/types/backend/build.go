@@ -4,7 +4,7 @@ import (
 	"io"
 
 	"github.com/ory/dockertest/docker/types"
-	"github.com/docker/docker/pkg/streamformatter"
+	"github.com/ory/dockertest/docker/pkg/streamformatter"
 )
 
 // PullOption defines different modes for accessing images
