@@ -1,6 +1,6 @@
 sudo: required
 
-go_import_path: github.com/ory-am/dockertest
+go_import_path: github.com/ory/dockertest
 
 language: go
 
