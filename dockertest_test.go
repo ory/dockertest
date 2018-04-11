@@ -9,7 +9,7 @@ import (
 	"os"
 	"testing"
 
-	dc "github.com/fsouza/go-dockerclient"
+	dc "github.com/ory/dockertest/docker"
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

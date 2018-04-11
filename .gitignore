@@ -4,3 +4,4 @@ node_modules/
 *.exe
 .cover/
 vendor/
+cover.out
