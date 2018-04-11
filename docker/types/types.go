@@ -13,7 +13,6 @@ import (
 	"github.com/ory/dockertest/docker/types/mount"
 	"github.com/ory/dockertest/docker/types/network"
 	"github.com/ory/dockertest/docker/types/registry"
-	"github.com/ory/dockertest/docker/types/swarm"
 	"github.com/docker/go-connections/nat"
 )
 
@@ -180,7 +179,7 @@ type Info struct {
 	RegistryConfig     *registry.ServiceConfig
 	NCPU               int
 	MemTotal           int64
-	GenericResources   []swarm.GenericResource
+	//GenericResources   []swarm.GenericResource
 	DockerRootDir      string
 	HTTPProxy          string `json:"HttpProxy"`
 	HTTPSProxy         string `json:"HttpsProxy"`
@@ -193,7 +192,7 @@ type Info struct {
 	ClusterAdvertise   string
 	Runtimes           map[string]Runtime
 	DefaultRuntime     string
-	Swarm              swarm.Info
+	//Swarm              swarm.Info
 	// LiveRestoreEnabled determines whether containers should be kept
 	// running when the daemon is shutdown or upon daemon start if
 	// running containers are detected
