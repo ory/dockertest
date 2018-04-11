@@ -17,5 +17,5 @@ install:
 
 script:
   - go vet -x .
-  - gotestcover -coverprofile="cover.out" -race -covermode="atomic" .
+  - go test -covermode=atomic -coverprofile="cover.out" .
   - goveralls -coverprofile="cover.out"
