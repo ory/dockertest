@@ -3,6 +3,7 @@ package dockertest
 import (
 	"fmt"
 	"io/ioutil"
+	"net"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -22,6 +23,7 @@ type Pool struct {
 
 // Resource represents a docker container.
 type Resource struct {
+	pool      *Pool
 	Container *dc.Container
 }
 
@@ -58,6 +60,32 @@ func (r *Resource) GetBoundIP(id string) string {
 	}
 
 	return m[0].HostIP
+}
+
+// GetHostPort returns a resource's published port with an address.
+func (r *Resource) GetHostPort(portID string) string {
+	if r.Container == nil {
+		return ""
+	} else if r.Container.NetworkSettings == nil {
+		return ""
+	}
+
+	m, ok := r.Container.NetworkSettings.Ports[dc.Port(portID)]
+	if !ok {
+		return ""
+	} else if len(m) == 0 {
+		return ""
+	}
+	ip := m[0].HostIP
+	if ip == "0.0.0.0" {
+		ip = "localhost"
+	}
+	return net.JoinHostPort(ip, m[0].HostPort)
+}
+
+// Close removes a container and linked volumes from docker by calling pool.Purge.
+func (r *Resource) Close() error {
+	return r.pool.Purge(r)
 }
 
 // NewTLSPool creates a new pool given an endpoint and the certificate path. This is required for endpoints that
@@ -221,7 +249,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 			Cmd:          cmd,
 			Mounts:       mounts,
 			ExposedPorts: exp,
-			WorkingDir: wd,
+			WorkingDir:   wd,
 		},
 		HostConfig: &dc.HostConfig{
 			PublishAllPorts: true,
@@ -245,6 +273,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 	}
 
 	return &Resource{
+		pool:      d,
 		Container: c,
 	}, nil
 }
