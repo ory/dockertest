@@ -9,8 +9,8 @@ import (
 	"os"
 	"testing"
 
-	dc "github.com/ory/dockertest/docker"
 	_ "github.com/lib/pq"
+	dc "github.com/ory/dockertest/docker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -84,6 +84,23 @@ func TestContainerWithName(t *testing.T) {
 		})
 	require.Nil(t, err)
 	assert.Equal(t, "/db", resource.Container.Name)
+
+	require.Nil(t, pool.Purge(resource))
+}
+
+func TestContainerWithLabels(t *testing.T) {
+	labels := map[string]string{
+		"my": "label",
+	}
+	resource, err := pool.RunWithOptions(
+		&RunOptions{
+			Name:       "db",
+			Repository: "postgres",
+			Tag:        "9.5",
+			Labels:     labels,
+		})
+	require.Nil(t, err)
+	assert.EqualValues(t, labels, resource.Container.Config.Labels, "labels don't match")
 
 	require.Nil(t, pool.Purge(resource))
 }
