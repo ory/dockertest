@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"testing"
+	"time"
 
 	_ "github.com/lib/pq"
 	dc "github.com/ory/dockertest/docker"
@@ -135,5 +136,33 @@ func TestBuildImage(t *testing.T) {
 	require.Nil(t, err)
 
 	assert.Equal(t, "/postgres-test", resource.Container.Name)
+	require.Nil(t, pool.Purge(resource))
+}
+
+func TestExpire(t *testing.T) {
+	resource, err := pool.Run("postgres", "9.5", nil)
+	require.Nil(t, err)
+	assert.NotEmpty(t, resource.GetPort("5432/tcp"))
+
+	assert.NotEmpty(t, resource.GetBoundIP("5432/tcp"))
+
+	err = pool.Retry(func() error {
+		db, err := sql.Open("postgres", fmt.Sprintf("postgres://postgres:secret@localhost:%s/postgres?sslmode=disable", resource.GetPort("5432/tcp")))
+		if err != nil {
+			return err
+		}
+		err = db.Ping()
+		if err != nil {
+			return nil
+		}
+		err = resource.Expire(1)
+		require.Nil(t, err)
+		time.Sleep(5 * time.Second)
+		err = db.Ping()
+		require.NotNil(t, err)
+		return nil
+	})
+	require.Nil(t, err)
+
 	require.Nil(t, pool.Purge(resource))
 }
