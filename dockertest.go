@@ -88,6 +88,16 @@ func (r *Resource) Close() error {
 	return r.pool.Purge(r)
 }
 
+// Expire sets a resource's associated container to terminate after a period has passed
+func (r *Resource) Expire(seconds uint) error {
+	go func() {
+		if err := r.pool.Client.StopContainer(r.Container.ID, seconds); err != nil {
+			// Error handling?
+		}
+	}()
+	return nil
+}
+
 // NewTLSPool creates a new pool given an endpoint and the certificate path. This is required for endpoints that
 // require TLS communication.
 func NewTLSPool(endpoint, certpath string) (*Pool, error) {
@@ -252,6 +262,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 			ExposedPorts: exp,
 			WorkingDir:   wd,
 			Labels:       opts.Labels,
+			StopSignal:   "SIGWINCH", // to support timeouts
 		},
 		HostConfig: &dc.HostConfig{
 			PublishAllPorts: true,
