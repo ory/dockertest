@@ -259,6 +259,8 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 			Links:           opts.Links,
 			PortBindings:    opts.PortBindings,
 			ExtraHosts:      opts.ExtraHosts,
+			CapAdd:          []string{"SYS_PTRACE"},
+			SecurityOpt:     []string{"apparmor=unconfined"},
 		},
 	})
 	if err != nil {
