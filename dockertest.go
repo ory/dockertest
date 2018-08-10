@@ -170,6 +170,8 @@ type RunOptions struct {
 	Links        []string
 	ExposedPorts []string
 	ExtraHosts   []string
+	CapAdd       []string
+	SecurityOpt  []string
 	WorkingDir   string
 	Labels       map[string]string
 	Auth         dc.AuthConfiguration
@@ -270,6 +272,8 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 			Links:           opts.Links,
 			PortBindings:    opts.PortBindings,
 			ExtraHosts:      opts.ExtraHosts,
+			CapAdd:          opts.CapAdd,
+			SecurityOpt:     opts.SecurityOpt,
 		},
 	})
 	if err != nil {
