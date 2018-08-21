@@ -176,6 +176,7 @@ type RunOptions struct {
 	Labels       map[string]string
 	Auth         dc.AuthConfiguration
 	PortBindings map[dc.Port][]dc.PortBinding
+	Privileged   bool
 }
 
 // BuildAndRunWithOptions builds and starts a docker container
@@ -274,6 +275,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 			ExtraHosts:      opts.ExtraHosts,
 			CapAdd:          opts.CapAdd,
 			SecurityOpt:     opts.SecurityOpt,
+			Privileged:      opts.Privileged,
 		},
 	})
 	if err != nil {
