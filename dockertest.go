@@ -173,6 +173,7 @@ type RunOptions struct {
 	CapAdd       []string
 	SecurityOpt  []string
 	WorkingDir   string
+	NetworkID    string
 	Labels       map[string]string
 	Auth         dc.AuthConfiguration
 	PortBindings map[dc.Port][]dc.PortBinding
@@ -243,6 +244,13 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 		tag = "latest"
 	}
 
+	networkingConfig := dc.NetworkingConfig{
+		EndpointsConfig: map[string]*dc.EndpointConfig{},
+	}
+	if opts.NetworkID != "" {
+		networkingConfig.EndpointsConfig[opts.NetworkID] = &dc.EndpointConfig{}
+	}
+
 	_, err := d.Client.InspectImage(fmt.Sprintf("%s:%s", repository, tag))
 	if err != nil {
 		if err := d.Client.PullImage(dc.PullImageOptions{
@@ -277,6 +285,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 			SecurityOpt:     opts.SecurityOpt,
 			Privileged:      opts.Privileged,
 		},
+		NetworkingConfig: &networkingConfig,
 	})
 	if err != nil {
 		return nil, errors.Wrap(err, "")
