@@ -172,6 +172,7 @@ type RunOptions struct {
 	ExtraHosts   []string
 	CapAdd       []string
 	SecurityOpt  []string
+	DNS          []string
 	WorkingDir   string
 	NetworkID    string
 	Labels       map[string]string
@@ -284,6 +285,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions) (*Resource, error) {
 			CapAdd:          opts.CapAdd,
 			SecurityOpt:     opts.SecurityOpt,
 			Privileged:      opts.Privileged,
+			DNS:             opts.DNS,
 		},
 		NetworkingConfig: &networkingConfig,
 	})
