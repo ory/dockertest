@@ -181,7 +181,8 @@ type RunOptions struct {
 	Privileged   bool
 }
 
-// BuildAndRunWithOptions builds and starts a docker container
+// BuildAndRunWithOptions builds and starts a docker container.
+// Optional modifier functions can be passed in order to change the hostconfig values not covered in RunOptions
 func (d *Pool) BuildAndRunWithOptions(dockerfilePath string, opts *RunOptions, hcOpts ...func(*dc.HostConfig)) (*Resource, error) {
 	// Set the Dockerfile folder as build context
 	dir, file := filepath.Split(dockerfilePath)
@@ -208,8 +209,12 @@ func (d *Pool) BuildAndRun(name, dockerfilePath string, env []string) (*Resource
 }
 
 // RunWithOptions starts a docker container.
+// Optional modifier functions can be passed in order to change the hostconfig values not covered in RunOptions
 //
 // pool.Run(&RunOptions{Repository: "mongo", Cmd: []string{"mongod", "--smallfiles"}})
+// pool.Run(&RunOptions{Repository: "mongo", Cmd: []string{"mongod", "--smallfiles"}}, func(hostConfig *dc.HostConfig) {
+//			hostConfig.ShmSize = shmemsize
+//		})
 func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) (*Resource, error) {
 	repository := opts.Repository
 	tag := opts.Tag
