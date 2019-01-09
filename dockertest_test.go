@@ -166,3 +166,19 @@ func TestExpire(t *testing.T) {
 
 	require.Nil(t, pool.Purge(resource))
 }
+
+func TestContainerWithShMzSize(t *testing.T) {
+	shmemsize := int64(1024 * 1024)
+	resource, err := pool.RunWithOptions(
+		&RunOptions{
+			Name:       "db",
+			Repository: "postgres",
+			Tag:        "9.5",
+		}, func(hostConfig *dc.HostConfig) {
+			hostConfig.ShmSize = shmemsize
+		})
+	require.Nil(t, err)
+	assert.EqualValues(t, shmemsize, resource.Container.HostConfig.ShmSize, "shmsize don't match")
+
+	require.Nil(t, pool.Purge(resource))
+}
