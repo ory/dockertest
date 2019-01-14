@@ -183,7 +183,7 @@ func TestContainerWithShMzSize(t *testing.T) {
 	require.Nil(t, pool.Purge(resource))
 }
 
-func TestRemoveContainerWithName(t *testing.T) {
+func TestRemoveContainerByName(t *testing.T) {
 	_, err := pool.RunWithOptions(
 		&RunOptions{
 			Name:       "db",
@@ -192,7 +192,7 @@ func TestRemoveContainerWithName(t *testing.T) {
 		})
 	require.Nil(t, err)
 
-	err = pool.RemoveContainerWithName("db")
+	err = pool.RemoveContainerByName("db")
 	require.Nil(t, err)
 
 	resource, err := pool.RunWithOptions(

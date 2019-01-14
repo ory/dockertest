@@ -326,8 +326,8 @@ func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
 	return d.RunWithOptions(&RunOptions{Repository: repository, Tag: tag, Env: env})
 }
 
-// RemoveContainerWithName find a container with the given name and removes it if present
-func (d *Pool) RemoveContainerWithName(containerName string) error {
+// RemoveContainerByName find a container with the given name and removes it if present
+func (d *Pool) RemoveContainerByName(containerName string) error {
 	containers, err := d.Client.ListContainers(dc.ListContainersOptions{
 		All: true,
 		Filters: map[string][]string{
