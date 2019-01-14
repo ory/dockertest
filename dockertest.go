@@ -326,6 +326,34 @@ func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
 	return d.RunWithOptions(&RunOptions{Repository: repository, Tag: tag, Env: env})
 }
 
+// RemoveContainerByName find a container with the given name and removes it if present
+func (d *Pool) RemoveContainerByName(containerName string) error {
+	containers, err := d.Client.ListContainers(dc.ListContainersOptions{
+		All: true,
+		Filters: map[string][]string{
+			"name": []string{containerName},
+		},
+	})
+	if err != nil {
+		return errors.Wrapf(err, "Error while listing containers with name %s", containerName)
+	}
+
+	if len(containers) == 0 {
+		return nil
+	}
+
+	err = d.Client.RemoveContainer(dc.RemoveContainerOptions{
+		ID:            containers[0].ID,
+		Force:         true,
+		RemoveVolumes: true,
+	})
+	if err != nil {
+		return errors.Wrapf(err, "Error while removing container with name %s", containerName)
+	}
+
+	return nil
+}
+
 // Purge removes a container and linked volumes from docker.
 func (d *Pool) Purge(r *Resource) error {
 	if err := d.Client.RemoveContainer(dc.RemoveContainerOptions{ID: r.Container.ID, Force: true, RemoveVolumes: true}); err != nil {
