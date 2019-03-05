@@ -102,19 +102,6 @@ func TestSomething(t *testing.T) {
 
 We provide code examples for well known services in the [examples](examples/) directory, check them out!
 
-### Setting up Travis-CI
-
-You can run the Docker integration on Travis easily:
-
-```yml
-# Sudo is required for docker
-sudo: required
-
-# Enable docker
-services:
-  - docker
-```
-
 ## Troubleshoot & FAQ
 
 ### Out of disk space
