@@ -1,27 +1,34 @@
 ---
 name: Bug report
 about: Create a report to help us improve
-
 ---
 
 **Describe the bug**
+
 A clear and concise description of what the bug is.
 
 **To Reproduce**
+
 Steps to reproduce the behavior:
-1. Run `some-command`
-2. Open ...
-3. See error
+
+<!--
+1. Call function `foo.Bar`
+2. Function returns invalid value `baz`
+-->
 
 **Expected behavior**
+
 A clear and concise description of what you expected to happen.
 
-**Screenshots**
-If applicable, add screenshots to help explain your problem.
+**Expected behavior**
 
-**Version:**
- - Environment: [e.g. Docker, Kubernetes, ...]
- - Version [e.g. v1.0.0]
+A clear and concise description of what you expected to happen.
+
+**Environment**
+
+* Version: v1.2.3, git sha hash
+* Environment: Debian, Docker, ...
 
 **Additional context**
+
 Add any other context about the problem here.
