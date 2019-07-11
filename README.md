@@ -46,13 +46,14 @@ dep ensure -add github.com/ory/dockertest@v3.x.y
 package dockertest_test
 
 import (
-	"testing"
-	"log"
-	"github.com/ory/dockertest"
-	_ "github.com/go-sql-driver/mysql"
 	"database/sql"
 	"fmt"
+	"log"
 	"os"
+	"testing"
+
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/ory/dockertest"
 )
 
 var db *sql.DB
