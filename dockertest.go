@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
-	options "github.com/migotom/dockertest/docker/opts"
+	options "github.com/ory/dockertest/docker/opts"
 	dc "github.com/ory/dockertest/docker"
 	"github.com/pkg/errors"
 )
@@ -217,6 +217,7 @@ func (d *Pool) BuildAndRun(name, dockerfilePath string, env []string) (*Resource
 //			hostConfig.ShmSize = shmemsize
 //		})
 func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) (*Resource, error) {
+	fmt.Println("Xxxxxx")
 	repository := opts.Repository
 	tag := opts.Tag
 	env := opts.Env
@@ -235,6 +236,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) 
 	mounts := []dc.Mount{}
 
 	for _, m := range opts.Mounts {
+		fmt.Println("dupa")
 		s, d, err := options.MountParser(m)
 		if err != nil {
 			return nil, err
