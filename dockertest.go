@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff"
+	options "github.com/migotom/dockertest/docker/opts"
 	dc "github.com/ory/dockertest/docker"
 	"github.com/pkg/errors"
 )
@@ -234,16 +235,15 @@ func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) 
 	mounts := []dc.Mount{}
 
 	for _, m := range opts.Mounts {
-		sd := strings.Split(m, ":")
-		if len(sd) == 2 {
-			mounts = append(mounts, dc.Mount{
-				Source:      sd[0],
-				Destination: sd[1],
-				RW:          true,
-			})
-		} else {
-			return nil, errors.Wrap(fmt.Errorf("invalid mount format: got %s, expected <src>:<dst>", m), "")
+		s, d, err := options.MountParser(m)
+		if err != nil {
+			return nil, err
 		}
+		mounts = append(mounts, dc.Mount{
+			Source:      s,
+			Destination: d,
+			RW:          true,
+		})
 	}
 
 	if tag == "" {
