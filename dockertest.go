@@ -187,9 +187,9 @@ type BuildOptions struct {
 	ContextDir string
 }
 
-// BuildAndRunWithOptions builds and starts a docker container.
+// BuildAndRunWithBuildOptions builds and starts a docker container.
 // Optional modifier functions can be passed in order to change the hostconfig values not covered in RunOptions
-func (d *Pool) BuildAndRunWithOptions(buildOpts *BuildOptions, runOpts *RunOptions, hcOpts ...func(*dc.HostConfig)) (*Resource, error) {
+func (d *Pool) BuildAndRunWithBuildOptions(buildOpts *BuildOptions, runOpts *RunOptions, hcOpts ...func(*dc.HostConfig)) (*Resource, error) {
 	err := d.Client.BuildImage(dc.BuildImageOptions{
 		Name:         runOpts.Name,
 		Dockerfile:   buildOpts.Dockerfile,
@@ -206,13 +206,23 @@ func (d *Pool) BuildAndRunWithOptions(buildOpts *BuildOptions, runOpts *RunOptio
 	return d.RunWithOptions(runOpts, hcOpts...)
 }
 
+// BuildAndRunWithOptions builds and starts a docker container.
+// Optional modifier functions can be passed in order to change the hostconfig values not covered in RunOptions
+func (d *Pool) BuildAndRunWithOptions(dockerfilePath string, opts *RunOptions, hcOpts ...func(*dc.HostConfig)) (*Resource, error) {
+	// Set the Dockerfile folder as build context
+	dir, file := filepath.Split(dockerfilePath)
+	buildOpts := BuildOptions{Dockerfile:file, ContextDir:dir}
+	return d.BuildAndRunWithBuildOptions(&buildOpts, opts, hcOpts...)
+}
+
+
 // BuildAndRun builds and starts a docker container
 func (d *Pool) BuildAndRun(name, dockerfilePath string, env []string) (*Resource, error) {
 	// Set the Dockerfile folder as build context
 	dir, file := filepath.Split(dockerfilePath)
 	buildOpts := BuildOptions{Dockerfile:file, ContextDir:dir}
 
-	return d.BuildAndRunWithOptions(&buildOpts, &RunOptions{Name: name, Env: env})
+	return d.BuildAndRunWithBuildOptions(&buildOpts, &RunOptions{Name: name, Env: env})
 }
 
 // RunWithOptions starts a docker container.
