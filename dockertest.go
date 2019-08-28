@@ -211,10 +211,9 @@ func (d *Pool) BuildAndRunWithBuildOptions(buildOpts *BuildOptions, runOpts *Run
 func (d *Pool) BuildAndRunWithOptions(dockerfilePath string, opts *RunOptions, hcOpts ...func(*dc.HostConfig)) (*Resource, error) {
 	// Set the Dockerfile folder as build context
 	dir, file := filepath.Split(dockerfilePath)
-	buildOpts := BuildOptions{Dockerfile:file, ContextDir:dir}
+	buildOpts := BuildOptions{Dockerfile: file, ContextDir: dir}
 	return d.BuildAndRunWithBuildOptions(&buildOpts, opts, hcOpts...)
 }
-
 
 // BuildAndRun builds and starts a docker container
 func (d *Pool) BuildAndRun(name, dockerfilePath string, env []string) (*Resource, error) {
@@ -337,6 +336,34 @@ func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) 
 // pool.Run("mysql", "5.3", []string{"FOO=BAR", "BAR=BAZ"})
 func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
 	return d.RunWithOptions(&RunOptions{Repository: repository, Tag: tag, Env: env})
+}
+
+// ContainerByName finds a container with the given name and returns it if present
+func (d *Pool) ContainerByName(containerName string) (*Resource, bool) {
+	containers, err := d.Client.ListContainers(dc.ListContainersOptions{
+		All: true,
+		Filters: map[string][]string{
+			"name": {containerName},
+		},
+	})
+
+	if err != nil {
+		return nil, false
+	}
+
+	if len(containers) == 0 {
+		return nil, false
+	}
+
+	c, err := d.Client.InspectContainer(containers[0].ID)
+	if err != nil {
+		return nil, false
+	}
+
+	return &Resource{
+		pool:      d,
+		Container: c,
+	}, true
 }
 
 // RemoveContainerByName find a container with the given name and removes it if present
