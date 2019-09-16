@@ -224,8 +224,8 @@ func (d *Pool) BuildAndRun(name, dockerfilePath string, env []string) (*Resource
 // RunWithOptions starts a docker container.
 // Optional modifier functions can be passed in order to change the hostconfig values not covered in RunOptions
 //
-// pool.Run(&RunOptions{Repository: "mongo", Cmd: []string{"mongod", "--smallfiles"}})
-// pool.Run(&RunOptions{Repository: "mongo", Cmd: []string{"mongod", "--smallfiles"}}, func(hostConfig *dc.HostConfig) {
+//  pool.RunWithOptions(&RunOptions{Repository: "mongo", Cmd: []string{"mongod", "--smallfiles"}})
+//  pool.RunWithOptions(&RunOptions{Repository: "mongo", Cmd: []string{"mongod", "--smallfiles"}}, func(hostConfig *dc.HostConfig) {
 //			hostConfig.ShmSize = shmemsize
 //		})
 func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) (*Resource, error) {
@@ -334,7 +334,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) 
 
 // Run starts a docker container.
 //
-// pool.Run("mysql", "5.3", []string{"FOO=BAR", "BAR=BAZ"})
+//  pool.Run("mysql", "5.3", []string{"FOO=BAR", "BAR=BAZ"})
 func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
 	return d.RunWithOptions(&RunOptions{Repository: repository, Tag: tag, Env: env})
 }
