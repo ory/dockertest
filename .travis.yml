@@ -10,8 +10,8 @@ services:
 go:
   - 1.13
 
-install:
-  - go get github.com/mattn/goveralls golang.org/x/tools/cmd/cover github.com/pierrre/gotestcover
+before_install:
+  - go get github.com/mattn/goveralls
 
 script:
   - go vet -x .
