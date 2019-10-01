@@ -1,6 +1,6 @@
 sudo: required
 
-go_import_path: github.com/ory/dockertest
+go_import_path: github.com/ory/dockertest/v3
 
 language: go
 
@@ -8,12 +8,10 @@ services:
   - docker
 
 go:
-  - 1.9
+  - 1.13
 
 install:
   - go get github.com/mattn/goveralls golang.org/x/tools/cmd/cover github.com/pierrre/gotestcover
-  - curl -L -s https://github.com/golang/dep/releases/download/v0.4.1/dep-linux-amd64 -o $GOPATH/bin/dep && chmod +x $GOPATH/bin/dep
-  - dep ensure -vendor-only
 
 script:
   - go vet -x .
