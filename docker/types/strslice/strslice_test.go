@@ -1,4 +1,4 @@
-package strslice // import "github.com/ory/dockertest/docker/types/strslice"
+package strslice // import "github.com/ory/dockertest/v3/docker/types/strslice"
 
 import (
 	"encoding/json"

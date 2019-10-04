@@ -1,4 +1,4 @@
-package stdcopy // import "github.com/ory/dockertest/docker/pkg/stdcopy"
+package stdcopy // import "github.com/ory/dockertest/v3/docker/pkg/stdcopy"
 
 import (
 	"bytes"

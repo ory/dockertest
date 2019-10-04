@@ -1,4 +1,4 @@
-package mount // import "github.com/ory/dockertest/docker/pkg/mount"
+package mount // import "github.com/ory/dockertest/v3/docker/pkg/mount"
 
 // Info reveals information about a particular mounted filesystem. This
 // struct is populated from the content in the /proc/<pid>/mountinfo file.

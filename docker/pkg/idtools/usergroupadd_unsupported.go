@@ -1,6 +1,6 @@
 // +build !linux
 
-package idtools // import "github.com/ory/dockertest/docker/pkg/idtools"
+package idtools // import "github.com/ory/dockertest/v3/docker/pkg/idtools"
 
 import "fmt"
 

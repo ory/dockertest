@@ -1,4 +1,4 @@
-package container // import "github.com/ory/dockertest/docker/types/container"
+package container // import "github.com/ory/dockertest/v3/docker/types/container"
 
 // WaitCondition is a type used to specify a container state for which
 // to wait.

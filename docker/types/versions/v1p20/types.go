@@ -1,9 +1,9 @@
 // Package v1p20 provides specific API types for the API version 1, patch 20.
-package v1p20 // import "github.com/ory/dockertest/docker/types/versions/v1p20"
+package v1p20 // import "github.com/ory/dockertest/v3/docker/types/versions/v1p20"
 
 import (
-	"github.com/ory/dockertest/docker/types"
-	"github.com/ory/dockertest/docker/types/container"
+	"github.com/ory/dockertest/v3/docker/types"
+	"github.com/ory/dockertest/v3/docker/types/container"
 	"github.com/docker/go-connections/nat"
 )
 

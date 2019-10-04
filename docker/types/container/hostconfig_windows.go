@@ -1,4 +1,4 @@
-package container // import "github.com/ory/dockertest/docker/types/container"
+package container // import "github.com/ory/dockertest/v3/docker/types/container"
 
 // IsBridge indicates whether container uses the bridge network stack
 // in windows it is given the name NAT

@@ -2,7 +2,7 @@
 // When asked for the set of standard streams (e.g., stdin, stdout, stderr), the code will create
 // and return pseudo-streams that convert ANSI sequences to / from Windows Console API calls.
 
-package windowsconsole // import "github.com/ory/dockertest/docker/pkg/term/windows"
+package windowsconsole // import "github.com/ory/dockertest/v3/docker/pkg/term/windows"
 
 import (
 	"io/ioutil"

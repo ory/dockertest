@@ -1,12 +1,12 @@
-package types // import "github.com/ory/dockertest/docker/types"
+package types // import "github.com/ory/dockertest/v3/docker/types"
 
 import (
 	"bufio"
 	"io"
 	"net"
 
-	"github.com/ory/dockertest/docker/types/container"
-	"github.com/ory/dockertest/docker/types/filters"
+	"github.com/ory/dockertest/v3/docker/types/container"
+	"github.com/ory/dockertest/v3/docker/types/filters"
 	units "github.com/docker/go-units"
 )
 

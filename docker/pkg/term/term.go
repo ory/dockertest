@@ -2,7 +2,7 @@
 
 // Package term provides structures and helper functions to work with
 // terminal (state, sizes).
-package term // import "github.com/ory/dockertest/docker/pkg/term"
+package term // import "github.com/ory/dockertest/v3/docker/pkg/term"
 
 import (
 	"errors"

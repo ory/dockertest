@@ -1,6 +1,6 @@
 // +build !windows
 
-package container // import "github.com/ory/dockertest/docker/types/container"
+package container // import "github.com/ory/dockertest/v3/docker/types/container"
 
 // IsValid indicates if an isolation technology is valid
 func (i Isolation) IsValid() bool {

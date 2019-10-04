@@ -1,4 +1,4 @@
-package system // import "github.com/ory/dockertest/docker/pkg/system"
+package system // import "github.com/ory/dockertest/v3/docker/pkg/system"
 
 // Mknod is not implemented on Windows.
 func Mknod(path string, mode uint32, dev int) error {

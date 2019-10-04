@@ -1,4 +1,4 @@
-package registry // import "github.com/ory/dockertest/docker/types/registry"
+package registry // import "github.com/ory/dockertest/v3/docker/types/registry"
 
 import (
 	"encoding/json"
