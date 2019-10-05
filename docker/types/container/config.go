@@ -1,9 +1,9 @@
-package container // import "github.com/ory/dockertest/docker/types/container"
+package container // import "github.com/ory/dockertest/v3/docker/types/container"
 
 import (
 	"time"
 
-	"github.com/ory/dockertest/docker/types/strslice"
+	"github.com/ory/dockertest/v3/docker/types/strslice"
 	"github.com/docker/go-connections/nat"
 )
 

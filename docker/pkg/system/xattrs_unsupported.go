@@ -1,6 +1,6 @@
 // +build !linux
 
-package system // import "github.com/ory/dockertest/docker/pkg/system"
+package system // import "github.com/ory/dockertest/v3/docker/pkg/system"
 
 // Lgetxattr is not supported on platforms other than linux.
 func Lgetxattr(path string, attr string) ([]byte, error) {

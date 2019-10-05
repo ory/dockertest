@@ -1,6 +1,6 @@
 // +build !windows
 
-package homedir // import "github.com/ory/dockertest/docker/pkg/homedir"
+package homedir // import "github.com/ory/dockertest/v3/docker/pkg/homedir"
 
 import (
 	"os"

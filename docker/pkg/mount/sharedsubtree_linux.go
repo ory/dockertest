@@ -1,4 +1,4 @@
-package mount // import "github.com/ory/dockertest/docker/pkg/mount"
+package mount // import "github.com/ory/dockertest/v3/docker/pkg/mount"
 
 // MakeShared ensures a mounted filesystem has the SHARED mount option enabled.
 // See the supported options in flags.go for further reference.

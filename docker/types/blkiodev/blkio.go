@@ -1,4 +1,4 @@
-package blkiodev // import "github.com/ory/dockertest/docker/types/blkiodev"
+package blkiodev // import "github.com/ory/dockertest/v3/docker/types/blkiodev"
 
 import "fmt"
 

@@ -1,4 +1,4 @@
-package system // import "github.com/ory/dockertest/docker/pkg/system"
+package system // import "github.com/ory/dockertest/v3/docker/pkg/system"
 
 // Umask is not supported on the windows platform.
 func Umask(newmask int) (oldmask int, err error) {

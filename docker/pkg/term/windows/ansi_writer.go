@@ -1,6 +1,6 @@
 // +build windows
 
-package windowsconsole // import "github.com/ory/dockertest/docker/pkg/term/windows"
+package windowsconsole // import "github.com/ory/dockertest/v3/docker/pkg/term/windows"
 
 import (
 	"io"

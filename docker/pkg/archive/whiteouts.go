@@ -1,4 +1,4 @@
-package archive // import "github.com/ory/dockertest/docker/pkg/archive"
+package archive // import "github.com/ory/dockertest/v3/docker/pkg/archive"
 
 // Whiteouts are files with a special meaning for the layered filesystem.
 // Docker uses AUFS whiteout files inside exported archives. In other

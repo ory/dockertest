@@ -1,4 +1,4 @@
-package fileutils // import "github.com/ory/dockertest/docker/pkg/fileutils"
+package fileutils // import "github.com/ory/dockertest/v3/docker/pkg/fileutils"
 
 import (
 	"errors"

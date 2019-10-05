@@ -1,4 +1,4 @@
-package versions // import "github.com/ory/dockertest/docker/types/versions"
+package versions // import "github.com/ory/dockertest/v3/docker/types/versions"
 
 import (
 	"testing"

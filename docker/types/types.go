@@ -1,4 +1,4 @@
-package types // import "github.com/ory/dockertest/docker/types"
+package types // import "github.com/ory/dockertest/v3/docker/types"
 
 import (
 	"errors"
@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ory/dockertest/docker/types/container"
-	"github.com/ory/dockertest/docker/types/filters"
-	"github.com/ory/dockertest/docker/types/mount"
-	"github.com/ory/dockertest/docker/types/network"
-	"github.com/ory/dockertest/docker/types/registry"
+	"github.com/ory/dockertest/v3/docker/types/container"
+	"github.com/ory/dockertest/v3/docker/types/filters"
+	"github.com/ory/dockertest/v3/docker/types/mount"
+	"github.com/ory/dockertest/v3/docker/types/network"
+	"github.com/ory/dockertest/v3/docker/types/registry"
 	"github.com/docker/go-connections/nat"
 )
 

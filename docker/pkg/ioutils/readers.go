@@ -1,4 +1,4 @@
-package ioutils // import "github.com/ory/dockertest/docker/pkg/ioutils"
+package ioutils // import "github.com/ory/dockertest/v3/docker/pkg/ioutils"
 
 import (
 	"crypto/sha256"
