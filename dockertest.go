@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cenkalti/backoff"
+	"github.com/cenkalti/backoff/v3"
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/pkg/errors"
 )
