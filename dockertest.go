@@ -29,33 +29,26 @@ type Resource struct {
 
 // GetPort returns a resource's published port. You can use it to connect to the service via localhost, e.g. tcp://localhost:1231/
 func (r *Resource) GetPort(id string) string {
-	if r.Container == nil {
-		return ""
-	} else if r.Container.NetworkSettings == nil {
+	if r.Container == nil || r.Container.NetworkSettings == nil {
 		return ""
 	}
 
 	m, ok := r.Container.NetworkSettings.Ports[dc.Port(id)]
-	if !ok {
-		return ""
-	} else if len(m) == 0 {
+	if !ok || len(m) == 0 {
 		return ""
 	}
 
 	return m[0].HostPort
 }
 
+// GetBoundIP returns a resource's published IP address.
 func (r *Resource) GetBoundIP(id string) string {
-	if r.Container == nil {
-		return ""
-	} else if r.Container.NetworkSettings == nil {
+	if r.Container == nil || r.Container.NetworkSettings == nil {
 		return ""
 	}
 
 	m, ok := r.Container.NetworkSettings.Ports[dc.Port(id)]
-	if !ok {
-		return ""
-	} else if len(m) == 0 {
+	if !ok || len(m) == 0 {
 		return ""
 	}
 
@@ -64,18 +57,15 @@ func (r *Resource) GetBoundIP(id string) string {
 
 // GetHostPort returns a resource's published port with an address.
 func (r *Resource) GetHostPort(portID string) string {
-	if r.Container == nil {
-		return ""
-	} else if r.Container.NetworkSettings == nil {
+	if r.Container == nil || r.Container.NetworkSettings == nil {
 		return ""
 	}
 
 	m, ok := r.Container.NetworkSettings.Ports[dc.Port(portID)]
-	if !ok {
-		return ""
-	} else if len(m) == 0 {
+	if !ok || len(m) == 0 {
 		return ""
 	}
+
 	ip := m[0].HostIP
 	if ip == "0.0.0.0" {
 		ip = "localhost"
@@ -128,7 +118,8 @@ func NewPool(endpoint string) (*Pool, error) {
 			}
 
 			return &Pool{Client: client}, nil
-		} else if os.Getenv("DOCKER_HOST") != "" {
+		}
+		if os.Getenv("DOCKER_HOST") != "" {
 			endpoint = os.Getenv("DOCKER_HOST")
 		} else if os.Getenv("DOCKER_URL") != "" {
 			endpoint = os.Getenv("DOCKER_URL")
@@ -139,7 +130,7 @@ func NewPool(endpoint string) (*Pool, error) {
 		}
 	}
 
-	if os.Getenv("DOCKER_CERT_PATH") != "" && shouldPreferTls(endpoint) {
+	if os.Getenv("DOCKER_CERT_PATH") != "" && shouldPreferTLS(endpoint) {
 		return NewTLSPool(endpoint, os.Getenv("DOCKER_CERT_PATH"))
 	}
 
@@ -153,7 +144,7 @@ func NewPool(endpoint string) (*Pool, error) {
 	}, nil
 }
 
-func shouldPreferTls(endpoint string) bool {
+func shouldPreferTLS(endpoint string) bool {
 	return !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "unix://")
 }
 
@@ -211,10 +202,9 @@ func (d *Pool) BuildAndRunWithBuildOptions(buildOpts *BuildOptions, runOpts *Run
 func (d *Pool) BuildAndRunWithOptions(dockerfilePath string, opts *RunOptions, hcOpts ...func(*dc.HostConfig)) (*Resource, error) {
 	// Set the Dockerfile folder as build context
 	dir, file := filepath.Split(dockerfilePath)
-	buildOpts := BuildOptions{Dockerfile:file, ContextDir:dir}
+	buildOpts := BuildOptions{Dockerfile: file, ContextDir: dir}
 	return d.BuildAndRunWithBuildOptions(&buildOpts, opts, hcOpts...)
 }
-
 
 // BuildAndRun builds and starts a docker container
 func (d *Pool) BuildAndRun(name, dockerfilePath string, env []string) (*Resource, error) {
@@ -248,15 +238,14 @@ func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) 
 
 	for _, m := range opts.Mounts {
 		sd := strings.Split(m, ":")
-		if len(sd) == 2 {
-			mounts = append(mounts, dc.Mount{
-				Source:      sd[0],
-				Destination: sd[1],
-				RW:          true,
-			})
-		} else {
+		if len(sd) != 2 {
 			return nil, errors.Wrap(fmt.Errorf("invalid mount format: got %s, expected <src>:<dst>", m), "")
 		}
+		mounts = append(mounts, dc.Mount{
+			Source:      sd[0],
+			Destination: sd[1],
+			RW:          true,
+		})
 	}
 
 	if tag == "" {
