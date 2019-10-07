@@ -54,6 +54,7 @@ func GetOSVersion() OSVersion {
 	return osv
 }
 
+// ToString returns a textual representation of the version.
 func (osv OSVersion) ToString() string {
 	return fmt.Sprintf("%d.%d.%d", osv.MajorVersion, osv.MinorVersion, osv.Build)
 }
