@@ -1,4 +1,4 @@
-package system // import "github.com/ory/dockertest/docker/pkg/system"
+package system // import "github.com/ory/dockertest/v3/docker/pkg/system"
 
 import (
 	"os"
@@ -11,7 +11,6 @@ import (
 	"time"
 	"unsafe"
 
-	winio "github.com/Microsoft/go-winio"
 	"golang.org/x/sys/windows"
 )
 
@@ -104,13 +103,13 @@ func mkdirall(path string, applyACL bool, sddl string) error {
 // and Local System.
 func mkdirWithACL(name string, sddl string) error {
 	sa := windows.SecurityAttributes{Length: 0}
-	sd, err := winio.SddlToSecurityDescriptor(sddl)
+	sd, err := windows.SecurityDescriptorFromString(sddl)
 	if err != nil {
 		return &os.PathError{Op: "mkdir", Path: name, Err: err}
 	}
 	sa.Length = uint32(unsafe.Sizeof(sa))
 	sa.InheritHandle = 1
-	sa.SecurityDescriptor = uintptr(unsafe.Pointer(&sd[0]))
+	sa.SecurityDescriptor = sd
 
 	namep, err := windows.UTF16PtrFromString(name)
 	if err != nil {

@@ -1,4 +1,4 @@
-package network // import "github.com/ory/dockertest/docker/types/network"
+package network // import "github.com/ory/dockertest/v3/docker/types/network"
 
 // Address represents an IP address
 type Address struct {

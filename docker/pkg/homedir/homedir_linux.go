@@ -1,9 +1,9 @@
-package homedir // import "github.com/ory/dockertest/docker/pkg/homedir"
+package homedir // import "github.com/ory/dockertest/v3/docker/pkg/homedir"
 
 import (
 	"os"
 
-	"github.com/ory/dockertest/docker/pkg/idtools"
+	"github.com/ory/dockertest/v3/docker/pkg/idtools"
 )
 
 // GetStatic returns the home directory for the current user without calling

@@ -1,4 +1,4 @@
-package system // import "github.com/ory/dockertest/docker/pkg/system"
+package system // import "github.com/ory/dockertest/v3/docker/pkg/system"
 
 import (
 	"syscall"

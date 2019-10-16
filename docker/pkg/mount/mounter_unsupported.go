@@ -1,6 +1,6 @@
 // +build !linux,!freebsd freebsd,!cgo
 
-package mount // import "github.com/ory/dockertest/docker/pkg/mount"
+package mount // import "github.com/ory/dockertest/v3/docker/pkg/mount"
 
 func mount(device, target, mType string, flag uintptr, data string) error {
 	panic("Not implemented")

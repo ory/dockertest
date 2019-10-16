@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ory/dockertest/docker/types"
+	"github.com/ory/dockertest/v3/docker/types"
 )
 
 // RuntimeOpt defines a map of Runtimes

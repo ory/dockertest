@@ -1,4 +1,4 @@
-package filters // import "github.com/ory/dockertest/docker/types/filters"
+package filters // import "github.com/ory/dockertest/v3/docker/types/filters"
 
 import (
 	"errors"

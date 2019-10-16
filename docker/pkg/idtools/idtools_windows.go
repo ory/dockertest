@@ -1,9 +1,9 @@
-package idtools // import "github.com/ory/dockertest/docker/pkg/idtools"
+package idtools // import "github.com/ory/dockertest/v3/docker/pkg/idtools"
 
 import (
 	"os"
 
-	"github.com/ory/dockertest/docker/pkg/system"
+	"github.com/ory/dockertest/v3/docker/pkg/system"
 )
 
 // Platforms such as Windows do not support the UID/GID concept. So make this

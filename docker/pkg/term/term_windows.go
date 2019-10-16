@@ -1,4 +1,4 @@
-package term // import "github.com/ory/dockertest/docker/pkg/term"
+package term // import "github.com/ory/dockertest/v3/docker/pkg/term"
 
 import (
 	"io"
@@ -7,7 +7,7 @@ import (
 	"syscall" // used for STD_INPUT_HANDLE, STD_OUTPUT_HANDLE and STD_ERROR_HANDLE
 
 	"github.com/Azure/go-ansiterm/winterm"
-	"github.com/ory/dockertest/docker/pkg/term/windows"
+	"github.com/ory/dockertest/v3/docker/pkg/term/windows"
 )
 
 // State holds the console mode for the terminal.

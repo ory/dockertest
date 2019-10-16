@@ -1,11 +1,11 @@
-package container // import "github.com/ory/dockertest/docker/types/container"
+package container // import "github.com/ory/dockertest/v3/docker/types/container"
 
 import (
 	"strings"
 
-	"github.com/ory/dockertest/docker/types/blkiodev"
-	"github.com/ory/dockertest/docker/types/mount"
-	"github.com/ory/dockertest/docker/types/strslice"
+	"github.com/ory/dockertest/v3/docker/types/blkiodev"
+	"github.com/ory/dockertest/v3/docker/types/mount"
+	"github.com/ory/dockertest/v3/docker/types/strslice"
 	"github.com/docker/go-connections/nat"
 	"github.com/docker/go-units"
 )

@@ -1,4 +1,4 @@
-package jsonmessage // import "github.com/ory/dockertest/docker/pkg/jsonmessage"
+package jsonmessage // import "github.com/ory/dockertest/v3/docker/pkg/jsonmessage"
 
 import (
 	"encoding/json"
@@ -9,7 +9,7 @@ import (
 	"time"
 
 	gotty "github.com/Nvveen/Gotty"
-	"github.com/ory/dockertest/docker/pkg/term"
+	"github.com/ory/dockertest/v3/docker/pkg/term"
 	units "github.com/docker/go-units"
 )
 

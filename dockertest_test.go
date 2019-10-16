@@ -11,7 +11,7 @@ import (
 	"time"
 
 	_ "github.com/lib/pq"
-	dc "github.com/ory/dockertest/docker"
+	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

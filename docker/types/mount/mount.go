@@ -1,4 +1,4 @@
-package mount // import "github.com/ory/dockertest/docker/types/mount"
+package mount // import "github.com/ory/dockertest/v3/docker/types/mount"
 
 import (
 	"os"

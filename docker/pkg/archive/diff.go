@@ -1,4 +1,4 @@
-package archive // import "github.com/ory/dockertest/docker/pkg/archive"
+package archive // import "github.com/ory/dockertest/v3/docker/pkg/archive"
 
 import (
 	"archive/tar"
@@ -10,9 +10,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/ory/dockertest/docker/pkg/idtools"
-	"github.com/ory/dockertest/docker/pkg/pools"
-	"github.com/ory/dockertest/docker/pkg/system"
+	"github.com/ory/dockertest/v3/docker/pkg/idtools"
+	"github.com/ory/dockertest/v3/docker/pkg/pools"
+	"github.com/ory/dockertest/v3/docker/pkg/system"
 	"github.com/sirupsen/logrus"
 )
 

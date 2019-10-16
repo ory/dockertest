@@ -1,4 +1,4 @@
-package system // import "github.com/ory/dockertest/docker/pkg/system"
+package system // import "github.com/ory/dockertest/v3/docker/pkg/system"
 
 import (
 	"fmt"
@@ -54,6 +54,7 @@ func GetOSVersion() OSVersion {
 	return osv
 }
 
+// ToString returns a textual representation of the version.
 func (osv OSVersion) ToString() string {
 	return fmt.Sprintf("%d.%d.%d", osv.MajorVersion, osv.MinorVersion, osv.Build)
 }

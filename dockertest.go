@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cenkalti/backoff"
-	options "github.com/ory/dockertest/docker/opts"
-	dc "github.com/ory/dockertest/docker"
+	"github.com/cenkalti/backoff/v3"
+	dc "github.com/ory/dockertest/v3/docker"
+	options "github.com/ory/dockertest/v3/docker/opts"
 	"github.com/pkg/errors"
 )
 
@@ -30,33 +30,26 @@ type Resource struct {
 
 // GetPort returns a resource's published port. You can use it to connect to the service via localhost, e.g. tcp://localhost:1231/
 func (r *Resource) GetPort(id string) string {
-	if r.Container == nil {
-		return ""
-	} else if r.Container.NetworkSettings == nil {
+	if r.Container == nil || r.Container.NetworkSettings == nil {
 		return ""
 	}
 
 	m, ok := r.Container.NetworkSettings.Ports[dc.Port(id)]
-	if !ok {
-		return ""
-	} else if len(m) == 0 {
+	if !ok || len(m) == 0 {
 		return ""
 	}
 
 	return m[0].HostPort
 }
 
+// GetBoundIP returns a resource's published IP address.
 func (r *Resource) GetBoundIP(id string) string {
-	if r.Container == nil {
-		return ""
-	} else if r.Container.NetworkSettings == nil {
+	if r.Container == nil || r.Container.NetworkSettings == nil {
 		return ""
 	}
 
 	m, ok := r.Container.NetworkSettings.Ports[dc.Port(id)]
-	if !ok {
-		return ""
-	} else if len(m) == 0 {
+	if !ok || len(m) == 0 {
 		return ""
 	}
 
@@ -65,18 +58,15 @@ func (r *Resource) GetBoundIP(id string) string {
 
 // GetHostPort returns a resource's published port with an address.
 func (r *Resource) GetHostPort(portID string) string {
-	if r.Container == nil {
-		return ""
-	} else if r.Container.NetworkSettings == nil {
+	if r.Container == nil || r.Container.NetworkSettings == nil {
 		return ""
 	}
 
 	m, ok := r.Container.NetworkSettings.Ports[dc.Port(portID)]
-	if !ok {
-		return ""
-	} else if len(m) == 0 {
+	if !ok || len(m) == 0 {
 		return ""
 	}
+
 	ip := m[0].HostIP
 	if ip == "0.0.0.0" {
 		ip = "localhost"
@@ -129,7 +119,8 @@ func NewPool(endpoint string) (*Pool, error) {
 			}
 
 			return &Pool{Client: client}, nil
-		} else if os.Getenv("DOCKER_HOST") != "" {
+		}
+		if os.Getenv("DOCKER_HOST") != "" {
 			endpoint = os.Getenv("DOCKER_HOST")
 		} else if os.Getenv("DOCKER_URL") != "" {
 			endpoint = os.Getenv("DOCKER_URL")
@@ -140,7 +131,7 @@ func NewPool(endpoint string) (*Pool, error) {
 		}
 	}
 
-	if os.Getenv("DOCKER_CERT_PATH") != "" && shouldPreferTls(endpoint) {
+	if os.Getenv("DOCKER_CERT_PATH") != "" && shouldPreferTLS(endpoint) {
 		return NewTLSPool(endpoint, os.Getenv("DOCKER_CERT_PATH"))
 	}
 
@@ -154,7 +145,7 @@ func NewPool(endpoint string) (*Pool, error) {
 	}, nil
 }
 
-func shouldPreferTls(endpoint string) bool {
+func shouldPreferTLS(endpoint string) bool {
 	return !strings.HasPrefix(endpoint, "http://") && !strings.HasPrefix(endpoint, "unix://")
 }
 
@@ -182,26 +173,38 @@ type RunOptions struct {
 	Privileged   bool
 }
 
-// BuildAndRunWithOptions builds and starts a docker container.
-// Optional modifier functions can be passed in order to change the hostconfig values not covered in RunOptions
-func (d *Pool) BuildAndRunWithOptions(dockerfilePath string, opts *RunOptions, hcOpts ...func(*dc.HostConfig)) (*Resource, error) {
-	// Set the Dockerfile folder as build context
-	dir, file := filepath.Split(dockerfilePath)
+// BuildOptions is used to pass in optional parameters when building a container
+type BuildOptions struct {
+	Dockerfile string
+	ContextDir string
+}
 
+// BuildAndRunWithBuildOptions builds and starts a docker container.
+// Optional modifier functions can be passed in order to change the hostconfig values not covered in RunOptions
+func (d *Pool) BuildAndRunWithBuildOptions(buildOpts *BuildOptions, runOpts *RunOptions, hcOpts ...func(*dc.HostConfig)) (*Resource, error) {
 	err := d.Client.BuildImage(dc.BuildImageOptions{
-		Name:         opts.Name,
-		Dockerfile:   file,
+		Name:         runOpts.Name,
+		Dockerfile:   buildOpts.Dockerfile,
 		OutputStream: ioutil.Discard,
-		ContextDir:   dir,
+		ContextDir:   buildOpts.ContextDir,
 	})
 
 	if err != nil {
 		return nil, errors.Wrap(err, "")
 	}
 
-	opts.Repository = opts.Name
+	runOpts.Repository = runOpts.Name
 
-	return d.RunWithOptions(opts, hcOpts...)
+	return d.RunWithOptions(runOpts, hcOpts...)
+}
+
+// BuildAndRunWithOptions builds and starts a docker container.
+// Optional modifier functions can be passed in order to change the hostconfig values not covered in RunOptions
+func (d *Pool) BuildAndRunWithOptions(dockerfilePath string, opts *RunOptions, hcOpts ...func(*dc.HostConfig)) (*Resource, error) {
+	// Set the Dockerfile folder as build context
+	dir, file := filepath.Split(dockerfilePath)
+	buildOpts := BuildOptions{Dockerfile: file, ContextDir: dir}
+	return d.BuildAndRunWithBuildOptions(&buildOpts, opts, hcOpts...)
 }
 
 // BuildAndRun builds and starts a docker container
@@ -212,8 +215,8 @@ func (d *Pool) BuildAndRun(name, dockerfilePath string, env []string) (*Resource
 // RunWithOptions starts a docker container.
 // Optional modifier functions can be passed in order to change the hostconfig values not covered in RunOptions
 //
-// pool.Run(&RunOptions{Repository: "mongo", Cmd: []string{"mongod", "--smallfiles"}})
-// pool.Run(&RunOptions{Repository: "mongo", Cmd: []string{"mongod", "--smallfiles"}}, func(hostConfig *dc.HostConfig) {
+//  pool.RunWithOptions(&RunOptions{Repository: "mongo", Cmd: []string{"mongod", "--smallfiles"}})
+//  pool.RunWithOptions(&RunOptions{Repository: "mongo", Cmd: []string{"mongod", "--smallfiles"}}, func(hostConfig *dc.HostConfig) {
 //			hostConfig.ShmSize = shmemsize
 //		})
 func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) (*Resource, error) {
@@ -321,7 +324,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) 
 
 // Run starts a docker container.
 //
-// pool.Run("mysql", "5.3", []string{"FOO=BAR", "BAR=BAZ"})
+//  pool.Run("mysql", "5.3", []string{"FOO=BAR", "BAR=BAZ"})
 func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
 	return d.RunWithOptions(&RunOptions{Repository: repository, Tag: tag, Env: env})
 }

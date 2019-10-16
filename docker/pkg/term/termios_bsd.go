@@ -1,6 +1,6 @@
 // +build darwin freebsd openbsd
 
-package term // import "github.com/ory/dockertest/docker/pkg/term"
+package term // import "github.com/ory/dockertest/v3/docker/pkg/term"
 
 import (
 	"unsafe"

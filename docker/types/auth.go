@@ -1,4 +1,4 @@
-package types // import "github.com/ory/dockertest/docker/types"
+package types // import "github.com/ory/dockertest/v3/docker/types"
 
 // AuthConfig contains authorization information for connecting to a Registry
 type AuthConfig struct {
