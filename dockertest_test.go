@@ -183,6 +183,23 @@ func TestContainerWithShMzSize(t *testing.T) {
 	require.Nil(t, pool.Purge(resource))
 }
 
+func TestContainerByName(t *testing.T) {
+	got, err := pool.RunWithOptions(
+		&RunOptions{
+			Name:       "db",
+			Repository: "postgres",
+			Tag:        "9.5",
+		})
+	require.Nil(t, err)
+
+	want, ok := pool.ContainerByName("db")
+	require.True(t, ok)
+
+	require.Equal(t, got, want)
+
+	require.Nil(t, pool.Purge(got))
+}
+
 func TestRemoveContainerByName(t *testing.T) {
 	_, err := pool.RunWithOptions(
 		&RunOptions{

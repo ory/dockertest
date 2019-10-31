@@ -329,6 +329,34 @@ func (d *Pool) Run(repository, tag string, env []string) (*Resource, error) {
 	return d.RunWithOptions(&RunOptions{Repository: repository, Tag: tag, Env: env})
 }
 
+// ContainerByName finds a container with the given name and returns it if present
+func (d *Pool) ContainerByName(containerName string) (*Resource, bool) {
+	containers, err := d.Client.ListContainers(dc.ListContainersOptions{
+		All: true,
+		Filters: map[string][]string{
+			"name": {containerName},
+		},
+	})
+
+	if err != nil {
+		return nil, false
+	}
+
+	if len(containers) == 0 {
+		return nil, false
+	}
+
+	c, err := d.Client.InspectContainer(containers[0].ID)
+	if err != nil {
+		return nil, false
+	}
+
+	return &Resource{
+		pool:      d,
+		Container: c,
+	}, true
+}
+
 // RemoveContainerByName find a container with the given name and removes it if present
 func (d *Pool) RemoveContainerByName(containerName string) error {
 	containers, err := d.Client.ListContainers(dc.ListContainersOptions{
