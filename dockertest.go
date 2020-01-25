@@ -16,6 +16,10 @@ import (
 	"github.com/pkg/errors"
 )
 
+var (
+	ErrNotInContainer = errors.New("not running in container")
+)
+
 // Pool represents a connection to the docker API and is used to create and remove docker images.
 type Pool struct {
 	Client  *dc.Client
@@ -403,4 +407,27 @@ func (d *Pool) Retry(op func() error) error {
 	bo.MaxInterval = time.Second * 5
 	bo.MaxElapsedTime = d.MaxWait
 	return backoff.Retry(op, bo)
+}
+
+// CurrentContainer returns current container descriptor if this function called within running container.
+// It returns ErrNotInContainer as error if this function running not in container.
+func (d *Pool) CurrentContainer() (*Resource, error) {
+	// docker daemon puts short container id into hostname
+	hostname, err := os.Hostname()
+	if err != nil {
+		return nil, errors.Wrap(err, "Get hostname failed")
+	}
+
+	container, err := d.Client.InspectContainer(hostname)
+	switch err.(type) {
+	case nil:
+		return &Resource{
+			pool:      d,
+			Container: container,
+		}, nil
+	case *dc.NoSuchContainer:
+		return nil, ErrNotInContainer
+	default:
+		return nil, errors.Wrap(err, "")
+	}
 }
