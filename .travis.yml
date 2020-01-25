@@ -9,7 +9,7 @@ go:
   - 1.13
 
 before_install:
-  - go get github.com/mattn/goveralls
+  - go get github.com/mattn/goveralls github.com/sonatype-nexus-community/nancy
 
 script:
   - go list -m all | nancy -quiet
