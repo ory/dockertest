@@ -1,12 +1,14 @@
 package dockertest
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -220,4 +222,33 @@ func TestRemoveContainerByName(t *testing.T) {
 		})
 	require.Nil(t, err)
 	require.Nil(t, pool.Purge(resource))
+}
+
+func TestExec(t *testing.T) {
+	resource, err := pool.Run("postgres", "9.5", nil)
+	require.Nil(t, err)
+	assert.NotEmpty(t, resource.GetPort("5432/tcp"))
+	assert.NotEmpty(t, resource.GetBoundIP("5432/tcp"))
+
+	defer resource.Close()
+
+	var pgVersion string
+	err = pool.Retry(func() error {
+		db, err := sql.Open("postgres", fmt.Sprintf("postgres://postgres:secret@localhost:%s/postgres?sslmode=disable", resource.GetPort("5432/tcp")))
+		if err != nil {
+			return err
+		}
+		return db.QueryRow("SHOW server_version").Scan(&pgVersion)
+	})
+	require.Nil(t, err)
+
+	var stdout bytes.Buffer
+	exitCode, err := resource.Exec(
+		[]string{"psql", "-qtAX", "-U", "postgres", "-c", "SHOW server_version"},
+		ExecOptions{StdOut: &stdout},
+	)
+	require.Nil(t, err)
+	require.Zero(t, exitCode)
+
+	require.Equal(t, pgVersion, strings.TrimRight(stdout.String(), "\n"))
 }

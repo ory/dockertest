@@ -2,6 +2,7 @@ package dockertest
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net"
 	"os"
@@ -76,6 +77,56 @@ func (r *Resource) GetHostPort(portID string) string {
 		ip = "localhost"
 	}
 	return net.JoinHostPort(ip, m[0].HostPort)
+}
+
+type ExecOptions struct {
+	// Command environment, optional.
+	Env []string
+
+	// StdIn will be attached as command stdin if provided.
+	StdIn io.Reader
+
+	// StdOut will be attached as command stdout if provided.
+	StdOut io.Writer
+
+	// StdErr will be attached as command stdout if provided.
+	StdErr io.Writer
+
+	// Allocate TTY for command or not.
+	TTY bool
+}
+
+// Exec executes command within container.
+func (r *Resource) Exec(cmd []string, opts ExecOptions) (exitCode int, err error) {
+	exec, err := r.pool.Client.CreateExec(dc.CreateExecOptions{
+		Container:    r.Container.ID,
+		Cmd:          cmd,
+		Env:          opts.Env,
+		AttachStderr: opts.StdErr != nil,
+		AttachStdout: opts.StdOut != nil,
+		AttachStdin:  opts.StdIn != nil,
+		Tty:          opts.TTY,
+	})
+	if err != nil {
+		return -1, errors.Wrap(err, "Create exec failed")
+	}
+
+	err = r.pool.Client.StartExec(exec.ID, dc.StartExecOptions{
+		InputStream:  opts.StdIn,
+		OutputStream: opts.StdOut,
+		ErrorStream:  opts.StdErr,
+		Tty:          opts.TTY,
+	})
+	if err != nil {
+		return -1, errors.Wrap(err, "Start exec failed")
+	}
+
+	inspectExec, err := r.pool.Client.InspectExec(exec.ID)
+	if err != nil {
+		return -1, errors.Wrap(err, "Inspect exec failed")
+	}
+
+	return inspectExec.ExitCode, nil
 }
 
 // Close removes a container and linked volumes from docker by calling pool.Purge.
