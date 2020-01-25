@@ -21,6 +21,7 @@ require (
 	github.com/sirupsen/logrus v1.4.2
 	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/stretchr/testify v1.4.0
+	golang.org/x/crypto v0.0.0-20200117160349-530e935923ad // indirect
 	golang.org/x/net v0.0.0-20191003171128-d98b1b443823
 	golang.org/x/sys v0.0.0-20200121082415-34d275377bf9
 	gopkg.in/yaml.v2 v2.2.7 // indirect
