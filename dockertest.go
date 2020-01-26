@@ -27,6 +27,17 @@ type Pool struct {
 	MaxWait time.Duration
 }
 
+// Network represents a docker network.
+type Network struct {
+	pool    *Pool
+	Network *dc.Network
+}
+
+// Close removes network by calling pool.RemoveNetwork.
+func (n *Network) Close() error {
+	return n.pool.RemoveNetwork(n)
+}
+
 // Resource represents a docker container.
 type Resource struct {
 	pool      *Pool
@@ -129,6 +140,68 @@ func (r *Resource) Exec(cmd []string, opts ExecOptions) (exitCode int, err error
 	return inspectExec.ExitCode, nil
 }
 
+// GetIPInNetwork returns container IP address in network.
+func (r *Resource) GetIPInNetwork(network *Network) string {
+	if r.Container == nil || r.Container.NetworkSettings == nil {
+		return ""
+	}
+
+	netCfg, ok := r.Container.NetworkSettings.Networks[network.Network.Name]
+	if !ok {
+		return ""
+	}
+
+	return netCfg.IPAddress
+}
+
+// ConnectToNetwork connects container to network.
+func (r *Resource) ConnectToNetwork(network *Network) error {
+	err := r.pool.Client.ConnectNetwork(
+		network.Network.ID,
+		dc.NetworkConnectionOptions{Container: r.Container.ID},
+	)
+	if err != nil {
+		return errors.Wrap(err, "Failed to connect container to network")
+	}
+
+	// refresh internal representation
+	r.Container, err = r.pool.Client.InspectContainer(r.Container.ID)
+	if err != nil {
+		return errors.Wrap(err, "Failed to refresh container information")
+	}
+
+	network.Network, err = r.pool.Client.NetworkInfo(network.Network.ID)
+	if err != nil {
+		return errors.Wrap(err, "Failed to refresh network information")
+	}
+
+	return nil
+}
+
+// DisconnectFromNetwork disconnects container from network.
+func (r *Resource) DisconnectFromNetwork(network *Network) error {
+	err := r.pool.Client.DisconnectNetwork(
+		network.Network.ID,
+		dc.NetworkConnectionOptions{Container: r.Container.ID},
+	)
+	if err != nil {
+		return errors.Wrap(err, "Failed to connect container to network")
+	}
+
+	// refresh internal representation
+	r.Container, err = r.pool.Client.InspectContainer(r.Container.ID)
+	if err != nil {
+		return errors.Wrap(err, "Failed to refresh container information")
+	}
+
+	network.Network, err = r.pool.Client.NetworkInfo(network.Network.ID)
+	if err != nil {
+		return errors.Wrap(err, "Failed to refresh network information")
+	}
+
+	return nil
+}
+
 // Close removes a container and linked volumes from docker by calling pool.Purge.
 func (r *Resource) Close() error {
 	return r.pool.Purge(r)
@@ -222,6 +295,7 @@ type RunOptions struct {
 	DNS          []string
 	WorkingDir   string
 	NetworkID    string
+	Networks     []*Network // optional networks to join
 	Labels       map[string]string
 	Auth         dc.AuthConfiguration
 	PortBindings map[dc.Port][]dc.PortBinding
@@ -314,6 +388,9 @@ func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) 
 	if opts.NetworkID != "" {
 		networkingConfig.EndpointsConfig[opts.NetworkID] = &dc.EndpointConfig{}
 	}
+	for _, network := range opts.Networks {
+		networkingConfig.EndpointsConfig[network.Network.ID] = &dc.EndpointConfig{}
+	}
 
 	_, err := d.Client.InspectImage(fmt.Sprintf("%s:%s", repository, tag))
 	if err != nil {
@@ -369,6 +446,13 @@ func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) 
 	c, err = d.Client.InspectContainer(c.ID)
 	if err != nil {
 		return nil, errors.Wrap(err, "")
+	}
+
+	for _, network := range opts.Networks {
+		network.Network, err = d.Client.NetworkInfo(network.Network.ID)
+		if err != nil {
+			return nil, errors.Wrap(err, "")
+		}
 	}
 
 	return &Resource{
@@ -481,4 +565,35 @@ func (d *Pool) CurrentContainer() (*Resource, error) {
 	default:
 		return nil, errors.Wrap(err, "")
 	}
+}
+
+// CreateNetwork creates docker network. It's useful for linking multiple containers.
+func (d *Pool) CreateNetwork(name string, opts ...func(config *dc.CreateNetworkOptions)) (*Network, error) {
+	var cfg dc.CreateNetworkOptions
+	cfg.Name = name
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	network, err := d.Client.CreateNetwork(cfg)
+	if err != nil {
+		return nil, errors.Wrap(err, "")
+	}
+
+	return &Network{
+		pool:    d,
+		Network: network,
+	}, nil
+}
+
+// RemoveNetwork disconnects containers and removes provided network.
+func (d *Pool) RemoveNetwork(network *Network) error {
+	for container := range network.Network.Containers {
+		_ = d.Client.DisconnectNetwork(
+			network.Network.ID,
+			dc.NetworkConnectionOptions{Container: container, Force: true},
+		)
+	}
+
+	return d.Client.RemoveNetwork(network.Network.ID)
 }

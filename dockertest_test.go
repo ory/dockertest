@@ -252,3 +252,87 @@ func TestExec(t *testing.T) {
 
 	require.Equal(t, pgVersion, strings.TrimRight(stdout.String(), "\n"))
 }
+
+func TestNetworking_on_start(t *testing.T) {
+	network, err := pool.CreateNetwork("test-on-start")
+	require.Nil(t, err)
+	defer network.Close()
+
+	resourceFirst, err := pool.RunWithOptions(&RunOptions{
+		Repository: "postgres",
+		Tag:        "9.5",
+		Networks:   []*Network{network},
+	})
+	require.Nil(t, err)
+	defer resourceFirst.Close()
+
+	resourceSecond, err := pool.RunWithOptions(&RunOptions{
+		Repository: "postgres",
+		Tag:        "11",
+		Networks:   []*Network{network},
+	})
+	require.Nil(t, err)
+	defer resourceSecond.Close()
+
+	var expectedVersion string
+	err = pool.Retry(func() error {
+		db, err := sql.Open(
+			"postgres",
+			fmt.Sprintf(
+				"postgres://postgres:secret@localhost:%s/postgres?sslmode=disable",
+				resourceSecond.GetPort("5432/tcp"),
+			),
+		)
+		if err != nil {
+			return err
+		}
+		return db.QueryRow("SHOW server_version").Scan(&expectedVersion)
+	})
+	require.Nil(t, err)
+}
+
+func TestNetworking_after_start(t *testing.T) {
+	network, err := pool.CreateNetwork("test-after-start")
+	require.Nil(t, err)
+	defer network.Close()
+
+	resourceFirst, err := pool.Run("postgres", "9.6", nil)
+	require.Nil(t, err)
+	defer resourceFirst.Close()
+
+	err = resourceFirst.ConnectToNetwork(network)
+	require.Nil(t, err)
+
+	resourceSecond, err := pool.Run("postgres", "11", nil)
+	require.Nil(t, err)
+	defer resourceSecond.Close()
+
+	err = resourceSecond.ConnectToNetwork(network)
+	require.Nil(t, err)
+
+	var expectedVersion string
+	err = pool.Retry(func() error {
+		db, err := sql.Open(
+			"postgres",
+			fmt.Sprintf(
+				"postgres://postgres:secret@localhost:%s/postgres?sslmode=disable",
+				resourceSecond.GetPort("5432/tcp"),
+			),
+		)
+		if err != nil {
+			return err
+		}
+		return db.QueryRow("SHOW server_version").Scan(&expectedVersion)
+	})
+	require.Nil(t, err)
+
+	var stdout bytes.Buffer
+	exitCode, err := resourceFirst.Exec(
+		[]string{"psql", "-qtAX", "-h", resourceSecond.GetIPInNetwork(network), "-U", "postgres", "-c", "SHOW server_version"},
+		ExecOptions{StdOut: &stdout},
+	)
+	require.Nil(t, err)
+	require.Zero(t, exitCode)
+
+	require.Equal(t, expectedVersion, strings.TrimRight(stdout.String(), "\n"))
+}
