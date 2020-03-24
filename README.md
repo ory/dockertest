@@ -35,7 +35,10 @@ Using Dockertest is straightforward and simple. Check the [releases tab](https:/
 for available releases.
 
 To install dockertest, run
-
+```
+go get -u github.com/ory/dockertest/v3
+```
+or
 ```
 dep ensure -add github.com/ory/dockertest@v3.x.y
 ```
