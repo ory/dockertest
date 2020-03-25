@@ -56,7 +56,7 @@ import (
 	"testing"
 
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/ory/dockertest"
+	"github.com/ory/dockertest/v3"
 )
 
 var db *sql.DB
