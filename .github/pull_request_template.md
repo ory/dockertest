@@ -26,8 +26,11 @@ them, don't hesitate to ask. We're here to help! This is simply a reminder of wh
 
 - [ ] I have read the [contributing guidelines](../blob/master/CONTRIBUTING.md)
 - [ ] I have read the [security policy](../security/policy)
-- [ ] I confirm that this pull request does not address a security vulnerability. If this pull request addresses a security
-vulnerability, I confirm that I got green light (please contact [security@ory.sh](mailto:security@ory.sh)) from the maintainers to push the changes.
+- [ ] I confirm that this pull request does not address a security
+      vulnerability. If this pull request addresses a security vulnerability, I
+      confirm that I got green light (please contact
+      [security@ory.sh](mailto:security@ory.sh)) from the maintainers to push
+      the changes.
 - [ ] I have added tests that prove my fix is effective or that my feature works
 - [ ] I have added necessary documentation within the code base (if appropriate)
 

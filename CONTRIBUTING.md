@@ -90,7 +90,7 @@ please include a note in your commit message explaining why.
 
 ## Communication
 
-We use [discord](https://www.ory.sh/chat). You are welcome to drop in and ask
+We use [Slack](https://www.ory.sh/chat). You are welcome to drop in and ask
 questions, discuss bugs, etc.
 
 ## Conduct
