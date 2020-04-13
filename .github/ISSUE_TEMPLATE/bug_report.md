@@ -26,8 +26,8 @@ A clear and concise description of what you expected to happen.
 
 **Environment**
 
-* Version: v1.2.3, git sha hash
-* Environment: Debian, Docker, ...
+- Version: v1.2.3, git sha hash
+- Environment: Debian, Docker, ...
 
 **Additional context**
 
