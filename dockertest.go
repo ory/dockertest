@@ -287,6 +287,7 @@ type RunOptions struct {
 	Entrypoint   []string
 	Cmd          []string
 	Mounts       []string
+	Volumes      []string
 	Links        []string
 	ExposedPorts []string
 	ExtraHosts   []string
@@ -378,6 +379,20 @@ func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) 
 		})
 	}
 
+	volumes := []dc.HostMount{}
+	for _, v := range opts.Volumes {
+		s, t, err := options.VolumeParser(v)
+		if err != nil {
+			return nil, err
+		}
+		volumes = append(volumes, dc.HostMount{
+			Type:     "volume",
+			Source:   s,
+			Target:   t,
+			ReadOnly: false,
+		})
+	}
+
 	if tag == "" {
 		tag = "latest"
 	}
@@ -412,6 +427,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) 
 		SecurityOpt:     opts.SecurityOpt,
 		Privileged:      opts.Privileged,
 		DNS:             opts.DNS,
+		Mounts:          volumes,
 	}
 
 	for _, hostConfigOption := range hcOpts {
