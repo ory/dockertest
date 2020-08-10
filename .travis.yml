@@ -6,7 +6,7 @@ services:
   - docker
 
 go:
-  - 1.13
+  - 1.14
 
 before_install:
   - go get github.com/mattn/goveralls github.com/sonatype-nexus-community/nancy
