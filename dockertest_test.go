@@ -32,7 +32,7 @@ func TestMain(m *testing.M) {
 
 func TestPostgres(t *testing.T) {
 	resource, err := pool.Run("postgres", "9.5", nil)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.NotEmpty(t, resource.GetPort("5432/tcp"))
 
 	assert.NotEmpty(t, resource.GetBoundIP("5432/tcp"))
@@ -44,8 +44,8 @@ func TestPostgres(t *testing.T) {
 		}
 		return db.Ping()
 	})
-	require.Nil(t, err)
-	require.Nil(t, pool.Purge(resource))
+	require.NoError(t, err)
+	require.NoError(t, pool.Purge(resource))
 }
 
 func TestMongo(t *testing.T) {
@@ -57,7 +57,7 @@ func TestMongo(t *testing.T) {
 		ExposedPorts: []string{"3000"},
 	}
 	resource, err := pool.RunWithOptions(options)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	port := resource.GetPort("3000/tcp")
 	assert.NotEmpty(t, port)
 
@@ -74,8 +74,8 @@ func TestMongo(t *testing.T) {
 
 		return nil
 	})
-	require.Nil(t, err)
-	require.Nil(t, pool.Purge(resource))
+	require.NoError(t, err)
+	require.NoError(t, pool.Purge(resource))
 }
 
 func TestContainerWithName(t *testing.T) {
@@ -85,10 +85,10 @@ func TestContainerWithName(t *testing.T) {
 			Repository: "postgres",
 			Tag:        "9.5",
 		})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "/db", resource.Container.Name)
 
-	require.Nil(t, pool.Purge(resource))
+	require.NoError(t, pool.Purge(resource))
 }
 
 func TestContainerWithLabels(t *testing.T) {
@@ -102,10 +102,10 @@ func TestContainerWithLabels(t *testing.T) {
 			Tag:        "9.5",
 			Labels:     labels,
 		})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.EqualValues(t, labels, resource.Container.Config.Labels, "labels don't match")
 
-	require.Nil(t, pool.Purge(resource))
+	require.NoError(t, pool.Purge(resource))
 }
 
 func TestContainerWithPortBinding(t *testing.T) {
@@ -117,10 +117,10 @@ func TestContainerWithPortBinding(t *testing.T) {
 				"5432/tcp": {{HostIP: "", HostPort: "5433"}},
 			},
 		})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.Equal(t, "5433", resource.GetPort("5432/tcp"))
 
-	require.Nil(t, pool.Purge(resource))
+	require.NoError(t, pool.Purge(resource))
 }
 
 func TestBuildImage(t *testing.T) {
@@ -135,15 +135,15 @@ func TestBuildImage(t *testing.T) {
 	)
 
 	resource, err := pool.BuildAndRun("postgres-test", dockerfilePath, nil)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	assert.Equal(t, "/postgres-test", resource.Container.Name)
-	require.Nil(t, pool.Purge(resource))
+	require.NoError(t, pool.Purge(resource))
 }
 
 func TestExpire(t *testing.T) {
 	resource, err := pool.Run("postgres", "9.5", nil)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.NotEmpty(t, resource.GetPort("5432/tcp"))
 
 	assert.NotEmpty(t, resource.GetBoundIP("5432/tcp"))
@@ -158,15 +158,15 @@ func TestExpire(t *testing.T) {
 			return nil
 		}
 		err = resource.Expire(1)
-		require.Nil(t, err)
+		require.NoError(t, err)
 		time.Sleep(5 * time.Second)
 		err = db.Ping()
 		require.NotNil(t, err)
 		return nil
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
-	require.Nil(t, pool.Purge(resource))
+	require.NoError(t, pool.Purge(resource))
 }
 
 func TestContainerWithShMzSize(t *testing.T) {
@@ -179,10 +179,10 @@ func TestContainerWithShMzSize(t *testing.T) {
 		}, func(hostConfig *dc.HostConfig) {
 			hostConfig.ShmSize = shmemsize
 		})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.EqualValues(t, shmemsize, resource.Container.HostConfig.ShmSize, "shmsize don't match")
 
-	require.Nil(t, pool.Purge(resource))
+	require.NoError(t, pool.Purge(resource))
 }
 
 func TestContainerByName(t *testing.T) {
@@ -192,14 +192,14 @@ func TestContainerByName(t *testing.T) {
 			Repository: "postgres",
 			Tag:        "9.5",
 		})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	want, ok := pool.ContainerByName("db")
 	require.True(t, ok)
 
 	require.Equal(t, got, want)
 
-	require.Nil(t, pool.Purge(got))
+	require.NoError(t, pool.Purge(got))
 }
 
 func TestRemoveContainerByName(t *testing.T) {
@@ -209,10 +209,10 @@ func TestRemoveContainerByName(t *testing.T) {
 			Repository: "postgres",
 			Tag:        "9.5",
 		})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	err = pool.RemoveContainerByName("db")
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	resource, err := pool.RunWithOptions(
 		&RunOptions{
@@ -220,13 +220,13 @@ func TestRemoveContainerByName(t *testing.T) {
 			Repository: "postgres",
 			Tag:        "9.5",
 		})
-	require.Nil(t, err)
-	require.Nil(t, pool.Purge(resource))
+	require.NoError(t, err)
+	require.NoError(t, pool.Purge(resource))
 }
 
 func TestExec(t *testing.T) {
 	resource, err := pool.Run("postgres", "9.5", nil)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	assert.NotEmpty(t, resource.GetPort("5432/tcp"))
 	assert.NotEmpty(t, resource.GetBoundIP("5432/tcp"))
 
@@ -240,14 +240,14 @@ func TestExec(t *testing.T) {
 		}
 		return db.QueryRow("SHOW server_version").Scan(&pgVersion)
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	var stdout bytes.Buffer
 	exitCode, err := resource.Exec(
 		[]string{"psql", "-qtAX", "-U", "postgres", "-c", "SHOW server_version"},
 		ExecOptions{StdOut: &stdout},
 	)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Zero(t, exitCode)
 
 	require.Equal(t, pgVersion, strings.TrimRight(stdout.String(), "\n"))
@@ -255,7 +255,7 @@ func TestExec(t *testing.T) {
 
 func TestNetworking_on_start(t *testing.T) {
 	network, err := pool.CreateNetwork("test-on-start")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer network.Close()
 
 	resourceFirst, err := pool.RunWithOptions(&RunOptions{
@@ -263,7 +263,7 @@ func TestNetworking_on_start(t *testing.T) {
 		Tag:        "9.5",
 		Networks:   []*Network{network},
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer resourceFirst.Close()
 
 	resourceSecond, err := pool.RunWithOptions(&RunOptions{
@@ -271,7 +271,7 @@ func TestNetworking_on_start(t *testing.T) {
 		Tag:        "11",
 		Networks:   []*Network{network},
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer resourceSecond.Close()
 
 	var expectedVersion string
@@ -288,27 +288,27 @@ func TestNetworking_on_start(t *testing.T) {
 		}
 		return db.QueryRow("SHOW server_version").Scan(&expectedVersion)
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 }
 
 func TestNetworking_after_start(t *testing.T) {
 	network, err := pool.CreateNetwork("test-after-start")
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer network.Close()
 
 	resourceFirst, err := pool.Run("postgres", "9.6", nil)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer resourceFirst.Close()
 
 	err = resourceFirst.ConnectToNetwork(network)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	resourceSecond, err := pool.Run("postgres", "11", nil)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	defer resourceSecond.Close()
 
 	err = resourceSecond.ConnectToNetwork(network)
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	var expectedVersion string
 	err = pool.Retry(func() error {
@@ -324,14 +324,14 @@ func TestNetworking_after_start(t *testing.T) {
 		}
 		return db.QueryRow("SHOW server_version").Scan(&expectedVersion)
 	})
-	require.Nil(t, err)
+	require.NoError(t, err)
 
 	var stdout bytes.Buffer
 	exitCode, err := resourceFirst.Exec(
 		[]string{"psql", "-qtAX", "-h", resourceSecond.GetIPInNetwork(network), "-U", "postgres", "-c", "SHOW server_version"},
 		ExecOptions{StdOut: &stdout},
 	)
-	require.Nil(t, err)
+	require.NoError(t, err)
 	require.Zero(t, exitCode)
 
 	require.Equal(t, expectedVersion, strings.TrimRight(stdout.String(), "\n"))
