@@ -1,4 +1,15 @@
-# Contributing to ORY Dockertest
+<!--
+
+Thank you for contributing changes to this document! Because we use a central repository
+to synchronize this file across all our repositories, make sure to make your edits
+in the correct file, which you can find here:
+
+https://github.com/ory/meta/blob/master/templates/repository/CONTRIBUTING.md
+
+-->
+
+
+# Contributing to ORY {{Project}}
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
@@ -8,6 +19,7 @@
 - [Contributing Code](#contributing-code)
 - [Disclosing vulnerabilities](#disclosing-vulnerabilities)
 - [Code Style](#code-style)
+- [Documentation](#documentation)
 - [Pull request procedure](#pull-request-procedure)
 - [Communication](#communication)
 - [Conduct](#conduct)
@@ -16,9 +28,9 @@
 
 ## Introduction
 
-Please note: We take ORY Dockertest's security and our users' trust very
-seriously. If you believe you have found a security issue in ORY Dockertest,
-please responsibly disclose by contacting us at hi@ory.sh.
+Please note: We take ORY {{Project}}'s security and our users' trust very
+seriously. If you believe you have found a security issue in ORY {{Project}},
+please responsibly disclose by contacting us at office@ory.sh.
 
 First: if you're unsure or afraid of anything, just ask or submit the issue or
 pull request anyways. You won't be yelled at for giving it your best effort. The
@@ -28,7 +40,7 @@ the way of that.
 
 That said, if you want to ensure that a pull request is likely to be merged,
 talk to us! You can find out our thoughts and ensure that your contribution
-won't clash or be obviated by ORY Dockertest's normal direction. A great way to
+won't clash or be obviated by ORY {{Project}}'s normal direction. A great way to
 do this is via the [ORY Community](https://community.ory.sh/) or join the
 [ORY Chat](https://www.ory.sh/chat).
 
@@ -36,7 +48,7 @@ do this is via the [ORY Community](https://community.ory.sh/) or join the
 
 Unless you are fixing a known bug, we **strongly** recommend discussing it with
 the core team via a GitHub issue or [in our chat](https://www.ory.sh/chat)
-before getting started to ensure your work is consistent with ORY Dockertest's
+before getting started to ensure your work is consistent with ORY {{Project}}'s
 roadmap and architecture.
 
 All contributions are made via pull request. Note that **all patches from all
@@ -55,14 +67,24 @@ should be merged by the submitter after review.
 
 ## Disclosing vulnerabilities
 
-Please disclose vulnerabilities exclusively to [hi@ory.am](mailto:hi@ory.am). Do
-not use GitHub issues.
+Please disclose vulnerabilities exclusively to
+[security@ory.sh](mailto:security@ory.sh). Do not use GitHub issues.
 
 ## Code Style
 
 Please follow these guidelines when formatting source code:
 
-- Go code should match the output of `gofmt -s`
+- Go code should match the output of `gofmt -s` and pass `golangci-lint run`.
+- NodeJS and JavaScript code should be prettified using `npm run format` where
+  appropriate.
+
+## Documentation
+
+Please provide documentation when changing, removing, or adding features.
+Documentation resides in the project's [docs](docs) folder. Generate API and
+configuration reference documentation using `cd docs; npm run gen`.
+
+For further instructions please head over to [docs/README.md](docs/README.md).
 
 ## Pull request procedure
 
@@ -110,7 +132,7 @@ community a safe place for you and we've got your back.
 - Private harassment is also unacceptable. No matter who you are, if you feel
   you have been or are being harassed or made uncomfortable by a community
   member, please contact one of the channel ops or a member of the ORY
-  Dockertest core team immediately.
+  {{Project}} core team immediately.
 - Likewise any spamming, trolling, flaming, baiting or other attention-stealing
   behaviour is not welcome.
 
