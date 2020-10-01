@@ -20,10 +20,6 @@ Steps to reproduce the behavior:
 
 A clear and concise description of what you expected to happen.
 
-**Expected behavior**
-
-A clear and concise description of what you expected to happen.
-
 **Environment**
 
 - Version: v1.2.3, git sha hash
