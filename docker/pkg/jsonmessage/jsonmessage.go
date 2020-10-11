@@ -9,8 +9,8 @@ import (
 	"time"
 
 	gotty "github.com/Nvveen/Gotty"
-	"github.com/ory/dockertest/v3/docker/pkg/term"
 	units "github.com/docker/go-units"
+	"github.com/moby/term"
 )
 
 // RFC3339NanoFixed is time.RFC3339Nano with nanoseconds padded using zeros to
