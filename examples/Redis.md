@@ -1,7 +1,7 @@
 ```go
 var db *redis.Client
 var err error
-pool, err = dockertest.NewPool("")
+pool, err := dockertest.NewPool("")
 if err != nil {
     log.Fatalf("Could not connect to docker: %s", err)
 }

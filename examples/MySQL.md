@@ -1,7 +1,7 @@
 ```go
 var db *sql.DB
 var err error
-pool, err = dockertest.NewPool("")
+pool, err := dockertest.NewPool("")
 pool.MaxWait = time.Minute * 2
 if err != nil {
     log.Fatalf("Could not connect to docker: %s", err)
