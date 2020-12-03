@@ -31,7 +31,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestPostgres(t *testing.T) {
-	resource, err := pool.Run("postgres", "9.5", nil)
+	resource, err := pool.Run("postgres", "9.5", []string{"POSTGRES_PASSWORD=secret"})
 	require.Nil(t, err)
 	assert.NotEmpty(t, resource.GetPort("5432/tcp"))
 
@@ -101,6 +101,7 @@ func TestContainerWithLabels(t *testing.T) {
 			Repository: "postgres",
 			Tag:        "9.5",
 			Labels:     labels,
+			Env:        []string{"POSTGRES_PASSWORD=secret"},
 		})
 	require.Nil(t, err)
 	assert.EqualValues(t, labels, resource.Container.Config.Labels, "labels don't match")
@@ -116,6 +117,7 @@ func TestContainerWithPortBinding(t *testing.T) {
 			PortBindings: map[dc.Port][]dc.PortBinding{
 				"5432/tcp": {{HostIP: "", HostPort: "5433"}},
 			},
+			Env: []string{"POSTGRES_PASSWORD=secret"},
 		})
 	require.Nil(t, err)
 	assert.Equal(t, "5433", resource.GetPort("5432/tcp"))
@@ -183,7 +185,7 @@ CMD sleep 10
 }
 
 func TestExpire(t *testing.T) {
-	resource, err := pool.Run("postgres", "9.5", nil)
+	resource, err := pool.Run("postgres", "9.5", []string{"POSTGRES_PASSWORD=secret"})
 	require.Nil(t, err)
 	assert.NotEmpty(t, resource.GetPort("5432/tcp"))
 
@@ -232,6 +234,7 @@ func TestContainerByName(t *testing.T) {
 			Name:       "db",
 			Repository: "postgres",
 			Tag:        "9.5",
+			Env:        []string{"POSTGRES_PASSWORD=secret"},
 		})
 	require.Nil(t, err)
 
@@ -249,6 +252,7 @@ func TestRemoveContainerByName(t *testing.T) {
 			Name:       "db",
 			Repository: "postgres",
 			Tag:        "9.5",
+			Env:        []string{"POSTGRES_PASSWORD=secret"},
 		})
 	require.Nil(t, err)
 
@@ -266,7 +270,7 @@ func TestRemoveContainerByName(t *testing.T) {
 }
 
 func TestExec(t *testing.T) {
-	resource, err := pool.Run("postgres", "9.5", nil)
+	resource, err := pool.Run("postgres", "9.5", []string{"POSTGRES_PASSWORD=secret"})
 	require.Nil(t, err)
 	assert.NotEmpty(t, resource.GetPort("5432/tcp"))
 	assert.NotEmpty(t, resource.GetBoundIP("5432/tcp"))
@@ -303,6 +307,7 @@ func TestNetworking_on_start(t *testing.T) {
 		Repository: "postgres",
 		Tag:        "9.5",
 		Networks:   []*Network{network},
+		Env:        []string{"POSTGRES_PASSWORD=secret"},
 	})
 	require.Nil(t, err)
 	defer resourceFirst.Close()
@@ -311,6 +316,7 @@ func TestNetworking_on_start(t *testing.T) {
 		Repository: "postgres",
 		Tag:        "11",
 		Networks:   []*Network{network},
+		Env:        []string{"POSTGRES_PASSWORD=secret"},
 	})
 	require.Nil(t, err)
 	defer resourceSecond.Close()
@@ -337,14 +343,14 @@ func TestNetworking_after_start(t *testing.T) {
 	require.Nil(t, err)
 	defer network.Close()
 
-	resourceFirst, err := pool.Run("postgres", "9.6", nil)
+	resourceFirst, err := pool.Run("postgres", "9.6", []string{"POSTGRES_PASSWORD=secret"})
 	require.Nil(t, err)
 	defer resourceFirst.Close()
 
 	err = resourceFirst.ConnectToNetwork(network)
 	require.Nil(t, err)
 
-	resourceSecond, err := pool.Run("postgres", "11", nil)
+	resourceSecond, err := pool.Run("postgres", "11", []string{"POSTGRES_PASSWORD=secret"})
 	require.Nil(t, err)
 	defer resourceSecond.Close()
 
@@ -370,7 +376,7 @@ func TestNetworking_after_start(t *testing.T) {
 	var stdout bytes.Buffer
 	exitCode, err := resourceFirst.Exec(
 		[]string{"psql", "-qtAX", "-h", resourceSecond.GetIPInNetwork(network), "-U", "postgres", "-c", "SHOW server_version"},
-		ExecOptions{StdOut: &stdout},
+		ExecOptions{StdOut: &stdout, Env: []string{"PGPASSWORD=secret"}},
 	)
 	require.Nil(t, err)
 	require.Zero(t, exitCode)
