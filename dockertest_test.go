@@ -141,6 +141,47 @@ func TestBuildImage(t *testing.T) {
 	require.Nil(t, pool.Purge(resource))
 }
 
+func TestBuildImageWithBuildArg(t *testing.T) {
+	// Create Dockerfile in temp dir
+	dir, _ := ioutil.TempDir("", "dockertest")
+	defer os.RemoveAll(dir)
+
+	dockerfilePath := dir + "/Dockerfile"
+	ioutil.WriteFile(dockerfilePath,
+		[]byte((`FROM busybox
+ARG foo
+RUN echo -n $foo > /build-time-value
+CMD sleep 10
+`)),
+		0644,
+	)
+
+	resource, err := pool.BuildAndRunWithBuildOptions(
+		&BuildOptions{
+			ContextDir: dir,
+			Dockerfile: "Dockerfile",
+			BuildArgs: []dc.BuildArg{
+				{Name: "foo", Value: "bar"},
+			},
+		},
+		&RunOptions{
+			Name: "buildarg-test",
+		}, func(hc *dc.HostConfig) {
+			hc.AutoRemove = true
+		})
+	require.Nil(t, err)
+
+	var stdout bytes.Buffer
+	exitCode, err := resource.Exec(
+		[]string{"cat", "/build-time-value"},
+		ExecOptions{StdOut: &stdout},
+	)
+	require.Nil(t, err)
+	require.Zero(t, exitCode)
+	require.Equal(t, stdout.String(), "bar")
+	require.Nil(t, pool.Purge(resource))
+}
+
 func TestExpire(t *testing.T) {
 	resource, err := pool.Run("postgres", "9.5", nil)
 	require.Nil(t, err)
