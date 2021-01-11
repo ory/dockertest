@@ -300,6 +300,7 @@ type RunOptions struct {
 	Auth         dc.AuthConfiguration
 	PortBindings map[dc.Port][]dc.PortBinding
 	Privileged   bool
+	User         string
 }
 
 // BuildOptions is used to pass in optional parameters when building a container
@@ -433,6 +434,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) 
 			WorkingDir:   wd,
 			Labels:       opts.Labels,
 			StopSignal:   "SIGWINCH", // to support timeouts
+			User:         opts.User,
 		},
 		HostConfig:       &hostConfig,
 		NetworkingConfig: &networkingConfig,
