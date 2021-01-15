@@ -109,6 +109,26 @@ func TestContainerWithLabels(t *testing.T) {
 	require.Nil(t, pool.Purge(resource))
 }
 
+func TestContainerWithUser(t *testing.T) {
+	user := "1001:1001"
+	resource, err := pool.RunWithOptions(
+		&RunOptions{
+			Name:       "db",
+			Repository: "postgres",
+			Tag:        "9.5",
+			User:       user,
+			Env:        []string{"POSTGRES_PASSWORD=secret"},
+		})
+	require.Nil(t, err)
+	assert.EqualValues(t, user, resource.Container.Config.User, "users don't match")
+
+	res, err := pool.Client.InspectContainer(resource.Container.ID)
+	require.Nil(t, err)
+	assert.Equal(t, user, res.Config.User)
+
+	require.Nil(t, pool.Purge(resource))
+}
+
 func TestContainerWithPortBinding(t *testing.T) {
 	resource, err := pool.RunWithOptions(
 		&RunOptions{
