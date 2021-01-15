@@ -51,7 +51,7 @@ talk to us! You can find out our thoughts and ensure that your contribution
 won't clash or be obviated by ORY
 Dockertest's normal direction. A great way to
 do this is via
-[ORY Dockertest Discussions](https://github.com/ory/dockertest/discussions)
+[ORY Dockertest Discussions](https://github.com/ory/meta/discussions)
 or the [ORY Chat](https://www.ory.sh/chat).
 
 ## FAQ
@@ -69,8 +69,8 @@ or the [ORY Chat](https://www.ory.sh/chat).
 - I want to talk to other ORY Dockertest users.
   [How can I become a part of the community?](#communication)
 
-- I would like to know what I am agreeing to when I contribute to ORY
-  Dockertest. Does ORY have
+- I would like to know what I am agreeing to when I contribute to ORY Dockertest.
+  Does ORY have
   [a Contributors License Agreement?](https://cla-assistant.io/ory/)
 
 - I would like updates about new versions of ORY Dockertest.
@@ -112,10 +112,8 @@ a few things you can do to help out:
 We use [Slack](https://www.ory.sh/chat). You are welcome to drop in and ask
 questions, discuss bugs and feature requests, talk to other users of ORY, etc.
 
-Check out
-[ORY Dockertest Discussions](https://github.com/ory/dockertest/discussions). This
-is a great place for in-depth discussions and lots of code examples, logs and
-similar data.
+Check out [ORY Dockertest Discussions](https://github.com/ory/meta/discussions). This is a great place for
+in-depth discussions and lots of code examples, logs and similar data.
 
 You can also join our community hangout, if you want to speak to the ORY team
 directly or ask some questions. You can find more info on the hangouts in
@@ -162,8 +160,8 @@ should be merged by the submitter after review.
 
 Please provide documentation when changing, removing, or adding features.
 Documentation resides in the project's
-[docs](https://github.com/ory/dockertest/tree/master/docs) folder. Generate API
-and configuration reference documentation using `cd docs; npm run gen`.
+[docs](https://github.com/ory/dockertest/tree/master/docs) folder. Generate API and
+configuration reference documentation using `cd docs; npm run gen`.
 
 For further instructions please head over to
 [docs/README.md](https://github.com/ory/dockertest/blob/master/README.md).
@@ -209,10 +207,10 @@ please include a note in your commit message explaining why.
 
 ```
 # First you clone the original repository
-git clone git@github.com:ory/Dockertest.git
+git clone git@github.com:ory/ory/dockertest.git
 
 # Next you add a git remote that is your fork:
-git remote add fork git@github.com:<YOUR-GITHUB-USERNAME-HERE>/Dockertest.git
+git remote add fork git@github.com:<YOUR-GITHUB-USERNAME-HERE>/ory/dockertest.git
 
 # Next you fetch the latest changes from origin for master:
 git fetch origin
@@ -248,8 +246,8 @@ community a safe place for you and we've got your back.
   marginalized groups.
 - Private harassment is also unacceptable. No matter who you are, if you feel
   you have been or are being harassed or made uncomfortable by a community
-  member, please contact one of the channel ops or a member of the ORY
-  Dockertest core team immediately.
+  member, please contact one of the channel ops or a member of the ORY Dockertest
+  core team immediately.
 - Likewise any spamming, trolling, flaming, baiting or other attention-stealing
   behaviour is not welcome.
 
