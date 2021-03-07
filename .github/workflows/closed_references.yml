@@ -25,3 +25,4 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           issueLabels: upstream,good first issue,help wanted
           issueLimit: ${{ github.event.inputs.issueLimit || '5' }}
+          ignore: .git,docker
