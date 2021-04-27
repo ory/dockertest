@@ -5,7 +5,7 @@ go 1.13
 require (
 	github.com/Microsoft/go-winio v0.4.14
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5
-	github.com/cenkalti/backoff/v3 v3.0.0
+	github.com/cenkalti/backoff/v4 v4.1.0
 	github.com/containerd/continuity v0.0.0-20190827140505-75bee3e2ccb6
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0
