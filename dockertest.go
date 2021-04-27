@@ -545,7 +545,15 @@ func (d *Pool) Retry(op func() error) error {
 	bo := backoff.NewExponentialBackOff()
 	bo.MaxInterval = time.Second * 5
 	bo.MaxElapsedTime = d.MaxWait
-	return backoff.Retry(op, bo)
+	if err := backoff.Retry(op, bo); err != nil {
+		if bo.NextBackOff() == backoff.Stop {
+			return fmt.Errorf("reached retry deadline")
+		}
+
+		return err
+	}
+
+	return nil
 }
 
 // CurrentContainer returns current container descriptor if this function called within running container.
