@@ -11,7 +11,7 @@ require (
 	github.com/docker/go-units v0.4.0
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/lib/pq v0.0.0-20180327071824-d34b9ff171c2
-	github.com/moby/term v0.0.0-20200915141129-7f0af18e79f2
+	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635
 	github.com/opencontainers/go-digest v1.0.0-rc1 // indirect
 	github.com/opencontainers/image-spec v1.0.1
 	github.com/opencontainers/runc v1.0.0-rc9
