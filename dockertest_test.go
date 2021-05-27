@@ -129,6 +129,25 @@ func TestContainerWithUser(t *testing.T) {
 	require.Nil(t, pool.Purge(resource))
 }
 
+func TestContainerWithTty(t *testing.T) {
+	resource, err := pool.RunWithOptions(
+		&RunOptions{
+			Name:       "db",
+			Repository: "postgres",
+			Tag:        "9.5",
+			Env:        []string{"POSTGRES_PASSWORD=secret"},
+			Tty:        true,
+		})
+	require.Nil(t, err)
+	assert.True(t, resource.Container.Config.Tty, "tty is false")
+
+	res, err := pool.Client.InspectContainer(resource.Container.ID)
+	require.Nil(t, err)
+	assert.True(t, res.Config.Tty)
+
+	require.Nil(t, pool.Purge(resource))
+}
+
 func TestContainerWithPortBinding(t *testing.T) {
 	resource, err := pool.RunWithOptions(
 		&RunOptions{
