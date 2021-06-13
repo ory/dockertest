@@ -23,15 +23,15 @@ func MountParser(mount string) (source, destination string, err error) {
 func VolumeParser(volume string) (source, target string, readOnly bool, err error) {
 	st := strings.Split(volume, ":")
 	if len(st) == 3 {
-		if st[3] == "ro" {
-			return st[1], st[2], true, nil
+		if st[2] == "ro" {
+			return st[0], st[1], true, nil
 		} else {
 			return "", "", false, fmt.Errorf("invalid volume format: got %s, expected <src>:<trgt>:ro", volume)
 		}
 
 	}
 	if len(st) == 2 {
-		return st[1], st[2], false, nil
+		return st[0], st[1], false, nil
 	}
 	return "", "", false, fmt.Errorf("invalid volume format: got %s, expected <src>:<trgt>", volume)
 }
