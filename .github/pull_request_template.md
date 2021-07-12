@@ -1,4 +1,16 @@
-## Related issue
+<!--
+Describe the big picture of your changes here to communicate to the maintainers why we should accept this pull request.
+
+This text will be included in the changelog. If applicable, include links to documentation or pieces of code.
+If your change includes breaking changes please add a codeblock documenting the breaking change:
+
+```
+BREAKING CHANGES: This patch changes the behavior of configuration item `foo` to do bar. To keep the existing
+behavior please do baz.
+```
+-->
+
+## Related issue(s)
 
 <!--
 Please link the GitHub issue this pull request resolves in the format of `#1234`. If you discussed this change
@@ -9,12 +21,6 @@ chance substantial changes will be requested or that the changes will be rejecte
 
 You can discuss changes with maintainers either in the Github Discusssions in this repository or
 join the [Ory Chat](https://www.ory.sh/chat).
--->
-
-## Proposed changes
-
-<!--
-Describe the big picture of your changes here to communicate to the maintainers why we should accept this pull request.
 -->
 
 ## Checklist
