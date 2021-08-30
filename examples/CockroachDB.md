@@ -13,7 +13,7 @@ if err != nil {
 
 if err = pool.Retry(func() error {
     var err error
-    db, err = sql.Open("postgres", fmt.Sprintf("postgresql://root@localhost:%s/events?sslmode=disable", resource.GetPort("26257/tcp"))))
+    db, err = sql.Open("postgres", fmt.Sprintf("postgresql://root@localhost:%s/defaultdb?sslmode=disable", resource.GetPort("26257/tcp")))
     if err != nil {
         return err
     }
