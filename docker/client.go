@@ -28,6 +28,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -144,12 +145,13 @@ type Client struct {
 	TLSConfig              *tls.Config
 	Dialer                 Dialer
 
-	endpoint            string
-	endpointURL         *url.URL
-	eventMonitor        *eventMonitoringState
-	requestedAPIVersion APIVersion
-	serverAPIVersion    APIVersion
-	expectedAPIVersion  APIVersion
+	endpoint              string
+	endpointURL           *url.URL
+	eventMonitor          *eventMonitoringState
+	requestedAPIVersion   APIVersion
+	serverAPIVersion      APIVersion
+	serverAPIVersionMutex sync.RWMutex
+	expectedAPIVersion    APIVersion
 }
 
 // Dialer is an interface that allows network connections to be dialed
@@ -359,6 +361,13 @@ func (c *Client) SetTimeout(t time.Duration) {
 }
 
 func (c *Client) checkAPIVersion() error {
+	c.serverAPIVersionMutex.Lock()
+	defer c.serverAPIVersionMutex.Unlock()
+
+	if c.serverAPIVersion != nil {
+		return nil
+	}
+
 	serverAPIVersionString, err := c.getServerAPIVersionString()
 	if err != nil {
 		return err
