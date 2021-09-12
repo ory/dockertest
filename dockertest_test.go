@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -421,4 +422,24 @@ func TestNetworking_after_start(t *testing.T) {
 	require.Zero(t, exitCode)
 
 	require.Equal(t, expectedVersion, strings.TrimRight(stdout.String(), "\n"))
+}
+
+func TestClientRaceCondition(t *testing.T) {
+	// Shadow pool so that we can have a fresh client with nil pool.Client.serverAPIVersion
+	pool, err := NewPool(docker)
+	require.NoError(t, err)
+
+	for i := 0; i < 10; i++ {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			// Tests must be run in parallel to recreate the issue
+			t.Parallel()
+			resource, _ := pool.RunWithOptions(
+				&RunOptions{
+					Repository: "postgres",
+					Tag:        "13.4",
+				},
+			)
+			defer pool.Purge(resource)
+		})
+	}
 }
