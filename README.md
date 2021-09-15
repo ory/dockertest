@@ -185,3 +185,25 @@ gitlab-runner register -n \
 You only need to instruct docker dind to start with disabled tls.  
 Add variable `DOCKER_TLS_CERTDIR: ""` to `gitlab-ci.yml` above.
 It will tell docker daemon to start on 2375 port over http. 
+
+### How to run dockertest with remote Docker
+
+Use-case: locally installed docker CLI (client), docker daemon somewhere remotely, environment properly set (ie: `DOCKER_HOST`, etc..). For example, remote docker can be provisioned by docker-machine.
+
+Currently, dockertest in case of `resource.GetHostPort()` will return docker host binding address (commonly - `localhost`) instead of remote docker host. Universal solution is:
+
+```go
+func getHostPort(resource *dockertest.Resource, id string) string {
+	dockerURL := os.Getenv("DOCKER_HOST")
+	if dockerURL == "" {
+		return resource.GetHostPort(id)
+	}
+	u, err := url.Parse(dockerURL)
+	if err != nil {
+		panic(err)
+	}
+	return u.Hostname() + ":" + resource.GetPort(id)
+}
+```
+
+It will return the remote docker host concatenated with the allocated port in case `DOCKER_HOST` env is defined. Otherwise, it will fall back to embedded behavior.
