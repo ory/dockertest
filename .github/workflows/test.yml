@@ -11,7 +11,9 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions/setup-go@v2
       - run: go mod tidy
-      - run: go get github.com/mattn/goveralls github.com/sonatype-nexus-community/nancy
-      - run: go list -m all | nancy -quiet
+      - name: WriteGoList
+        run: go list -json -m all > go.list
+      - name: Nancy
+        uses: sonatype-nexus-community/nancy-github-action@main
       - run: go vet -x .
       - run: go test -covermode=atomic -coverprofile="cover.out" .
