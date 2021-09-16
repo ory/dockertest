@@ -16,9 +16,6 @@ jobs:
       - name: Nancy
         uses: sonatype-nexus-community/nancy-github-action@main
       - run: go vet -x .
-      - run: go test -covermode=atomic -coverprofile="cover.lcov" .
+      - run: go test -covermode=atomic -coverprofile="coverage.out" .
       - name: Coveralls
-        uses: coverallsapp/github-action@master
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          path-to-lcov: cover.lcov
+        run: bash <(curl -s https://codecov.io/bash)
