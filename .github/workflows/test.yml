@@ -10,8 +10,8 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - uses: actions/setup-go@v2
-      - go mod tidy
-      - go get github.com/mattn/goveralls github.com/sonatype-nexus-community/nancy
-      - go list -m all | nancy -quiet
-      - go vet -x .
-      - go test -covermode=atomic -coverprofile="cover.out" .
+      - run: go mod tidy
+      - run: go get github.com/mattn/goveralls github.com/sonatype-nexus-community/nancy
+      - run: go list -m all | nancy -quiet
+      - run: go vet -x .
+      - run: go test -covermode=atomic -coverprofile="cover.out" .
