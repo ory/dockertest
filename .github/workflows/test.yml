@@ -1,0 +1,13 @@
+name: Node.js CI
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
+      - go mod tidy
+      - go get github.com/mattn/goveralls github.com/sonatype-nexus-community/nancy
+      - go list -m all | nancy -quiet
+      - go vet -x .
+      - go test -covermode=atomic -coverprofile="cover.out" .
