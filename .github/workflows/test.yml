@@ -1,5 +1,9 @@
-name: Node.js CI
-on: [push, pull_request]
+name: Test CI
+on:
+  push:
+    branches:
+      - master
+  pull_request:
 jobs:
   build:
     runs-on: ubuntu-latest
