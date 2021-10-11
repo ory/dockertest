@@ -10,6 +10,8 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"math"
+	"math/big"
 )
 
 // Env represents a list of key-pair represented in the form KEY=VALUE.
@@ -51,7 +53,7 @@ func (env *Env) SetBool(key string, value bool) {
 //
 // It the value cannot be represented as an integer, it returns -1.
 func (env *Env) GetInt(key string) int {
-	return int(env.GetInt64(key))
+	return parse64(env.GetInt64(key))
 }
 
 // SetInt defines an integer value to the given key.
@@ -169,4 +171,11 @@ func (env *Env) Map() map[string]string {
 		}
 	}
 	return m
+}
+func parse64(x int64) int {
+	if 32 << uintptr(^uintptr(0) >> 63) == 32 {
+		return int(new(big.Int).Mod(big.NewInt(x), big.NewInt(math.MaxInt32)).Int64())
+	} else {
+		return int(x)
+	}
 }
