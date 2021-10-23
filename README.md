@@ -103,7 +103,7 @@ func TestSomething(t *testing.T) {
 
 ### Examples
 
-We have provided code examples for well known services in the [examples](examples/) directory, check them out!
+We provide code examples for well known services in the [examples](examples/) directory, check them out!
 
 ## Troubleshoot & FAQ
 
