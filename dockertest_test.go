@@ -92,6 +92,22 @@ func TestContainerWithName(t *testing.T) {
 	require.Nil(t, pool.Purge(resource))
 }
 
+func TestPool_RunWithOptions_Preset_Postgres(t *testing.T) {
+	resource, err := pool.RunWithOptions(Postgres(WithTag("11.2")))
+	require.Nil(t, err)
+
+	assert.Equal(t, fmt.Sprintf("postgres:11.2"), resource.Container.Config.Image)
+	require.Nil(t, pool.Purge(resource))
+}
+
+func TestPool_RunWithOptions_Preset_Cassandra(t *testing.T) {
+	resource, err := pool.RunWithOptions(Cassandra())
+	require.Nil(t, err)
+
+	assert.Equal(t, fmt.Sprintf("cassandra:latest"), resource.Container.Config.Image)
+	require.Nil(t, pool.Purge(resource))
+}
+
 func TestContainerWithLabels(t *testing.T) {
 	labels := map[string]string{
 		"my": "label",

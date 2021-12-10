@@ -105,6 +105,16 @@ func TestSomething(t *testing.T) {
 
 We provide code examples for well known services in the [examples](examples/) directory, check them out!
 
+### Presets
+
+Presets are predefined `RunOptions` configs that can be passed into `pool.RunWithOptions`.
+```go
+	resource, err := pool.RunWithOptions(Postgres(WithTag("11.2")))
+    if err != nil {
+		return err
+    }
+```
+
 ## Troubleshoot & FAQ
 
 ### Out of disk space
