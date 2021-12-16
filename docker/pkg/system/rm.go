@@ -1,12 +1,12 @@
 package system // import "github.com/ory/dockertest/v3/docker/pkg/system"
 
 import (
+	"fmt"
 	"os"
 	"syscall"
 	"time"
 
 	"github.com/ory/dockertest/v3/docker/pkg/mount"
-	"github.com/pkg/errors"
 )
 
 // EnsureRemoveAll wraps `os.RemoveAll` to check for specific errors that can
@@ -66,7 +66,7 @@ func EnsureRemoveAll(dir string) error {
 		if mounted, _ := mount.Mounted(pe.Path); mounted {
 			if e := mount.Unmount(pe.Path); e != nil {
 				if mounted, _ := mount.Mounted(pe.Path); mounted {
-					return errors.Wrapf(e, "error while removing %s", dir)
+					return fmt.Errorf("error while removing %s: %w", dir, err)
 				}
 			}
 		}
