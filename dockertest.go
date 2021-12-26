@@ -602,6 +602,28 @@ func (d *Pool) CreateNetwork(name string, opts ...func(config *dc.CreateNetworkO
 	}, nil
 }
 
+// NetworksByName returns a list of docker networks filtered by name
+func (d *Pool) NetworksByName(name string) ([]Network, error) {
+	networks, err := d.Client.ListNetworks()
+	if err != nil {
+		return nil, errors.Wrap(err, "")
+	}
+
+	var foundNetworks []Network
+	for idx := range networks {
+		if networks[idx].Name == name {
+			foundNetworks = append(foundNetworks,
+				Network{
+					pool:    d,
+					Network: &networks[idx],
+				},
+			)
+		}
+	}
+	
+	return foundNetworks, nil
+}
+
 // RemoveNetwork disconnects containers and removes provided network.
 func (d *Pool) RemoveNetwork(network *Network) error {
 	for container := range network.Network.Containers {
