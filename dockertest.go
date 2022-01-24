@@ -328,7 +328,9 @@ func (d *Pool) BuildAndRunWithBuildOptions(buildOpts *BuildOptions, runOpts *Run
 		return nil, errors.Wrap(err, "")
 	}
 
-	runOpts.Repository = runOpts.Name
+	if runOpts.Repository == "" {
+		runOpts.Repository = runOpts.Name
+	}
 
 	return d.RunWithOptions(runOpts, hcOpts...)
 }
@@ -620,7 +622,7 @@ func (d *Pool) NetworksByName(name string) ([]Network, error) {
 			)
 		}
 	}
-	
+
 	return foundNetworks, nil
 }
 

@@ -443,3 +443,23 @@ func TestClientRaceCondition(t *testing.T) {
 		})
 	}
 }
+
+// regression test for #330
+func TestSameImageMultipleContainers(t *testing.T) {
+	pool, err := NewPool(docker)
+	require.NoError(t, err)
+
+	opts := &RunOptions{
+		Name:       "container1",
+		Repository: "postgres",
+		Tag:        "13.4",
+	}
+	first, err := pool.RunWithOptions(opts)
+	require.NoError(t, err)
+	defer pool.Purge(first)
+
+	opts.Name = "container2"
+	second, err := pool.RunWithOptions(opts)
+	require.NoError(t, err)
+	defer pool.Purge(second)
+}
