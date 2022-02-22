@@ -255,7 +255,12 @@ func NewPool(endpoint string) (*Pool, error) {
 		} else if runtime.GOOS == "windows" {
 			endpoint = "http://localhost:2375"
 		} else {
-			endpoint = "unix:///var/run/docker.sock"
+			homedir, _ := os.UserHomeDir()
+			if _, err := os.Stat(filepath.Join(homedir, ".colima")); !os.IsNotExist(err) {
+				endpoint = fmt.Sprintf("unix://%s/.colima/docker.sock", homedir)
+			} else {
+				endpoint = "unix:///var/run/docker.sock"
+			}
 		}
 	}
 
@@ -620,7 +625,7 @@ func (d *Pool) NetworksByName(name string) ([]Network, error) {
 			)
 		}
 	}
-	
+
 	return foundNetworks, nil
 }
 
