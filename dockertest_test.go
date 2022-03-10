@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/assert"
@@ -76,6 +77,29 @@ func TestMongo(t *testing.T) {
 		return nil
 	})
 	require.Nil(t, err)
+	require.Nil(t, pool.Purge(resource))
+}
+
+func TestMysqlWithPlatform(t *testing.T) {
+	resource, err := pool.RunWithOptions(&RunOptions{
+		Repository: "mysql",
+		Tag:        "5.7",
+		Env:        []string{"MYSQL_ROOT_PASSWORD=secret"},
+		Platform:   "", // Platform in the format os[/arch[/variant]] (e.g. linux/amd64). Default: ""
+	})
+	require.Nil(t, err)
+	assert.NotEmpty(t, resource.GetPort("3306/tcp"))
+
+	err = pool.Retry(func() error {
+		var err error
+		db, err := sql.Open("mysql", fmt.Sprintf("root:secret@(localhost:%s)/mysql", resource.GetPort("3306/tcp")))
+		if err != nil {
+			return err
+		}
+		return db.Ping()
+	})
+	require.Nil(t, err)
+
 	require.Nil(t, pool.Purge(resource))
 }
 
