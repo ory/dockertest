@@ -19,7 +19,9 @@ import (
 	"github.com/Microsoft/go-winio"
 )
 
-const namedPipeConnectTimeout = 2 * time.Second
+const (
+	namedPipeConnectTimeout = 2 * time.Second
+)
 
 type pipeDialer struct {
 	dialFunc func(network, addr string) (net.Conn, error)
