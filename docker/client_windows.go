@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build windows
 // +build windows
 
 package docker
@@ -15,7 +16,9 @@ import (
 	"github.com/Microsoft/go-winio"
 )
 
-const namedPipeConnectTimeout = 2 * time.Second
+const (
+	namedPipeConnectTimeout = 2 * time.Second
+)
 
 type pipeDialer struct {
 	dialFunc func(network, addr string) (net.Conn, error)
