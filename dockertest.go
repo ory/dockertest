@@ -302,6 +302,7 @@ type RunOptions struct {
 	Privileged   bool
 	User         string
 	Tty          bool
+	Platform     string
 }
 
 // BuildOptions is used to pass in optional parameters when building a container
@@ -403,6 +404,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) 
 		if err := d.Client.PullImage(dc.PullImageOptions{
 			Repository: repository,
 			Tag:        tag,
+			Platform:   opts.Platform,
 		}, opts.Auth); err != nil {
 			return nil, errors.Wrap(err, "")
 		}
@@ -620,7 +622,7 @@ func (d *Pool) NetworksByName(name string) ([]Network, error) {
 			)
 		}
 	}
-	
+
 	return foundNetworks, nil
 }
 
