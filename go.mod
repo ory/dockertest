@@ -3,7 +3,7 @@ module github.com/ory/dockertest/v3
 go 1.17
 
 require (
-	github.com/Microsoft/go-winio v0.5.1
+	github.com/Microsoft/go-winio v0.5.2
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5
 	github.com/cenkalti/backoff/v4 v4.1.2
 	github.com/containerd/continuity v0.0.0-20190827140505-75bee3e2ccb6
