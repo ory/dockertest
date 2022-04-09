@@ -69,7 +69,11 @@ func (r *Resource) GetBoundIP(id string) string {
 		return ""
 	}
 
-	return m[0].HostIP
+	ip := m[0].HostIP
+	if ip == "0.0.0.0" || ip == "" {
+		return "localhost"
+	}
+	return ip
 }
 
 // GetHostPort returns a resource's published port with an address.
@@ -84,7 +88,7 @@ func (r *Resource) GetHostPort(portID string) string {
 	}
 
 	ip := m[0].HostIP
-	if ip == "0.0.0.0" {
+	if ip == "0.0.0.0" || ip == "" {
 		ip = "localhost"
 	}
 	return net.JoinHostPort(ip, m[0].HostPort)
