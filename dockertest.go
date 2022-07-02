@@ -557,7 +557,7 @@ func (d *Pool) Retry(op func() error) error {
 	bo.MaxElapsedTime = d.MaxWait
 	if err := backoff.Retry(op, bo); err != nil {
 		if bo.NextBackOff() == backoff.Stop {
-			return fmt.Errorf("reached retry deadline")
+			return fmt.Errorf("reached retry deadline: %w", err)
 		}
 
 		return err
