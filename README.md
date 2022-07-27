@@ -13,7 +13,7 @@ Use Docker to run your Golang integration tests against third party services on 
 - [Installing and using Dockertest](#installing-and-using-dockertest)
   - [Using Dockertest](#using-dockertest)
   - [Examples](#examples)
-- [Troubleshoot & FAQ](#troubleshoot-&-faq)
+- [Troubleshoot & FAQ](#troubleshoot--faq)
   - [Out of disk space](#out-of-disk-space)
   - [Removing old containers](#removing-old-containers)
 
