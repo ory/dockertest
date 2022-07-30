@@ -331,6 +331,8 @@ type BuildOptions struct {
 	ContextDir string
 	BuildArgs  []dc.BuildArg
 	Platform   string
+	// Version specifies the builder to use. "1" for classic, "2" for BuildKit
+	Version string
 }
 
 // BuildAndRunWithBuildOptions builds and starts a docker container.
@@ -343,6 +345,7 @@ func (d *Pool) BuildAndRunWithBuildOptions(buildOpts *BuildOptions, runOpts *Run
 		ContextDir:   buildOpts.ContextDir,
 		BuildArgs:    buildOpts.BuildArgs,
 		Platform:     buildOpts.Platform,
+		Version:      buildOpts.Version,
 	})
 
 	if err != nil {
