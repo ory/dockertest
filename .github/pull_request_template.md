@@ -10,14 +10,18 @@ behavior please do baz.
 ```
 -->
 
-## Related issue(s)
+## Related Issue or Design Document
 
 <!--
-Please link the GitHub issue this pull request resolves in the format of `#1234`. If you discussed this change
-with a maintainer, please mention her/him using the `@` syntax (e.g. `@aeneasr`).
+If this pull request
 
-If this change neither resolves an existing issue nor has sign-off from one of the maintainers, there is a
-chance substantial changes will be requested or that the changes will be rejected.
+1. is a fix for a known bug, link the issue where the bug was reported in the format of `#1234`;
+2. is a fix for a previously unknown bug, explain the bug and how to reproduce it in this pull request;
+3. implements a new feature, link the issue containing the design document in the format of `#1234`;
+4. improves the documentation, no issue reference is required.
+
+Pull requests introducing new features, which do not have a design document linked are more likely to be rejected and take on average 2-8 weeks longer to
+get merged.
 
 You can discuss changes with maintainers either in the Github Discusssions in this repository or
 join the [Ory Chat](https://www.ory.sh/chat).
@@ -30,18 +34,14 @@ Put an `x` in the boxes that apply. You can also fill these out after creating t
 them, don't hesitate to ask. We're here to help! This is simply a reminder of what we are going to look for before merging your code.
 -->
 
-- [ ] I have read the [contributing guidelines](../blob/master/CONTRIBUTING.md)
-      and signed the CLA.
+- [ ] I have read the [contributing guidelines](../blob/master/CONTRIBUTING.md) and signed the CLA.
+- [ ] I have referenced an issue containing the design document if my change introduces a new feature.
 - [ ] I have read the [security policy](../security/policy).
-- [ ] I confirm that this pull request does not address a security
-      vulnerability. If this pull request addresses a security vulnerability, I
-      confirm that I got green light (please contact
-      [security@ory.sh](mailto:security@ory.sh)) from the maintainers to push
-      the changes.
-- [ ] I have added tests that prove my fix is effective or that my feature
-      works.
-- [ ] I have added necessary documentation within the code base (if
-      appropriate).
+- [ ] I confirm that this pull request does not address a security vulnerability. 
+      If this pull request addresses a security vulnerability, 
+      I confirm that I got green light (please contact [security@ory.sh](mailto:security@ory.sh)) from the maintainers to push the changes.
+- [ ] I have added tests that prove my fix is effective or that my feature works.
+- [ ] I have added necessary documentation within the code base (if appropriate).
 
 ## Further comments
 
