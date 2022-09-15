@@ -515,7 +515,7 @@ func (d *Pool) RemoveContainerByName(containerName string) error {
 	containers, err := d.Client.ListContainers(dc.ListContainersOptions{
 		All: true,
 		Filters: map[string][]string{
-			"name": []string{containerName},
+			"name": {containerName},
 		},
 	})
 	if err != nil {

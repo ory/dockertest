@@ -1,10 +1,16 @@
-The following is an example of using `dockertest` & `fake-gcs-server` to perform integration testing with the Google Cloud Storage API and a local Google Cloud Storage emulator server.
+The following is an example of using `dockertest` & `fake-gcs-server` to perform
+integration testing with the Google Cloud Storage API and a local Google Cloud
+Storage emulator server.
 
-This example asumes there is a local bind mount at `{$PWD}/examples/data` with the `sample-bucket/sample_file.txt` file.
+This example asumes there is a local bind mount at `{$PWD}/examples/data` with
+the `sample-bucket/sample_file.txt` file.
 
-You also need to substitute `path/to/your/credentials.json` with your correct Google API credentials file to be able to use the GCS API.
+You also need to substitute `path/to/your/credentials.json` with your correct
+Google API credentials file to be able to use the GCS API.
 
-Make sure to checkout the original `fake-gcs-server` project at <https://github.com/fsouza/fake-gcs-server> for more details about its configuration and functionality.
+Make sure to checkout the original `fake-gcs-server` project at
+<https://github.com/fsouza/fake-gcs-server> for more details about its
+configuration and functionality.
 
 ```go
 package main
