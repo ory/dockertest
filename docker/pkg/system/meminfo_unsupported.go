@@ -1,3 +1,4 @@
+//go:build !linux && !windows
 // +build !linux,!windows
 
 package system // import "github.com/ory/dockertest/v3/docker/pkg/system"

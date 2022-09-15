@@ -1,3 +1,4 @@
+//go:build !linux
 // +build !linux
 
 package idtools // import "github.com/ory/dockertest/v3/docker/pkg/idtools"

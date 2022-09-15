@@ -1,3 +1,4 @@
+//go:build !windows
 // +build !windows
 
 package homedir // import "github.com/ory/dockertest/v3/docker/pkg/homedir"

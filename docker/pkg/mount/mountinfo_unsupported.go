@@ -1,3 +1,4 @@
+//go:build (!windows && !linux && !freebsd) || (freebsd && !cgo)
 // +build !windows,!linux,!freebsd freebsd,!cgo
 
 package mount // import "github.com/ory/dockertest/v3/docker/pkg/mount"

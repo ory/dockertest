@@ -1,3 +1,4 @@
+//go:build !linux && !freebsd
 // +build !linux,!freebsd
 
 package system // import "github.com/ory/dockertest/v3/docker/pkg/system"

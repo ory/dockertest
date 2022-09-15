@@ -1,3 +1,4 @@
+//go:build !linux
 // +build !linux
 
 package system // import "github.com/ory/dockertest/v3/docker/pkg/system"

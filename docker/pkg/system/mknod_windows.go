@@ -1,4 +1,6 @@
+//go:build windows
 // +build windows
+
 package system // import "github.com/ory/dockertest/v3/docker/pkg/system"
 
 // Mknod is not implemented on Windows.
