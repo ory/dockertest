@@ -9,6 +9,10 @@ node_modules: package-lock.json
 	npm install
 	touch node_modules
 
+test:
+	go mod tidy
+	go vet -x .
+	go test -covermode=atomic -coverprofile="coverage.out" .
 
-.SILENT:
+
 .DEFAULT_GOAL := help

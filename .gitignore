@@ -4,5 +4,7 @@ node_modules/
 *.exe
 .cover/
 vendor/
+go.list
 cover.out
+coverage.out
 .vscode
