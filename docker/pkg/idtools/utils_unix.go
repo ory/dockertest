@@ -1,3 +1,4 @@
+//go:build !windows
 // +build !windows
 
 package idtools // import "github.com/ory/dockertest/v3/docker/pkg/idtools"

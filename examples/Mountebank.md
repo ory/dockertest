@@ -1,7 +1,8 @@
-The following is an example of using `dockertest` & `mountebank` to perform 
+The following is an example of using `dockertest` & `mountebank` to perform
 [narrow integration testing](https://martinfowler.com/bliki/IntegrationTest.html).
 
 # Go Code
+
 ```go
 package handler_test
 
@@ -127,22 +128,26 @@ func TestHandler(t *testing.T) {
 ```
 
 # Basic Imposter
+
 Below is the content of `imposter.json`
+
 ```json
 {
   "port": 8090,
   "protocol": "http",
-  "stubs": [{
-    "responses": [
-      { "is": { "statusCode": 200 }}
-    ],
-    "predicates": [{
-      "equals": {
-        "path": "/test",
-        "method": "GET",
-        "headers": { "Content-Type": "application/json" }
-      }
-    }]
-  }]
+  "stubs": [
+    {
+      "responses": [{ "is": { "statusCode": 200 } }],
+      "predicates": [
+        {
+          "equals": {
+            "path": "/test",
+            "method": "GET",
+            "headers": { "Content-Type": "application/json" }
+          }
+        }
+      ]
+    }
+  ]
 }
 ```

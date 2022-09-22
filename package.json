@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "prettier": "ory-prettier-styles",
+  "devDependencies": {
+    "ory-prettier-styles": "1.3.0",
+    "prettier": "2.7.1"
+  }
+}

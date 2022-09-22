@@ -3,10 +3,12 @@
 [![Build Status](https://travis-ci.org/ory/dockertest.svg)](https://travis-ci.org/ory/dockertest?branch=master)
 [![Coverage Status](https://coveralls.io/repos/github/ory/dockertest/badge.svg?branch=v3)](https://coveralls.io/github/ory/dockertest?branch=v3)
 
-Use Docker to run your Golang integration tests against third party services on **Microsoft Windows, Mac OSX and Linux**!
+Use Docker to run your Golang integration tests against third party services on
+**Microsoft Windows, Mac OSX and Linux**!
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
+
 **Table of Contents**
 
 - [Why should I use Dockertest?](#why-should-i-use-dockertest)
@@ -21,24 +23,30 @@ Use Docker to run your Golang integration tests against third party services on 
 
 ## Why should I use Dockertest?
 
-When developing applications, it is often necessary to use services that talk to a database system.
-Unit Testing these services can be cumbersome because mocking database/DBAL is strenuous. Making slight changes to the
-schema implies rewriting at least some, if not all of the mocks. The same goes for API changes in the DBAL.
-To avoid this, it is smarter to test these specific services against a real database that is destroyed after testing.
-Docker is the perfect system for running unit tests as you can spin up containers in a few seconds and kill them when
-the test completes. The Dockertest library provides easy to use commands for spinning up Docker containers and using
-them for your tests.
+When developing applications, it is often necessary to use services that talk to
+a database system. Unit Testing these services can be cumbersome because mocking
+database/DBAL is strenuous. Making slight changes to the schema implies
+rewriting at least some, if not all of the mocks. The same goes for API changes
+in the DBAL. To avoid this, it is smarter to test these specific services
+against a real database that is destroyed after testing. Docker is the perfect
+system for running unit tests as you can spin up containers in a few seconds and
+kill them when the test completes. The Dockertest library provides easy to use
+commands for spinning up Docker containers and using them for your tests.
 
 ## Installing and using Dockertest
 
-Using Dockertest is straightforward and simple. Check the [releases tab](https://github.com/ory/dockertest/releases)
-for available releases.
+Using Dockertest is straightforward and simple. Check the
+[releases tab](https://github.com/ory/dockertest/releases) for available
+releases.
 
 To install dockertest, run
+
 ```
 go get -u github.com/ory/dockertest/v3
 ```
+
 or
+
 ```
 dep ensure -add github.com/ory/dockertest@v3.x.y
 ```
@@ -87,12 +95,12 @@ func TestMain(m *testing.M) {
 	}
 
 	code := m.Run()
-	
+
 	// You can't defer this because os.Exit doesn't care for defer
 	if err := pool.Purge(resource); err != nil {
 		log.Fatalf("Could not purge resource: %s", err)
 	}
-	
+
 	os.Exit(code)
 }
 
@@ -103,24 +111,29 @@ func TestSomething(t *testing.T) {
 
 ### Examples
 
-We provide code examples for well known services in the [examples](examples/) directory, check them out!
+We provide code examples for well known services in the [examples](examples/)
+directory, check them out!
 
 ## Troubleshoot & FAQ
 
 ### Out of disk space
 
-Try cleaning up the images with [docker-cleanup-volumes](https://github.com/chadoe/docker-cleanup-volumes).
+Try cleaning up the images with
+[docker-cleanup-volumes](https://github.com/chadoe/docker-cleanup-volumes).
 
 ### Removing old containers
 
 Sometimes container clean up fails. Check out
-[this stackoverflow question](http://stackoverflow.com/questions/21398087/how-to-delete-dockers-images) on how to fix this. You may also set an absolute lifetime on containers: 
+[this stackoverflow question](http://stackoverflow.com/questions/21398087/how-to-delete-dockers-images)
+on how to fix this. You may also set an absolute lifetime on containers:
 
 ```go
 resource.Expire(60) // Tell docker to hard kill the container in 60 seconds
 ```
 
-To let stopped containers removed from file system automatically, use `pool.RunWithOptions()` instead of `pool.Run()` with `config.AutoRemove` set to true, e.g.:
+To let stopped containers removed from file system automatically, use
+`pool.RunWithOptions()` instead of `pool.Run()` with `config.AutoRemove` set to
+true, e.g.:
 
 ```go
 postgres, err := pool.RunWithOptions(&dockertest.RunOptions{
@@ -141,14 +154,15 @@ postgres, err := pool.RunWithOptions(&dockertest.RunOptions{
 ```
 
 ## Running dockertest in Gitlab CI
- 
+
 ### How to run dockertest on shared gitlab runners?
 
-You should add docker dind service to your job which starts in sibling container. 
-That means database will be available on host `docker`.   
+You should add docker dind service to your job which starts in sibling
+container. That means database will be available on host `docker`.  
 You app should be able to change db host through environment variable.
 
 Here is the simple example of `gitlab-ci.yml`:
+
 ```yaml
 stages:
   - test
@@ -165,13 +179,15 @@ go-test:
     - go test ./...
 ```
 
-Plus in the `pool.Retry` method that checks for connection readiness,
- you need to use `$YOUR_APP_DB_HOST` instead of localhost.
+Plus in the `pool.Retry` method that checks for connection readiness, you need
+to use `$YOUR_APP_DB_HOST` instead of localhost.
 
 ### How to run dockertest on group(custom) gitlab runners?
 
-Gitlab runner can be run in docker executor mode to save compatibility with shared runners.    
+Gitlab runner can be run in docker executor mode to save compatibility with
+shared runners.  
 Here is the simple register command:
+
 ```shell script
 gitlab-runner register -n \
  --url https://gitlab.com/ \
@@ -183,14 +199,18 @@ gitlab-runner register -n \
 ```
 
 You only need to instruct docker dind to start with disabled tls.  
-Add variable `DOCKER_TLS_CERTDIR: ""` to `gitlab-ci.yml` above.
-It will tell docker daemon to start on 2375 port over http. 
+Add variable `DOCKER_TLS_CERTDIR: ""` to `gitlab-ci.yml` above. It will tell
+docker daemon to start on 2375 port over http.
 
 ### How to run dockertest with remote Docker
 
-Use-case: locally installed docker CLI (client), docker daemon somewhere remotely, environment properly set (ie: `DOCKER_HOST`, etc..). For example, remote docker can be provisioned by docker-machine.
+Use-case: locally installed docker CLI (client), docker daemon somewhere
+remotely, environment properly set (ie: `DOCKER_HOST`, etc..). For example,
+remote docker can be provisioned by docker-machine.
 
-Currently, dockertest in case of `resource.GetHostPort()` will return docker host binding address (commonly - `localhost`) instead of remote docker host. Universal solution is:
+Currently, dockertest in case of `resource.GetHostPort()` will return docker
+host binding address (commonly - `localhost`) instead of remote docker host.
+Universal solution is:
 
 ```go
 func getHostPort(resource *dockertest.Resource, id string) string {
@@ -206,4 +226,6 @@ func getHostPort(resource *dockertest.Resource, id string) string {
 }
 ```
 
-It will return the remote docker host concatenated with the allocated port in case `DOCKER_HOST` env is defined. Otherwise, it will fall back to the embedded behavior.
+It will return the remote docker host concatenated with the allocated port in
+case `DOCKER_HOST` env is defined. Otherwise, it will fall back to the embedded
+behavior.

@@ -5,15 +5,16 @@
 [![GoDoc](https://img.shields.io/badge/api-Godoc-blue.svg?style=flat-square)](https://godoc.org/github.com/fsouza/go-dockerclient)
 
 This package presents a client for the Docker remote API. It also provides
-support for the extensions in the [Swarm API](https://docs.docker.com/swarm/swarm-api/).
+support for the extensions in the
+[Swarm API](https://docs.docker.com/swarm/swarm-api/).
 
 This package also provides support for docker's network API, which is a simple
-passthrough to the libnetwork remote API.  Note that docker's network API is
-only available in docker 1.8 and above, and only enabled in docker if
+passthrough to the libnetwork remote API. Note that docker's network API is only
+available in docker 1.8 and above, and only enabled in docker if
 DOCKER_EXPERIMENTAL is defined during the docker build process.
 
-For more details, check the [remote API
-documentation](http://docs.docker.com/engine/reference/api/docker_remote_api/).
+For more details, check the
+[remote API documentation](http://docs.docker.com/engine/reference/api/docker_remote_api/).
 
 ## Example
 
@@ -77,7 +78,6 @@ If using [docker-machine](https://docs.docker.com/machine/), or another
 application that exports environment variables `DOCKER_HOST`,
 `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`, you can use NewClientFromEnv.
 
-
 ```go
 package main
 
@@ -101,13 +101,14 @@ All development commands can be seen in the [Makefile](Makefile).
 
 Commited code must pass:
 
-* [golint](https://github.com/golang/lint) (with some exceptions, see the Makefile).
-* [go vet](https://golang.org/cmd/vet/)
-* [gofmt](https://golang.org/cmd/gofmt)
-* [go test](https://golang.org/cmd/go/#hdr-Test_packages)
+- [golint](https://github.com/golang/lint) (with some exceptions, see the
+  Makefile).
+- [go vet](https://golang.org/cmd/vet/)
+- [gofmt](https://golang.org/cmd/gofmt)
+- [go test](https://golang.org/cmd/go/#hdr-Test_packages)
 
 Running `make test` will check all of these. If your editor does not
-automatically call ``gofmt -s``, `make fmt` will format all go files in this
+automatically call `gofmt -s`, `make fmt` will format all go files in this
 repository.
 
 ## Vendoring
@@ -122,9 +123,10 @@ dependencies manually.
 ## Using with Docker 1.9 and Go 1.4
 
 There's a tag for using go-dockerclient with Docker 1.9 (which requires
-compiling go-dockerclient with Go 1.4), the tag name is ``docker-1.9/go-1.4``.
+compiling go-dockerclient with Go 1.4), the tag name is `docker-1.9/go-1.4`.
 
-The instructions below can be used to get a version of go-dockerclient that compiles with Go 1.4:
+The instructions below can be used to get a version of go-dockerclient that
+compiles with Go 1.4:
 
 ```
 % git clone -b docker-1.9/go-1.4 https://github.com/fsouza/go-dockerclient.git $GOPATH/src/github.com/fsouza/go-dockerclient
