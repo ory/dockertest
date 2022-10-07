@@ -1,5 +1,5 @@
 format: .bin/ory node_modules   # formats the source code
-	.bin/ory dev headers license --exclude=node_modules
+	.bin/ory dev headers license
 	gofmt -l -s -w .
 	npm exec -- prettier --write .
 
