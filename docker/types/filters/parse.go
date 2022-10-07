@@ -1,3 +1,5 @@
+// Copyright © 2022 Ory Corp
+
 /*
 Package filters provides tools for encoding a mapping of keys to a set of
 multiple values.

@@ -1,3 +1,5 @@
+// Copyright © 2022 Ory Corp
+
 package types // import "github.com/ory/dockertest/v3/docker/types"
 
 // Seccomp represents the config for a seccomp profile for syscall restriction.

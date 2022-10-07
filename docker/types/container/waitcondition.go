@@ -1,3 +1,5 @@
+// Copyright © 2022 Ory Corp
+
 package container // import "github.com/ory/dockertest/v3/docker/types/container"
 
 // WaitCondition is a type used to specify a container state for which

@@ -1,3 +1,5 @@
+// Copyright © 2022 Ory Corp
+
 package jsonmessage // import "github.com/ory/dockertest/v3/docker/pkg/jsonmessage"
 
 import (

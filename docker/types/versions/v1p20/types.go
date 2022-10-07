@@ -1,3 +1,5 @@
+// Copyright © 2022 Ory Corp
+
 // Package v1p20 provides specific API types for the API version 1, patch 20.
 package v1p20 // import "github.com/ory/dockertest/v3/docker/types/versions/v1p20"
 

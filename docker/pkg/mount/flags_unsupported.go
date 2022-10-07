@@ -1,3 +1,5 @@
+// Copyright © 2022 Ory Corp
+
 //go:build (!linux && !freebsd) || (freebsd && !cgo)
 // +build !linux,!freebsd freebsd,!cgo
 

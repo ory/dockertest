@@ -1,3 +1,5 @@
+// Copyright © 2022 Ory Corp
+
 package container // import "github.com/ory/dockertest/v3/docker/types/container"
 
 // IsBridge indicates whether container uses the bridge network stack

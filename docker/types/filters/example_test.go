@@ -1,3 +1,5 @@
+// Copyright © 2022 Ory Corp
+
 package filters // import "github.com/ory/dockertest/v3/docker/types/filters"
 
 func ExampleArgs_MatchKVList() {

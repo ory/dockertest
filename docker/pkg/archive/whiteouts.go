@@ -1,3 +1,5 @@
+// Copyright © 2022 Ory Corp
+
 package archive // import "github.com/ory/dockertest/v3/docker/pkg/archive"
 
 // Whiteouts are files with a special meaning for the layered filesystem.

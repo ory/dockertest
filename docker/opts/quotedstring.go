@@ -1,3 +1,5 @@
+// Copyright © 2022 Ory Corp
+
 package opts
 
 // QuotedString is a string that may have extra quotes around the value. The

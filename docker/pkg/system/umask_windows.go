@@ -1,3 +1,5 @@
+// Copyright © 2022 Ory Corp
+
 package system // import "github.com/ory/dockertest/v3/docker/pkg/system"
 
 // Umask is not supported on the windows platform.

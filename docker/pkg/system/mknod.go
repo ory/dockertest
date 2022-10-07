@@ -1,3 +1,5 @@
+// Copyright © 2022 Ory Corp
+
 //go:build !windows && !freebsd
 // +build !windows,!freebsd
 

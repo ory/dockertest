@@ -1,3 +1,5 @@
+// Copyright © 2022 Ory Corp
+
 package registry // import "github.com/ory/dockertest/v3/docker/types/registry"
 
 import (
