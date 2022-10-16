@@ -475,7 +475,6 @@ func TestExecStatus(t *testing.T) {
 		Tag:        "3.16",
 		Cmd:        []string{"tail", "-f", "/dev/null"},
 	})
-	//resource, err := pool.Run("alpine", "3.16", nil)
 	defer resource.Close()
 	require.Nil(t, err)
 	exitCode, err := resource.Exec([]string{"/bin/false"}, ExecOptions{})
