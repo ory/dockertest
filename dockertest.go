@@ -127,7 +127,7 @@ func (r *Resource) Exec(cmd []string, opts ExecOptions) (exitCode int, err error
 	}
 
 	// Always attach stderr/stdout, even if not specified, to ensure that exec
-	// waits with opts.Detach as true (default)
+	// waits with opts.Detach as false (default)
 	// ref: https://github.com/fsouza/go-dockerclient/issues/838
 	if opts.StdErr == nil {
 		opts.StdErr = io.Discard
