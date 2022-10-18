@@ -117,13 +117,23 @@ func (r *Resource) Exec(cmd []string, opts ExecOptions) (exitCode int, err error
 		Container:    r.Container.ID,
 		Cmd:          cmd,
 		Env:          opts.Env,
-		AttachStderr: opts.StdErr != nil,
-		AttachStdout: opts.StdOut != nil,
+		AttachStderr: true,
+		AttachStdout: true,
 		AttachStdin:  opts.StdIn != nil,
 		Tty:          opts.TTY,
 	})
 	if err != nil {
 		return -1, errors.Wrap(err, "Create exec failed")
+	}
+
+	// Always attach stderr/stdout, even if not specified, to ensure that exec
+	// waits with opts.Detach as false (default)
+	// ref: https://github.com/fsouza/go-dockerclient/issues/838
+	if opts.StdErr == nil {
+		opts.StdErr = io.Discard
+	}
+	if opts.StdOut == nil {
+		opts.StdOut = io.Discard
 	}
 
 	err = r.pool.Client.StartExec(exec.ID, dc.StartExecOptions{

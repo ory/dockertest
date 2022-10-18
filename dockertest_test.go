@@ -20,8 +20,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var docker = os.Getenv("DOCKER_URL")
-var pool *Pool
+var (
+	docker = os.Getenv("DOCKER_URL")
+	pool   *Pool
+)
 
 func TestMain(m *testing.M) {
 	var err error
@@ -65,7 +67,6 @@ func TestMongo(t *testing.T) {
 
 	err = pool.Retry(func() error {
 		response, err := http.Get(fmt.Sprintf("http://127.0.0.1:%s", port))
-
 		if err != nil {
 			return err
 		}
@@ -197,7 +198,7 @@ func TestBuildImage(t *testing.T) {
 	dockerfilePath := dir + "/Dockerfile"
 	ioutil.WriteFile(dockerfilePath,
 		[]byte("FROM postgres:9.5"),
-		0644,
+		0o644,
 	)
 
 	resource, err := pool.BuildAndRun("postgres-test", dockerfilePath, nil)
@@ -219,7 +220,7 @@ ARG foo
 RUN echo -n $foo > /build-time-value
 CMD sleep 10
 `)),
-		0644,
+		0o644,
 	)
 
 	resource, err := pool.BuildAndRunWithBuildOptions(
@@ -466,4 +467,20 @@ func TestClientRaceCondition(t *testing.T) {
 			defer pool.Purge(resource)
 		})
 	}
+}
+
+func TestExecStatus(t *testing.T) {
+	resource, err := pool.RunWithOptions(&RunOptions{
+		Repository: "alpine",
+		Tag:        "3.16",
+		Cmd:        []string{"tail", "-f", "/dev/null"},
+	})
+	defer resource.Close()
+	require.Nil(t, err)
+	exitCode, err := resource.Exec([]string{"/bin/false"}, ExecOptions{})
+	require.Nil(t, err)
+	require.Equal(t, 1, exitCode)
+	exitCode, err = resource.Exec([]string{"/bin/sh", "-c", "/bin/sleep 2 && exit 42"}, ExecOptions{})
+	require.Nil(t, err)
+	require.Equal(t, 42, exitCode)
 }
