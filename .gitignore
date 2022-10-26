@@ -8,3 +8,4 @@ go.list
 cover.out
 coverage.out
 .vscode
+.bin/
