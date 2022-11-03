@@ -1,3 +1,6 @@
+// Copyright © 2022 Ory Corp
+// SPDX-License-Identifier: Apache-2.0
+
 package types // import "github.com/ory/dockertest/v3/docker/types"
 
 // Seccomp represents the config for a seccomp profile for syscall restriction.

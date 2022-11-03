@@ -1,3 +1,6 @@
+// Copyright © 2022 Ory Corp
+// SPDX-License-Identifier: Apache-2.0
+
 // Package types is used for API stability in the types and response to the
 // consumers of the API stats endpoint.
 package types // import "github.com/ory/dockertest/v3/docker/types"

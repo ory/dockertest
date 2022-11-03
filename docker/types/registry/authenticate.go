@@ -1,3 +1,6 @@
+// Copyright © 2022 Ory Corp
+// SPDX-License-Identifier: Apache-2.0
+
 package registry // import "github.com/ory/dockertest/v3/docker/types/registry"
 
 // ----------------------------------------------------------------------------
