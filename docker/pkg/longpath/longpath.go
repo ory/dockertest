@@ -1,4 +1,5 @@
 // Copyright © 2022 Ory Corp
+// SPDX-License-Identifier: Apache-2.0
 
 // longpath introduces some constants and helper functions for handling long paths
 // in Windows, which are expected to be prepended with `\\?\` and followed by either
