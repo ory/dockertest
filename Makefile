@@ -1,5 +1,5 @@
 format: .bin/ory node_modules   # formats the source code
-	.bin/ory dev headers copyright
+	.bin/ory dev headers copyright --type=open-source
 	gofmt -l -s -w .
 	npm exec -- prettier --write .
 
