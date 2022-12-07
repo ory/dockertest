@@ -3,7 +3,12 @@ var db *sql.DB
 var err error
 pool, err := dockertest.NewPool("")
 if err != nil {
-    log.Fatalf("Could not connect to docker: %s", err)
+    log.Fatalf("Could not construct pool: %s", err)
+}
+
+err = pool.Client.Ping()
+if err != nil {
+    log.Fatalf("Could not connect to Docker: %s", err)
 }
 
 resource, err := pool.RunWithOptions(&dockertest.RunOptions{Repository: "cockroachdb/cockroach", Tag: "v19.2.4", Cmd: []string{"start-single-node", "--insecure"}})

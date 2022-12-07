@@ -32,7 +32,11 @@ func TestMain(m *testing.M) {
 	var err error
 	pool, err = NewPool(docker)
 	if err != nil {
-		log.Fatalf("Could not connect to docker: %s", err)
+		log.Fatalf("Could not construct pool: %s", err)
+	}
+	err = pool.Client.Ping()
+	if err != nil {
+		log.Fatalf("Could not connect to Docker: %s", err)
 	}
 	os.Exit(m.Run())
 }

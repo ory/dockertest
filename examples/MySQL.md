@@ -4,7 +4,12 @@ var err error
 pool, err := dockertest.NewPool("")
 pool.MaxWait = time.Minute * 2
 if err != nil {
-    log.Fatalf("Could not connect to docker: %s", err)
+    log.Fatalf("Could not construct pool: %s", err)
+}
+
+err = pool.Client.Ping()
+if err != nil {
+    log.Fatalf("Could not connect to Docker: %s", err)
 }
 
 resource, err := pool.Run("mysql", "5.7", []string{"MYSQL_ROOT_PASSWORD=secret"})

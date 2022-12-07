@@ -16,7 +16,7 @@ import (
 func main() {
 	dockerPool, err := dockertest.NewPool("")
 	if err != nil {
-		log.Fatalf("could not connect to docker: %s", err)
+		log.Fatalf("Could not construct pool: %s", err)
 	}
 
 	if err = dockerPool.Client.Ping(); err != nil {
