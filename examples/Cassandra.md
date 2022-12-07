@@ -4,7 +4,7 @@ var err error
 
 pool, err := dockertest.NewPool("")
 if err != nil {
-	log.Fatalf("Could not construct pool: %s", err)
+    log.Fatalf("Could not construct pool: %s", err)
 }
 
 err = pool.Client.Ping()

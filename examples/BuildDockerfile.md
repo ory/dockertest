@@ -16,7 +16,7 @@ if err != nil {
 
 err = pool.Client.Ping()
 if err != nil {
-    log.Fatalf("Could not connect to Docker: %s", err)
+	log.Fatalf("Could not connect to Docker: %s", err)
 }
 
 // Build and run the given Dockerfile
