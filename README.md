@@ -208,6 +208,33 @@ You only need to instruct docker dind to start with disabled tls.
 Add variable `DOCKER_TLS_CERTDIR: ""` to `gitlab-ci.yml` above. It will tell
 docker daemon to start on 2375 port over http.
 
+## Running Dockertest Using GitHub Actions
+```yaml
+name: Test with Docker
+
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      dind:
+        image: docker:23.0-rc-dind-rootless
+        ports:
+          - 2375:2375
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: '1.18'
+
+      - name: Test with Docker
+        run: go test -v ./...
+```
+
 ### How to run dockertest with remote Docker
 
 Use-case: locally installed docker CLI (client), docker daemon somewhere
