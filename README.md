@@ -209,6 +209,7 @@ Add variable `DOCKER_TLS_CERTDIR: ""` to `gitlab-ci.yml` above. It will tell
 docker daemon to start on 2375 port over http.
 
 ## Running Dockertest Using GitHub Actions
+
 ```yaml
 name: Test with Docker
 
@@ -229,7 +230,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: '1.18'
+          go-version: "1.18"
 
       - name: Test with Docker
         run: go test -v ./...
