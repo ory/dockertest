@@ -270,7 +270,11 @@ func NewPool(endpoint string) (*Pool, error) {
 		} else if os.Getenv("DOCKER_URL") != "" {
 			endpoint = os.Getenv("DOCKER_URL")
 		} else if runtime.GOOS == "windows" {
-			endpoint = "http://localhost:2375"
+			if _, err := os.Stat(`\\.\pipe\docker_engine`); err == nil {
+				endpoint = "npipe:////./pipe/docker_engine"
+			} else {
+				endpoint = "http://localhost:2375"
+			}
 		} else {
 			endpoint = "unix:///var/run/docker.sock"
 		}
