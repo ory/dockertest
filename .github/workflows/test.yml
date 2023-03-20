@@ -1,9 +1,7 @@
 name: Test CI
 on:
-  push:
-    branches:
-      - master
-  pull_request:
+  push: {}
+  pull_request: {}
 jobs:
   build:
     runs-on: ubuntu-latest
