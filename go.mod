@@ -14,7 +14,7 @@ require (
 	github.com/lib/pq v0.0.0-20180327071824-d34b9ff171c2
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635
 	github.com/opencontainers/image-spec v1.0.2
-	github.com/opencontainers/runc v1.1.3
+	github.com/opencontainers/runc v1.1.5
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.8.0
