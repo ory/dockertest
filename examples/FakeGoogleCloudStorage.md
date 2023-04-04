@@ -18,7 +18,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -198,7 +198,7 @@ func readFile(client *storage.Client, bucketName, fileName string) ([]byte, erro
 		return nil, err
 	}
 	defer reader.Close()
-	return ioutil.ReadAll(reader)
+	return io.ReadAll(reader)
 }
 
 func deleteFile(client *storage.Client, bucketName, fileName string) error {

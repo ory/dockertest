@@ -7,7 +7,6 @@ import (
 	"bytes"
 	"database/sql"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -199,11 +198,10 @@ func TestContainerWithPortBinding(t *testing.T) {
 
 func TestBuildImage(t *testing.T) {
 	// Create Dockerfile in temp dir
-	dir, _ := ioutil.TempDir("", "dockertest")
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	dockerfilePath := dir + "/Dockerfile"
-	ioutil.WriteFile(dockerfilePath,
+	os.WriteFile(dockerfilePath,
 		[]byte("FROM postgres:9.5"),
 		0o644,
 	)
@@ -217,11 +215,10 @@ func TestBuildImage(t *testing.T) {
 
 func TestBuildImageWithBuildArg(t *testing.T) {
 	// Create Dockerfile in temp dir
-	dir, _ := ioutil.TempDir("", "dockertest")
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	dockerfilePath := dir + "/Dockerfile"
-	ioutil.WriteFile(dockerfilePath,
+	os.WriteFile(dockerfilePath,
 		[]byte((`FROM busybox
 ARG foo
 RUN echo -n $foo > /build-time-value
