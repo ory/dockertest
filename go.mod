@@ -15,7 +15,6 @@ require (
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635
 	github.com/opencontainers/image-spec v1.0.2
 	github.com/opencontainers/runc v1.1.5
-	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.8.1
 	github.com/stretchr/testify v1.8.0
 	golang.org/x/sys v0.7.0
@@ -32,6 +31,7 @@ require (
 	github.com/imdario/mergo v0.3.12 // indirect
 	github.com/mitchellh/mapstructure v1.4.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20180127040702-4e3ac2762d5f // indirect
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
