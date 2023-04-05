@@ -4,6 +4,7 @@
 package dockertest
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -16,7 +17,6 @@ import (
 	"github.com/cenkalti/backoff/v4"
 	dc "github.com/ory/dockertest/v3/docker"
 	options "github.com/ory/dockertest/v3/docker/opts"
-	"github.com/pkg/errors"
 )
 
 var (
@@ -125,7 +125,7 @@ func (r *Resource) Exec(cmd []string, opts ExecOptions) (exitCode int, err error
 		Tty:          opts.TTY,
 	})
 	if err != nil {
-		return -1, errors.Wrap(err, "Create exec failed")
+		return -1, fmt.Errorf("Create exec failed: %w", err)
 	}
 
 	// Always attach stderr/stdout, even if not specified, to ensure that exec
@@ -145,12 +145,12 @@ func (r *Resource) Exec(cmd []string, opts ExecOptions) (exitCode int, err error
 		Tty:          opts.TTY,
 	})
 	if err != nil {
-		return -1, errors.Wrap(err, "Start exec failed")
+		return -1, fmt.Errorf("Start exec failed: %w", err)
 	}
 
 	inspectExec, err := r.pool.Client.InspectExec(exec.ID)
 	if err != nil {
-		return -1, errors.Wrap(err, "Inspect exec failed")
+		return -1, fmt.Errorf("Inspect exec failed: %w", err)
 	}
 
 	return inspectExec.ExitCode, nil
@@ -177,18 +177,18 @@ func (r *Resource) ConnectToNetwork(network *Network) error {
 		dc.NetworkConnectionOptions{Container: r.Container.ID},
 	)
 	if err != nil {
-		return errors.Wrap(err, "Failed to connect container to network")
+		return fmt.Errorf("Failed to connect container to network: %w", err)
 	}
 
 	// refresh internal representation
 	r.Container, err = r.pool.Client.InspectContainer(r.Container.ID)
 	if err != nil {
-		return errors.Wrap(err, "Failed to refresh container information")
+		return fmt.Errorf("Failed to refresh container information: %w", err)
 	}
 
 	network.Network, err = r.pool.Client.NetworkInfo(network.Network.ID)
 	if err != nil {
-		return errors.Wrap(err, "Failed to refresh network information")
+		return fmt.Errorf("Failed to refresh network information: %w", err)
 	}
 
 	return nil
@@ -201,18 +201,18 @@ func (r *Resource) DisconnectFromNetwork(network *Network) error {
 		dc.NetworkConnectionOptions{Container: r.Container.ID},
 	)
 	if err != nil {
-		return errors.Wrap(err, "Failed to connect container to network")
+		return fmt.Errorf("Failed to connect container to network: %w", err)
 	}
 
 	// refresh internal representation
 	r.Container, err = r.pool.Client.InspectContainer(r.Container.ID)
 	if err != nil {
-		return errors.Wrap(err, "Failed to refresh container information")
+		return fmt.Errorf("Failed to refresh container information: %w", err)
 	}
 
 	network.Network, err = r.pool.Client.NetworkInfo(network.Network.ID)
 	if err != nil {
-		return errors.Wrap(err, "Failed to refresh network information")
+		return fmt.Errorf("Failed to refresh network information: %w", err)
 	}
 
 	return nil
@@ -242,7 +242,7 @@ func NewTLSPool(endpoint, certpath string) (*Pool, error) {
 
 	client, err := dc.NewTLSClient(endpoint, cert, key, ca)
 	if err != nil {
-		return nil, errors.Wrap(err, "")
+		return nil, err
 	}
 
 	return &Pool{
@@ -259,7 +259,7 @@ func NewPool(endpoint string) (*Pool, error) {
 		if os.Getenv("DOCKER_MACHINE_NAME") != "" {
 			client, err := dc.NewClientFromEnv()
 			if err != nil {
-				return nil, errors.Wrap(err, "failed to create client from environment")
+				return nil, fmt.Errorf("failed to create client from environment: %w", err)
 			}
 
 			return &Pool{Client: client}, nil
@@ -285,7 +285,7 @@ func NewPool(endpoint string) (*Pool, error) {
 
 	client, err := dc.NewClient(endpoint)
 	if err != nil {
-		return nil, errors.Wrap(err, "")
+		return nil, err
 	}
 
 	return &Pool{
@@ -346,7 +346,7 @@ func (d *Pool) BuildAndRunWithBuildOptions(buildOpts *BuildOptions, runOpts *Run
 	})
 
 	if err != nil {
-		return nil, errors.Wrap(err, "")
+		return nil, err
 	}
 
 	runOpts.Repository = runOpts.Name
@@ -426,7 +426,7 @@ func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) 
 			Tag:        tag,
 			Platform:   opts.Platform,
 		}, opts.Auth); err != nil {
-			return nil, errors.Wrap(err, "")
+			return nil, err
 		}
 	}
 
@@ -466,22 +466,22 @@ func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) 
 		NetworkingConfig: &networkingConfig,
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "")
+		return nil, err
 	}
 
 	if err := d.Client.StartContainer(c.ID, nil); err != nil {
-		return nil, errors.Wrap(err, "")
+		return nil, err
 	}
 
 	c, err = d.Client.InspectContainer(c.ID)
 	if err != nil {
-		return nil, errors.Wrap(err, "")
+		return nil, err
 	}
 
 	for _, network := range opts.Networks {
 		network.Network, err = d.Client.NetworkInfo(network.Network.ID)
 		if err != nil {
-			return nil, errors.Wrap(err, "")
+			return nil, err
 		}
 	}
 
@@ -535,7 +535,7 @@ func (d *Pool) RemoveContainerByName(containerName string) error {
 		},
 	})
 	if err != nil {
-		return errors.Wrapf(err, "Error while listing containers with name %s", containerName)
+		return fmt.Errorf("Error while listing containers with name %s: %w", containerName, err)
 	}
 
 	if len(containers) == 0 {
@@ -548,7 +548,7 @@ func (d *Pool) RemoveContainerByName(containerName string) error {
 		RemoveVolumes: true,
 	})
 	if err != nil {
-		return errors.Wrapf(err, "Error while removing container with name %s", containerName)
+		return fmt.Errorf("Error while removing container with name %s: %w", containerName, err)
 	}
 
 	return nil
@@ -557,7 +557,7 @@ func (d *Pool) RemoveContainerByName(containerName string) error {
 // Purge removes a container and linked volumes from docker.
 func (d *Pool) Purge(r *Resource) error {
 	if err := d.Client.RemoveContainer(dc.RemoveContainerOptions{ID: r.Container.ID, Force: true, RemoveVolumes: true}); err != nil {
-		return errors.Wrap(err, "")
+		return err
 	}
 
 	return nil
@@ -588,7 +588,7 @@ func (d *Pool) CurrentContainer() (*Resource, error) {
 	// docker daemon puts short container id into hostname
 	hostname, err := os.Hostname()
 	if err != nil {
-		return nil, errors.Wrap(err, "Get hostname failed")
+		return nil, fmt.Errorf("Get hostname failed: %w", err)
 	}
 
 	container, err := d.Client.InspectContainer(hostname)
@@ -601,7 +601,7 @@ func (d *Pool) CurrentContainer() (*Resource, error) {
 	case *dc.NoSuchContainer:
 		return nil, ErrNotInContainer
 	default:
-		return nil, errors.Wrap(err, "")
+		return nil, err
 	}
 }
 
@@ -615,7 +615,7 @@ func (d *Pool) CreateNetwork(name string, opts ...func(config *dc.CreateNetworkO
 
 	network, err := d.Client.CreateNetwork(cfg)
 	if err != nil {
-		return nil, errors.Wrap(err, "")
+		return nil, err
 	}
 
 	return &Network{
@@ -628,7 +628,7 @@ func (d *Pool) CreateNetwork(name string, opts ...func(config *dc.CreateNetworkO
 func (d *Pool) NetworksByName(name string) ([]Network, error) {
 	networks, err := d.Client.ListNetworks()
 	if err != nil {
-		return nil, errors.Wrap(err, "")
+		return nil, err
 	}
 
 	var foundNetworks []Network
