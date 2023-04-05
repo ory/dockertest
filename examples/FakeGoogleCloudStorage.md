@@ -2,7 +2,7 @@ The following is an example of using `dockertest` & `fake-gcs-server` to perform
 integration testing with the Google Cloud Storage API and a local Google Cloud
 Storage emulator server.
 
-This example asumes there is a local bind mount at `{$PWD}/examples/data` with
+This example assumes there is a local bind mount at `{$PWD}/examples/data` with
 the `sample-bucket/sample_file.txt` file.
 
 You also need to substitute `path/to/your/credentials.json` with your correct
