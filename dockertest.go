@@ -6,7 +6,6 @@ package dockertest
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
@@ -340,7 +339,7 @@ func (d *Pool) BuildAndRunWithBuildOptions(buildOpts *BuildOptions, runOpts *Run
 	err := d.Client.BuildImage(dc.BuildImageOptions{
 		Name:         runOpts.Name,
 		Dockerfile:   buildOpts.Dockerfile,
-		OutputStream: ioutil.Discard,
+		OutputStream: io.Discard,
 		ContextDir:   buildOpts.ContextDir,
 		BuildArgs:    buildOpts.BuildArgs,
 		Platform:     buildOpts.Platform,
