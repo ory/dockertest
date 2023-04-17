@@ -3,7 +3,7 @@ module github.com/ory/dockertest/v3
 go 1.17
 
 require (
-	github.com/Microsoft/go-winio v0.6.0
+	github.com/Microsoft/go-winio v0.6.1
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5
 	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/containerd/continuity v0.3.0
@@ -15,7 +15,7 @@ require (
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635
 	github.com/opencontainers/image-spec v1.0.2
 	github.com/opencontainers/runc v1.1.6
-	github.com/sirupsen/logrus v1.8.1
+	github.com/sirupsen/logrus v1.9.0
 	github.com/stretchr/testify v1.8.0
 	golang.org/x/sys v0.7.0
 	gotest.tools/v3 v3.3.0
