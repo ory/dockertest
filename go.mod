@@ -7,7 +7,7 @@ require (
 	github.com/Nvveen/Gotty v0.0.0-20120604004816-cd527374f1e5
 	github.com/cenkalti/backoff/v4 v4.1.3
 	github.com/containerd/continuity v0.3.0
-	github.com/docker/cli v20.10.17+incompatible
+	github.com/docker/cli v23.0.6+incompatible
 	github.com/docker/go-connections v0.4.0
 	github.com/docker/go-units v0.4.0
 	github.com/go-sql-driver/mysql v1.6.0
