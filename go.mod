@@ -15,7 +15,7 @@ require (
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635
 	github.com/opencontainers/image-spec v1.0.2
 	github.com/opencontainers/runc v1.1.6
-	github.com/sirupsen/logrus v1.9.0
+	github.com/sirupsen/logrus v1.9.2
 	github.com/stretchr/testify v1.8.0
 	golang.org/x/sys v0.7.0
 	gotest.tools/v3 v3.3.0
