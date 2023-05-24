@@ -12,7 +12,7 @@ require (
 	github.com/docker/go-units v0.4.0
 	github.com/go-sql-driver/mysql v1.6.0
 	github.com/lib/pq v1.10.8
-	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635
+	github.com/moby/term v0.5.0
 	github.com/opencontainers/image-spec v1.0.2
 	github.com/opencontainers/runc v1.1.6
 	github.com/sirupsen/logrus v1.9.2
@@ -22,7 +22,7 @@ require (
 )
 
 require (
-	github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78 // indirect
+	github.com/Azure/go-ansiterm v0.0.0-20210617225240-d185dfc1b5a1 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/docker/docker v20.10.24+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
