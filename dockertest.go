@@ -275,7 +275,7 @@ func NewPool(endpoint string) (*Pool, error) {
 				endpoint = "http://localhost:2375"
 			}
 		} else {
-			endpoint = "unix:///var/run/docker.sock"
+			endpoint = options.DefaultHost
 		}
 	}
 
