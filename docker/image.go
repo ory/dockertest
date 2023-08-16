@@ -480,6 +480,7 @@ type BuildImageOptions struct {
 	SecurityOpt         []string           `qs:"securityopt"`
 	Target              string             `gs:"target"`
 	Platform            string             `qs:"platform"`
+	Version             string             `qs:"version"`
 	Context             context.Context
 }
 
