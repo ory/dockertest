@@ -7,8 +7,14 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
+)
+
+const (
+	dockerSocket = "/var/run/docker.sock"
+	podmanSocket = "/podman/podman.sock"
 )
 
 var (
@@ -19,8 +25,7 @@ var (
 	// DefaultTLSHTTPPort Default HTTP Port used when TLS enabled
 	DefaultTLSHTTPPort = 2376 // Default TLS encrypted HTTP Port
 	// DefaultUnixSocket Path for the unix socket.
-	// Docker daemon by default always listens on the default unix socket
-	DefaultUnixSocket = "/var/run/docker.sock"
+	DefaultUnixSocket = getDefaultSocket()
 	// DefaultTCPHost constant defines the default host string used by docker on Windows
 	DefaultTCPHost = fmt.Sprintf("tcp://%s:%d", DefaultHTTPHost, DefaultHTTPPort)
 	// DefaultTLSHost constant defines the default host string used by docker for TLS sockets
@@ -165,4 +170,21 @@ func ValidateExtraHost(val string) (string, error) {
 		return "", fmt.Errorf("invalid IP address in add-host: %q", arr[1])
 	}
 	return val, nil
+}
+
+func getDefaultSocket() string {
+	_, err := os.Stat(dockerSocket)
+	if err == nil {
+		return dockerSocket
+	}
+	// see https://docs.podman.io/en/latest/markdown/podman-system-service.1.html#description
+	locations := []string{os.Getenv("XDG_RUNTIME_DIR"), "/run"} // rootless, rootful
+	for _, location := range locations {
+		_, err = os.Stat(location + podmanSocket)
+		if err == nil {
+			return location + podmanSocket
+		}
+	}
+
+	return dockerSocket
 }
