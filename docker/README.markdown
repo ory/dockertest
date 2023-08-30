@@ -99,7 +99,7 @@ See the documentation for more details.
 
 All development commands can be seen in the [Makefile](Makefile).
 
-Commited code must pass:
+Committed code must pass:
 
 - [golint](https://github.com/golang/lint) (with some exceptions, see the
   Makefile).
