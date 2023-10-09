@@ -17,7 +17,7 @@ require (
 	github.com/opencontainers/runc v1.1.7
 	github.com/sirupsen/logrus v1.9.2
 	github.com/stretchr/testify v1.8.3
-	golang.org/x/sys v0.8.0
+	golang.org/x/sys v0.13.0
 	gotest.tools/v3 v3.3.0
 )
 
