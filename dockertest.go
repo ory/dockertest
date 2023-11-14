@@ -331,6 +331,7 @@ type BuildOptions struct {
 	ContextDir string
 	BuildArgs  []dc.BuildArg
 	Platform   string
+	Auth       dc.AuthConfigurations
 }
 
 // BuildAndRunWithBuildOptions builds and starts a docker container.
@@ -343,6 +344,7 @@ func (d *Pool) BuildAndRunWithBuildOptions(buildOpts *BuildOptions, runOpts *Run
 		ContextDir:   buildOpts.ContextDir,
 		BuildArgs:    buildOpts.BuildArgs,
 		Platform:     buildOpts.Platform,
+		AuthConfigs:  buildOpts.Auth,
 	})
 
 	if err != nil {
