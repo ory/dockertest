@@ -1,7 +1,7 @@
 // Copyright © 2023 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
-package dockertest
+package dockertest_test
 
 import (
 	"bytes"
@@ -17,6 +17,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
+	"github.com/ory/dockertest/v3"
 	dc "github.com/ory/dockertest/v3/docker"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,12 +25,12 @@ import (
 
 var (
 	docker = os.Getenv("DOCKER_URL")
-	pool   *Pool
+	pool   *dockertest.Pool
 )
 
 func TestMain(m *testing.M) {
 	var err error
-	pool, err = NewPool(docker)
+	pool, err = dockertest.NewPool(docker)
 	if err != nil {
 		log.Fatalf("Could not construct pool: %s", err)
 	}
@@ -59,7 +60,7 @@ func TestPostgres(t *testing.T) {
 }
 
 func TestMongo(t *testing.T) {
-	options := &RunOptions{
+	options := &dockertest.RunOptions{
 		Repository: "mongo",
 		Tag:        "3.3.12",
 		Cmd:        []string{"mongod", "--smallfiles", "--port", "3000"},
@@ -88,7 +89,7 @@ func TestMongo(t *testing.T) {
 }
 
 func TestMysqlWithPlatform(t *testing.T) {
-	resource, err := pool.RunWithOptions(&RunOptions{
+	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "mysql",
 		Tag:        "5.7",
 		Env:        []string{"MYSQL_ROOT_PASSWORD=secret"},
@@ -112,7 +113,7 @@ func TestMysqlWithPlatform(t *testing.T) {
 
 func TestContainerWithName(t *testing.T) {
 	resource, err := pool.RunWithOptions(
-		&RunOptions{
+		&dockertest.RunOptions{
 			Name:       "db",
 			Repository: "postgres",
 			Tag:        "9.5",
@@ -128,7 +129,7 @@ func TestContainerWithLabels(t *testing.T) {
 		"my": "label",
 	}
 	resource, err := pool.RunWithOptions(
-		&RunOptions{
+		&dockertest.RunOptions{
 			Name:       "db",
 			Repository: "postgres",
 			Tag:        "9.5",
@@ -144,7 +145,7 @@ func TestContainerWithLabels(t *testing.T) {
 func TestContainerWithUser(t *testing.T) {
 	user := "1001:1001"
 	resource, err := pool.RunWithOptions(
-		&RunOptions{
+		&dockertest.RunOptions{
 			Name:       "db",
 			Repository: "postgres",
 			Tag:        "9.5",
@@ -163,7 +164,7 @@ func TestContainerWithUser(t *testing.T) {
 
 func TestContainerWithTty(t *testing.T) {
 	resource, err := pool.RunWithOptions(
-		&RunOptions{
+		&dockertest.RunOptions{
 			Name:       "db",
 			Repository: "postgres",
 			Tag:        "9.5",
@@ -182,7 +183,7 @@ func TestContainerWithTty(t *testing.T) {
 
 func TestContainerWithPortBinding(t *testing.T) {
 	resource, err := pool.RunWithOptions(
-		&RunOptions{
+		&dockertest.RunOptions{
 			Repository: "postgres",
 			Tag:        "9.5",
 			PortBindings: map[dc.Port][]dc.PortBinding{
@@ -228,14 +229,14 @@ CMD sleep 10
 	)
 
 	resource, err := pool.BuildAndRunWithBuildOptions(
-		&BuildOptions{
+		&dockertest.BuildOptions{
 			ContextDir: dir,
 			Dockerfile: "Dockerfile",
 			BuildArgs: []dc.BuildArg{
 				{Name: "foo", Value: "bar"},
 			},
 		},
-		&RunOptions{
+		&dockertest.RunOptions{
 			Name: "buildarg-test",
 		}, func(hc *dc.HostConfig) {
 			hc.AutoRemove = true
@@ -245,7 +246,7 @@ CMD sleep 10
 	var stdout bytes.Buffer
 	exitCode, err := resource.Exec(
 		[]string{"cat", "/build-time-value"},
-		ExecOptions{StdOut: &stdout},
+		dockertest.ExecOptions{StdOut: &stdout},
 	)
 	require.Nil(t, err)
 	require.Zero(t, exitCode)
@@ -284,7 +285,7 @@ func TestExpire(t *testing.T) {
 func TestContainerWithShMzSize(t *testing.T) {
 	shmemsize := int64(1024 * 1024)
 	resource, err := pool.RunWithOptions(
-		&RunOptions{
+		&dockertest.RunOptions{
 			Name:       "db",
 			Repository: "postgres",
 			Tag:        "9.5",
@@ -299,7 +300,7 @@ func TestContainerWithShMzSize(t *testing.T) {
 
 func TestContainerByName(t *testing.T) {
 	got, err := pool.RunWithOptions(
-		&RunOptions{
+		&dockertest.RunOptions{
 			Name:       "db",
 			Repository: "postgres",
 			Tag:        "9.5",
@@ -317,7 +318,7 @@ func TestContainerByName(t *testing.T) {
 
 func TestRemoveContainerByName(t *testing.T) {
 	_, err := pool.RunWithOptions(
-		&RunOptions{
+		&dockertest.RunOptions{
 			Name:       "db",
 			Repository: "postgres",
 			Tag:        "9.5",
@@ -329,7 +330,7 @@ func TestRemoveContainerByName(t *testing.T) {
 	require.Nil(t, err)
 
 	resource, err := pool.RunWithOptions(
-		&RunOptions{
+		&dockertest.RunOptions{
 			Name:       "db",
 			Repository: "postgres",
 			Tag:        "9.5",
@@ -359,7 +360,7 @@ func TestExec(t *testing.T) {
 	var stdout bytes.Buffer
 	exitCode, err := resource.Exec(
 		[]string{"psql", "-qtAX", "-U", "postgres", "-c", "SHOW server_version"},
-		ExecOptions{StdOut: &stdout},
+		dockertest.ExecOptions{StdOut: &stdout},
 	)
 	require.Nil(t, err)
 	require.Zero(t, exitCode)
@@ -372,19 +373,19 @@ func TestNetworking_on_start(t *testing.T) {
 	require.Nil(t, err)
 	defer network.Close()
 
-	resourceFirst, err := pool.RunWithOptions(&RunOptions{
+	resourceFirst, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "postgres",
 		Tag:        "9.5",
-		Networks:   []*Network{network},
+		Networks:   []*dockertest.Network{network},
 		Env:        []string{"POSTGRES_PASSWORD=secret"},
 	})
 	require.Nil(t, err)
 	defer resourceFirst.Close()
 
-	resourceSecond, err := pool.RunWithOptions(&RunOptions{
+	resourceSecond, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "postgres",
 		Tag:        "11",
-		Networks:   []*Network{network},
+		Networks:   []*dockertest.Network{network},
 		Env:        []string{"POSTGRES_PASSWORD=secret"},
 	})
 	require.Nil(t, err)
@@ -445,7 +446,7 @@ func TestNetworking_after_start(t *testing.T) {
 	var stdout bytes.Buffer
 	exitCode, err := resourceFirst.Exec(
 		[]string{"psql", "-qtAX", "-h", resourceSecond.GetIPInNetwork(network), "-U", "postgres", "-c", "SHOW server_version"},
-		ExecOptions{StdOut: &stdout, Env: []string{"PGPASSWORD=secret"}},
+		dockertest.ExecOptions{StdOut: &stdout, Env: []string{"PGPASSWORD=secret"}},
 	)
 	require.Nil(t, err)
 	require.Zero(t, exitCode)
@@ -455,7 +456,7 @@ func TestNetworking_after_start(t *testing.T) {
 
 func TestClientRaceCondition(t *testing.T) {
 	// Shadow pool so that we can have a fresh client with nil pool.Client.serverAPIVersion
-	pool, err := NewPool(docker)
+	pool, err := dockertest.NewPool(docker)
 	require.NoError(t, err)
 
 	for i := 0; i < 10; i++ {
@@ -463,7 +464,7 @@ func TestClientRaceCondition(t *testing.T) {
 			// Tests must be run in parallel to recreate the issue
 			t.Parallel()
 			resource, _ := pool.RunWithOptions(
-				&RunOptions{
+				&dockertest.RunOptions{
 					Repository: "postgres",
 					Tag:        "13.4",
 				},
@@ -474,17 +475,17 @@ func TestClientRaceCondition(t *testing.T) {
 }
 
 func TestExecStatus(t *testing.T) {
-	resource, err := pool.RunWithOptions(&RunOptions{
+	resource, err := pool.RunWithOptions(&dockertest.RunOptions{
 		Repository: "alpine",
 		Tag:        "3.16",
 		Cmd:        []string{"tail", "-f", "/dev/null"},
 	})
 	defer resource.Close()
 	require.Nil(t, err)
-	exitCode, err := resource.Exec([]string{"/bin/false"}, ExecOptions{})
+	exitCode, err := resource.Exec([]string{"/bin/false"}, dockertest.ExecOptions{})
 	require.Nil(t, err)
 	require.Equal(t, 1, exitCode)
-	exitCode, err = resource.Exec([]string{"/bin/sh", "-c", "/bin/sleep 2 && exit 42"}, ExecOptions{})
+	exitCode, err = resource.Exec([]string{"/bin/sh", "-c", "/bin/sleep 2 && exit 42"}, dockertest.ExecOptions{})
 	require.Nil(t, err)
 	require.Equal(t, 42, exitCode)
 }
