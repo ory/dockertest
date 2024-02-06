@@ -13,7 +13,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 
@@ -43,7 +42,7 @@ func main() {
 
 	if len(*flNewDir) == 0 {
 		var err error
-		newDir, err = ioutil.TempDir("", "docker-test-newDir")
+		newDir, err = os.MkdirTemp("", "docker-test-newDir")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -56,7 +55,7 @@ func main() {
 	}
 
 	if len(*flOldDir) == 0 {
-		oldDir, err := ioutil.TempDir("", "docker-test-oldDir")
+		oldDir, err := os.MkdirTemp("", "docker-test-oldDir")
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -87,7 +86,7 @@ func prepareUntarSourceDirectory(numberOfFiles int, targetPath string, makeLinks
 	fileData := []byte("fooo")
 	for n := 0; n < numberOfFiles; n++ {
 		fileName := fmt.Sprintf("file-%d", n)
-		if err := ioutil.WriteFile(path.Join(targetPath, fileName), fileData, 0700); err != nil {
+		if err := os.WriteFile(path.Join(targetPath, fileName), fileData, 0700); err != nil {
 			return 0, err
 		}
 		if makeLinks {

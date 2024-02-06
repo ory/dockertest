@@ -90,7 +90,7 @@ func TestMongo(t *testing.T) {
 func TestMysqlWithPlatform(t *testing.T) {
 	resource, err := pool.RunWithOptions(&RunOptions{
 		Repository: "mysql",
-		Tag:        "5.7",
+		Tag:        "8.0",
 		Env:        []string{"MYSQL_ROOT_PASSWORD=secret"},
 		Platform:   "", // Platform in the format os[/arch[/variant]] (e.g. linux/amd64). Default: ""
 	})
@@ -479,8 +479,8 @@ func TestExecStatus(t *testing.T) {
 		Tag:        "3.16",
 		Cmd:        []string{"tail", "-f", "/dev/null"},
 	})
-	defer resource.Close()
 	require.Nil(t, err)
+	defer resource.Close()
 	exitCode, err := resource.Exec([]string{"/bin/false"}, ExecOptions{})
 	require.Nil(t, err)
 	require.Equal(t, 1, exitCode)

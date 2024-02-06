@@ -6,9 +6,9 @@
 
 package ioutils // import "github.com/ory/dockertest/v3/docker/pkg/ioutils"
 
-import "io/ioutil"
+import "os"
 
 // TempDir on Unix systems is equivalent to ioutil.TempDir.
 func TempDir(dir, prefix string) (string, error) {
-	return ioutil.TempDir(dir, prefix)
+	return os.MkdirTemp(dir, prefix)
 }

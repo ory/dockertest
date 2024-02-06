@@ -40,7 +40,7 @@ func TestParseArgsEdgeCase(t *testing.T) {
 	if args.Len() != 0 {
 		t.Fatalf("Expected an empty Args (map), got %v", args)
 	}
-	if args, err = ParseFlag("anything", args); err == nil || err != ErrBadFormat {
+	if _, err := ParseFlag("anything", args); err == nil || err != ErrBadFormat {
 		t.Fatalf("Expected ErrBadFormat, got %v", err)
 	}
 }

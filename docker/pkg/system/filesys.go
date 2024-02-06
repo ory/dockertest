@@ -7,7 +7,6 @@
 package system // import "github.com/ory/dockertest/v3/docker/pkg/system"
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 )
@@ -67,5 +66,5 @@ func OpenFileSequential(name string, flag int, perm os.FileMode) (*os.File, erro
 // to find the pathname of the file. It is the caller's responsibility
 // to remove the file when no longer needed.
 func TempFileSequential(dir, prefix string) (f *os.File, err error) {
-	return ioutil.TempFile(dir, prefix)
+	return os.CreateTemp(dir, prefix)
 }
