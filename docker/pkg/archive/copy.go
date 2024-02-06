@@ -1,4 +1,4 @@
-// Copyright © 2023 Ory Corp
+// Copyright © 2024 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
 package archive // import "github.com/ory/dockertest/v3/docker/pkg/archive"
@@ -12,8 +12,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ory/dockertest/v3/docker/pkg/system"
 	"github.com/sirupsen/logrus"
+
+	"github.com/ory/dockertest/v3/docker/pkg/system"
 )
 
 // Errors used or returned by this file.

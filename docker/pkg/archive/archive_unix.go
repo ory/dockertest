@@ -1,4 +1,4 @@
-// Copyright © 2023 Ory Corp
+// Copyright © 2024 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
 //go:build !windows
@@ -15,9 +15,10 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"golang.org/x/sys/unix"
+
 	"github.com/ory/dockertest/v3/docker/pkg/idtools"
 	"github.com/ory/dockertest/v3/docker/pkg/system"
-	"golang.org/x/sys/unix"
 )
 
 // fixVolumePathPrefix does platform specific processing to ensure that if

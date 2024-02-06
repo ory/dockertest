@@ -1,4 +1,4 @@
-// Copyright © 2023 Ory Corp
+// Copyright © 2024 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
 package mount // import "github.com/ory/dockertest/v3/docker/pkg/mount"
@@ -6,7 +6,6 @@ package mount // import "github.com/ory/dockertest/v3/docker/pkg/mount"
 import (
 	"sort"
 	"strings"
-
 	"syscall"
 
 	"github.com/sirupsen/logrus"

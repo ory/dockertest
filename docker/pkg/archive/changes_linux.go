@@ -1,4 +1,4 @@
-// Copyright © 2023 Ory Corp
+// Copyright © 2024 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
 package archive // import "github.com/ory/dockertest/v3/docker/pkg/archive"
@@ -12,8 +12,9 @@ import (
 	"syscall"
 	"unsafe"
 
-	"github.com/ory/dockertest/v3/docker/pkg/system"
 	"golang.org/x/sys/unix"
+
+	"github.com/ory/dockertest/v3/docker/pkg/system"
 )
 
 // walker is used to implement collectFileInfoForChanges on linux. Where this

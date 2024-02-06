@@ -1,4 +1,4 @@
-// Copyright © 2023 Ory Corp
+// Copyright © 2024 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
 package types // import "github.com/ory/dockertest/v3/docker/types"
@@ -9,6 +9,7 @@ import (
 	"net"
 
 	units "github.com/docker/go-units"
+
 	"github.com/ory/dockertest/v3/docker/types/container"
 	"github.com/ory/dockertest/v3/docker/types/filters"
 )

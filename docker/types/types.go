@@ -1,4 +1,4 @@
-// Copyright © 2023 Ory Corp
+// Copyright © 2024 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
 package types // import "github.com/ory/dockertest/v3/docker/types"
@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/docker/go-connections/nat"
+
 	"github.com/ory/dockertest/v3/docker/types/container"
 	"github.com/ory/dockertest/v3/docker/types/filters"
 	"github.com/ory/dockertest/v3/docker/types/mount"
@@ -182,7 +183,7 @@ type Info struct {
 	RegistryConfig     *registry.ServiceConfig
 	NCPU               int
 	MemTotal           int64
-	//GenericResources   []swarm.GenericResource
+	// GenericResources   []swarm.GenericResource
 	DockerRootDir     string
 	HTTPProxy         string `json:"HttpProxy"`
 	HTTPSProxy        string `json:"HttpsProxy"`
@@ -195,7 +196,7 @@ type Info struct {
 	ClusterAdvertise  string
 	Runtimes          map[string]Runtime
 	DefaultRuntime    string
-	//Swarm              swarm.Info
+	// Swarm              swarm.Info
 	// LiveRestoreEnabled determines whether containers should be kept
 	// running when the daemon is shutdown or upon daemon start if
 	// running containers are detected

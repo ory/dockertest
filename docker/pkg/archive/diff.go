@@ -1,4 +1,4 @@
-// Copyright © 2023 Ory Corp
+// Copyright © 2024 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
 package archive // import "github.com/ory/dockertest/v3/docker/pkg/archive"
@@ -13,10 +13,11 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/ory/dockertest/v3/docker/pkg/idtools"
 	"github.com/ory/dockertest/v3/docker/pkg/pools"
 	"github.com/ory/dockertest/v3/docker/pkg/system"
-	"github.com/sirupsen/logrus"
 )
 
 // UnpackLayer unpack `layer` to a `dest`. The stream `layer` can be

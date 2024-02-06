@@ -1,4 +1,4 @@
-// Copyright © 2023 Ory Corp
+// Copyright © 2024 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
 package network // import "github.com/ory/dockertest/v3/docker/types/network"
@@ -12,7 +12,7 @@ type Address struct {
 // IPAM represents IP Address Management
 type IPAM struct {
 	Driver  string
-	Options map[string]string //Per network IPAM driver options
+	Options map[string]string // Per network IPAM driver options
 	Config  []IPAMConfig
 }
 

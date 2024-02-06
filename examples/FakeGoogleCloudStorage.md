@@ -63,8 +63,7 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Could not connect to Docker: %s", err)
 	}
 
-	code := m.Run()
-	os.Exit(code)
+	m.Run()
 }
 
 func setUpGcloud() {

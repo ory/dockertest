@@ -1,4 +1,4 @@
-// Copyright © 2023 Ory Corp
+// Copyright © 2024 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
 // Copyright 2013 go-dockerclient authors. All rights reserved.
@@ -85,7 +85,7 @@ type DockerInfo struct {
 	InitBinary         string
 	DefaultRuntime     string
 	LiveRestoreEnabled bool
-	//Swarm              swarm.Info
+	// Swarm              swarm.Info
 }
 
 // PluginsInfo is a struct with the plugins registered with the docker daemon

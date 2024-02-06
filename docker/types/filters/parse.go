@@ -1,4 +1,4 @@
-// Copyright © 2023 Ory Corp
+// Copyright © 2024 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
 /*
@@ -192,7 +192,7 @@ func (args Args) Len() int {
 func (args Args) MatchKVList(key string, sources map[string]string) bool {
 	fieldValues := args.fields[key]
 
-	//do not filter if there is no filter set or cannot determine filter
+	// do not filter if there is no filter set or cannot determine filter
 	if len(fieldValues) == 0 {
 		return true
 	}
@@ -238,7 +238,7 @@ func (args Args) Match(field, source string) bool {
 // ExactMatch returns true if the source matches exactly one of the values.
 func (args Args) ExactMatch(key, source string) bool {
 	fieldValues, ok := args.fields[key]
-	//do not filter if there is no filter set or cannot determine filter
+	// do not filter if there is no filter set or cannot determine filter
 	if !ok || len(fieldValues) == 0 {
 		return true
 	}
@@ -251,7 +251,7 @@ func (args Args) ExactMatch(key, source string) bool {
 // matches exactly the value.
 func (args Args) UniqueExactMatch(key, source string) bool {
 	fieldValues := args.fields[key]
-	//do not filter if there is no filter set or cannot determine filter
+	// do not filter if there is no filter set or cannot determine filter
 	if len(fieldValues) == 0 {
 		return true
 	}
