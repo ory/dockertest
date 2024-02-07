@@ -1,4 +1,4 @@
-// Copyright © 2023 Ory Corp
+// Copyright © 2024 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
 package system // import "github.com/ory/dockertest/v3/docker/pkg/system"
@@ -239,7 +239,7 @@ func windowsOpenSequential(path string, mode int, _ uint32) (fd windows.Handle, 
 		createmode = windows.OPEN_EXISTING
 	}
 	// Use FILE_FLAG_SEQUENTIAL_SCAN rather than FILE_ATTRIBUTE_NORMAL as implemented in golang.
-	//https://msdn.microsoft.com/en-us/library/windows/desktop/aa363858(v=vs.85).aspx
+	// https://msdn.microsoft.com/en-us/library/windows/desktop/aa363858(v=vs.85).aspx
 	const fileFlagSequentialScan = 0x08000000 // FILE_FLAG_SEQUENTIAL_SCAN
 	h, e := windows.CreateFile(pathp, access, sharemode, sa, createmode, fileFlagSequentialScan, 0)
 	return h, e

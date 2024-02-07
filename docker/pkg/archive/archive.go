@@ -1,4 +1,4 @@
-// Copyright © 2023 Ory Corp
+// Copyright © 2024 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
 package archive // import "github.com/ory/dockertest/v3/docker/pkg/archive"
@@ -21,12 +21,13 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/sirupsen/logrus"
+
 	"github.com/ory/dockertest/v3/docker/pkg/fileutils"
 	"github.com/ory/dockertest/v3/docker/pkg/idtools"
 	"github.com/ory/dockertest/v3/docker/pkg/ioutils"
 	"github.com/ory/dockertest/v3/docker/pkg/pools"
 	"github.com/ory/dockertest/v3/docker/pkg/system"
-	"github.com/sirupsen/logrus"
 )
 
 var unpigzPath string
@@ -499,13 +500,13 @@ func (ta *tarAppender) addTarFile(path, name string) error {
 		}
 	}
 
-	//check whether the file is overlayfs whiteout
-	//if yes, skip re-mapping container ID mappings.
+	// check whether the file is overlayfs whiteout
+	// if yes, skip re-mapping container ID mappings.
 	isOverlayWhiteout := fi.Mode()&os.ModeCharDevice != 0 && hdr.Devmajor == 0 && hdr.Devminor == 0
 
-	//handle re-mapping container ID mappings back to host ID mappings before
-	//writing tar headers/files. We skip whiteout files because they were written
-	//by the kernel and already have proper ownership relative to the host
+	// handle re-mapping container ID mappings back to host ID mappings before
+	// writing tar headers/files. We skip whiteout files because they were written
+	// by the kernel and already have proper ownership relative to the host
 	if !isOverlayWhiteout &&
 		!strings.HasPrefix(filepath.Base(hdr.Name), WhiteoutPrefix) &&
 		!ta.IDMappings.Empty() {

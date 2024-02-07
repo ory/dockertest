@@ -66,20 +66,20 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Could not connect to docker: %s", err)
 	}
 
+	defer func() {
+		// When you're done, kill and remove the container
+		if err = pool.Purge(resource); err != nil {
+			log.Fatalf("Could not purge resource: %s", err)
+		}
+
+		// disconnect mongodb client
+		if err = dbClient.Disconnect(context.TODO()); err != nil {
+			panic(err)
+		}
+	}()
+
 	// run tests
-	code := m.Run()
-
-	// When you're done, kill and remove the container
-	if err = pool.Purge(resource); err != nil {
-		log.Fatalf("Could not purge resource: %s", err)
-	}
-
-	// disconnect mongodb client
-	if err = dbClient.Disconnect(context.TODO()); err != nil {
-		panic(err)
-	}
-
-	os.Exit(code)
+	m.Run()
 }
 
 ```

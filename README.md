@@ -100,14 +100,15 @@ func TestMain(m *testing.M) {
 		log.Fatalf("Could not connect to database: %s", err)
 	}
 
-	code := m.Run()
+	// as of go1.15 testing.M returns the exit code of m.Run(), so it is safe to use defer here
+    defer func() {
+      if err := pool.Purge(resource); err != nil {
+        log.Fatalf("Could not purge resource: %s", err)
+      }
 
-	// You can't defer this because os.Exit doesn't care for defer
-	if err := pool.Purge(resource); err != nil {
-		log.Fatalf("Could not purge resource: %s", err)
-	}
+    }()
 
-	os.Exit(code)
+	m.Run()
 }
 
 func TestSomething(t *testing.T) {

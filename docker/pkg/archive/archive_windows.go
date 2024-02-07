@@ -1,4 +1,4 @@
-// Copyright © 2023 Ory Corp
+// Copyright © 2024 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
 package archive // import "github.com/ory/dockertest/v3/docker/pkg/archive"
@@ -44,7 +44,7 @@ func CanonicalTarNameForPath(p string) (string, error) {
 // chmodTarEntry is used to adjust the file permissions used in tar header based
 // on the platform the archival is done.
 func chmodTarEntry(perm os.FileMode) os.FileMode {
-	//perm &= 0755 // this 0-ed out tar flags (like link, regular file, directory marker etc.)
+	// perm &= 0755 // this 0-ed out tar flags (like link, regular file, directory marker etc.)
 	permPart := perm & os.ModePerm
 	noPermPart := perm &^ os.ModePerm
 	// Add the x bit: make everything +x from windows

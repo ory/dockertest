@@ -1,4 +1,4 @@
-// Copyright © 2023 Ory Corp
+// Copyright © 2024 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
 //go:build !windows
@@ -22,8 +22,8 @@ func resolveBinary(binname string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	//only return no error if the final resolved binary basename
-	//matches what was searched for
+	// only return no error if the final resolved binary basename
+	// matches what was searched for
 	if filepath.Base(resolvedPath) == binname {
 		return resolvedPath, nil
 	}
