@@ -2,9 +2,17 @@
 
 ## 🛠️ Introduction
 
-Testing in isolated environments is crucial to ensuring the reliability and consistency of applications. However, creating isolated test environments can be challenging when dealing with Go services that interact with multiple dependencies. The library [ory/dockertest](https://github.com/ory/dockertest) simplifies the process by enabling developers to spin up Docker containers to test their Go applications.
+Testing in isolated environments is crucial to ensuring the reliability and
+consistency of applications. However, creating isolated test environments can be
+challenging when dealing with Go services that interact with multiple
+dependencies. The library [ory/dockertest](https://github.com/ory/dockertest)
+simplifies the process by enabling developers to spin up Docker containers to
+test their Go applications.
 
-This guide illustrates creating multiple test containers for a straightforward REST API in Go, which relies on a PostgreSQL database. We will focus on writing API tests that involve setting up API and database test containers to execute comprehensive end-to-end tests.
+This guide illustrates creating multiple test containers for a straightforward
+REST API in Go, which relies on a PostgreSQL database. We will focus on writing
+API tests that involve setting up API and database test containers to execute
+comprehensive end-to-end tests.
 
 ---
 
@@ -52,7 +60,8 @@ Project structure:
 **File descriptions:**
 
 - `Dockerfile`: Builds container images of the sample Items API.
-- `LocalTestContainers.go`: Contains logic for creating test containers for the API and PostgreSQL.
+- `LocalTestContainers.go`: Contains logic for creating test containers for the
+  API and PostgreSQL.
 - `Makefile`: Includes commands to run the application and tests.
 - `db`: Holds database migrations and SQL files.
 - `main.go`: Exposes the Items REST API on port 8000.
@@ -131,7 +140,11 @@ PASS
 
 ## 🏗️ Creating Multiple Test Containers
 
-Let's dive into how to create multiple test containers. In the main_test.go Use TestMain, which provides the functionality to control the lifecycle of the tests. In the TestMainwill initialise the CreateLocalTestContainer(), Which sets up multiple test containers for the REST API, migration and Postgres database. m.Run() will run all the tests within the package.
+Let's dive into how to create multiple test containers. In the main_test.go Use
+TestMain, which provides the functionality to control the lifecycle of the
+tests. In the TestMainwill initialise the CreateLocalTestContainer(), Which sets
+up multiple test containers for the REST API, migration and Postgres database.
+m.Run() will run all the tests within the package.
 
 Use `TestMain` to control the test lifecycle:
 
@@ -162,7 +175,12 @@ func TestMain(m *testing.M) {
 }
 ```
 
-Let's take a closer look at the process. The code uses "ory/dockertest" to create a new pool and configure the Docker running environment. First, it checks if a network with a specific name(`app-datastore`) exists, and if not, it creates one call createNetwork. Then, it sets up Postgres, Migration, and Application test containers. All three containers can connect to the same network.
+Let's take a closer look at the process. The code uses "ory/dockertest" to
+create a new pool and configure the Docker running environment. First, it checks
+if a network with a specific name(`app-datastore`) exists, and if not, it
+creates one call createNetwork. Then, it sets up Postgres, Migration, and
+Application test containers. All three containers can connect to the same
+network.
 
 Create the test containers:
 
@@ -215,7 +233,10 @@ func CreateLocalTestContainer() (*LocalTestContainer, error) {
 }
 ```
 
-Next, it will callcreatePostgreDB to create a Postgres database test container. Postgres with the latest image will be pulled from the container registry, and a Postgres database container will be created with configured environment variables.
+Next, it will callcreatePostgreDB to create a Postgres database test container.
+Postgres with the latest image will be pulled from the container registry, and a
+Postgres database container will be created with configured environment
+variables.
 
 ```go
  func createPostgresDB(err error, pool *dockertest.Pool, network *docker.Network) *dockertest.Resource {
@@ -242,7 +263,9 @@ Next, it will callcreatePostgreDB to create a Postgres database test container. 
 }
 ```
 
-Next, Run the createMigration to create a Migration container. This container will mount the files from the temporary directory and run the migration command by making a connection to the Postgres database created in the previous step.
+Next, Run the createMigration to create a Migration container. This container
+will mount the files from the temporary directory and run the migration command
+by making a connection to the Postgres database created in the previous step.
 
 ```go
  func createMigration(err error, pool *dockertest.Pool, network *docker.Network, databaseUrl string, tempDir string, dbresource *dockertest.Resource) *dockertest.Resource {
@@ -275,7 +298,10 @@ Next, Run the createMigration to create a Migration container. This container wi
 }
 ```
 
-Finally, createAppContainerwill create the REST API container using Dockerfile the present in the same directory. Configuring the Platform `Linux/amd64` and passing the build argument `amd64` as the TARGETARCH will ensure that the test runs in the GitHub workflow.
+Finally, createAppContainerwill create the REST API container using Dockerfile
+the present in the same directory. Configuring the Platform `Linux/amd64` and
+passing the build argument `amd64` as the TARGETARCH will ensure that the test
+runs in the GitHub workflow.
 
 ```go
  func createAppContainer(err error, pool *dockertest.Pool, databaseUrl string, network *docker.Network) *dockertest.Resource {
@@ -301,7 +327,9 @@ Finally, createAppContainerwill create the REST API container using Dockerfile t
 }
 ```
 
-Once all three containers are up and running. Tests main_test.go such as TestCreateItem, TestGetItem, TestUpdateItem, and TestDeleteItem will begin running.
+Once all three containers are up and running. Tests main_test.go such as
+TestCreateItem, TestGetItem, TestUpdateItem, and TestDeleteItem will begin
+running.
 
 We can use it to configure the request URL and get the running container port.
 
@@ -345,17 +373,22 @@ We can use it to configure the request URL and get the running container port.
 }
 ```
 
-Once all tests run, TestMain calls localTestContainer.Close to clean up running docker test containers.
+Once all tests run, TestMain calls localTestContainer.Close to clean up running
+docker test containers.
 
 ## 🏁 Conclusion
 
-Using `ory/dockertest`, we can create isolated test environments with multiple containers for API, database, and migrations. This approach makes it easier to write reliable end-to-end tests for Go applications interacting with various services.
+Using `ory/dockertest`, we can create isolated test environments with multiple
+containers for API, database, and migrations. This approach makes it easier to
+write reliable end-to-end tests for Go applications interacting with various
+services.
 
 Want to enhance this further? Let me know! 🚀
 
 ---
 
-_🔗 Check out the project repository: [multi-containers-dockertest](https://github.com/akoserwal/multi-containers-dockertest)_
+_🔗 Check out the project repository:
+[multi-containers-dockertest](https://github.com/akoserwal/multi-containers-dockertest)_
 
 Follow the guide:
 [Creating Multiple Test Containers with ory/dockertest in Go](https://akoserwal.medium.com/creating-multiple-test-containers-with-ory-dockertest-in-go-5b8311614e7b)
