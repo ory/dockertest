@@ -22,7 +22,7 @@ node_modules: package-lock.json
 
 test:
 	go vet ./...
-	go test -covermode=atomic -coverprofile="coverage.out" .
+	go test -race -covermode=atomic -coverprofile="coverage.out" .
 
 
 .DEFAULT_GOAL := help

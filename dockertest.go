@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
@@ -31,6 +32,7 @@ type Pool struct {
 
 // Network represents a docker network.
 type Network struct {
+	mu      sync.RWMutex
 	pool    *Pool
 	Network *dc.Network
 }
@@ -496,7 +498,9 @@ func (d *Pool) RunWithOptions(opts *RunOptions, hcOpts ...func(*dc.HostConfig)) 
 	}
 
 	for _, network := range opts.Networks {
+		network.mu.Lock()
 		network.Network, err = d.Client.NetworkInfo(network.Network.ID)
+		network.mu.Unlock()
 		if err != nil {
 			return nil, err
 		}

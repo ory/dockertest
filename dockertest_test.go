@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -473,6 +474,39 @@ func TestClientRaceCondition(t *testing.T) {
 			)
 			defer pool.Purge(resource)
 		})
+	}
+}
+
+func TestNetworkRaceCondition(t *testing.T) {
+	network, err := pool.CreateNetwork(fmt.Sprintf("test-network-race-condition-%d", time.Now().Unix()))
+	require.NoError(t, err)
+	defer network.Close()
+
+	resources := make([]*dockertest.Resource, 10)
+	var wg sync.WaitGroup
+
+	for i := 0; i < 10; i++ {
+		wg.Add(1)
+		// Tests must be run in parallel to recreate the issue
+		go func(i int) {
+			defer wg.Done()
+			resource, containerErr := pool.RunWithOptions(
+				&dockertest.RunOptions{
+					Repository: "postgres",
+					Tag:        "13.4",
+					Networks:   []*dockertest.Network{network},
+				},
+			)
+			require.NoError(t, containerErr)
+			resources[i] = resource
+		}(i)
+	}
+
+	wg.Wait()
+
+	for i := 0; i < 10; i++ {
+		resource := resources[i]
+		require.NoError(t, pool.Purge(resource))
 	}
 }
 
