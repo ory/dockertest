@@ -482,10 +482,12 @@ func TestNetworkRaceCondition(t *testing.T) {
 	require.NoError(t, err)
 	defer network.Close()
 
-	resources := make([]*dockertest.Resource, 10)
+	var numContainers = 10
+
+	resources := make([]*dockertest.Resource, numContainers)
 	var wg sync.WaitGroup
 
-	for i := 0; i < 10; i++ {
+	for index := range resources {
 		wg.Add(1)
 		// Tests must be run in parallel to recreate the issue
 		go func(i int) {
@@ -498,16 +500,19 @@ func TestNetworkRaceCondition(t *testing.T) {
 				},
 			)
 			require.NoError(t, containerErr)
+
 			resources[i] = resource
-		}(i)
+		}(index)
 	}
 
 	wg.Wait()
 
-	for i := 0; i < 10; i++ {
-		resource := resources[i]
-		require.NoError(t, pool.Purge(resource))
+	// Clean up resources
+	for resourceIndex := range resources {
+		require.NoError(t, pool.Purge(resources[resourceIndex]))
 	}
+
+	require.NoError(t, pool.RemoveNetwork(network))
 }
 
 func TestExecStatus(t *testing.T) {
