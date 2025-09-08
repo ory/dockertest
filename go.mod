@@ -1,6 +1,6 @@
 module github.com/ory/dockertest/v3
 
-go 1.22
+go 1.23.0
 
 require (
 	github.com/Microsoft/go-winio v0.6.2
@@ -14,10 +14,10 @@ require (
 	github.com/lib/pq v1.10.9
 	github.com/moby/term v0.5.0
 	github.com/opencontainers/image-spec v1.1.0
-	github.com/opencontainers/runc v1.2.6
+	github.com/opencontainers/runc v1.3.1
 	github.com/sirupsen/logrus v1.9.3
 	github.com/stretchr/testify v1.10.0
-	golang.org/x/sys v0.28.0
+	golang.org/x/sys v0.30.0
 )
 
 require (
