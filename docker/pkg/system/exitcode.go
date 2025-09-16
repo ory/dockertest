@@ -4,6 +4,7 @@
 package system // import "github.com/ory/dockertest/v3/docker/pkg/system"
 
 import (
+	"errors"
 	"fmt"
 	"os/exec"
 	"syscall"
@@ -13,7 +14,8 @@ import (
 // exec.ExitError, returns 0 and an error otherwise.
 func GetExitCode(err error) (int, error) {
 	exitCode := 0
-	if exiterr, ok := err.(*exec.ExitError); ok {
+	var exiterr *exec.ExitError
+	if errors.As(err, &exiterr) {
 		if procExit, ok := exiterr.Sys().(syscall.WaitStatus); ok {
 			return procExit.ExitStatus(), nil
 		}

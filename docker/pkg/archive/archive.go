@@ -10,6 +10,7 @@ import (
 	"compress/bzip2"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -662,15 +663,15 @@ func createTarFile(path, extractDir string, hdr *tar.Header, reader io.Reader, L
 		}
 	}
 
-	var errors []string
+	var errs []string
 	for key, value := range hdr.Xattrs {
 		if err := system.Lsetxattr(path, key, []byte(value), 0); err != nil {
-			if err == syscall.ENOTSUP {
+			if errors.Is(err, syscall.ENOTSUP) {
 				// We ignore errors here because not all graphdrivers support
 				// xattrs *cough* old versions of AUFS *cough*. However only
 				// ENOTSUP should be emitted in that case, otherwise we still
 				// bail.
-				errors = append(errors, err.Error())
+				errs = append(errs, err.Error())
 				continue
 			}
 			return err
@@ -678,9 +679,9 @@ func createTarFile(path, extractDir string, hdr *tar.Header, reader io.Reader, L
 
 	}
 
-	if len(errors) > 0 {
+	if len(errs) > 0 {
 		logrus.WithFields(logrus.Fields{
-			"errors": errors,
+			"errors": errs,
 		}).Warn("ignored xattrs in archive: underlying filesystem doesn't support them")
 	}
 
@@ -709,7 +710,7 @@ func createTarFile(path, extractDir string, hdr *tar.Header, reader io.Reader, L
 		}
 	} else {
 		ts := []syscall.Timespec{timeToTimespec(aTime), timeToTimespec(hdr.ModTime)}
-		if err := system.LUtimesNano(path, ts); err != nil && err != system.ErrNotSupportedPlatform {
+		if err := system.LUtimesNano(path, ts); err != nil && !errors.Is(err, system.ErrNotSupportedPlatform) {
 			return err
 		}
 	}
@@ -885,7 +886,7 @@ func TarWithOptions(srcPath string, options *TarOptions) (io.ReadCloser, error) 
 				if err := ta.addTarFile(filePath, relFilePath); err != nil {
 					logrus.Errorf("Can't add file %s to tar: %s", filePath, err)
 					// if pipe is broken, stop writing tar stream to it
-					if err == io.ErrClosedPipe {
+					if errors.Is(err, io.ErrClosedPipe) {
 						return err
 					}
 				}

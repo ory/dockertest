@@ -559,7 +559,8 @@ func (c *Client) inspectContainer(id string, opts doOptions) (*Container, error)
 	path := "/containers/" + id + "/json"
 	resp, err := c.do("GET", path, opts)
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return nil, &NoSuchContainer{ID: id}
 		}
 		return nil, err
@@ -579,7 +580,8 @@ func (c *Client) ContainerChanges(id string) ([]Change, error) {
 	path := "/containers/" + id + "/changes"
 	resp, err := c.do("GET", path, doOptions{})
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return nil, &NoSuchContainer{ID: id}
 		}
 		return nil, err
@@ -629,7 +631,8 @@ func (c *Client) CreateContainer(opts CreateContainerOptions) (*Container, error
 		},
 	)
 
-	if e, ok := err.(*Error); ok {
+	var e *Error
+	if errors.As(err, &e) {
 		if e.Status == http.StatusNotFound {
 			return nil, ErrNoSuchImage
 		}
@@ -836,7 +839,8 @@ func (c *Client) startContainer(id string, hostConfig *HostConfig, opts doOption
 	}
 	resp, err := c.do("POST", path, opts)
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return &NoSuchContainer{ID: id, Err: err}
 		}
 		return err
@@ -869,7 +873,8 @@ func (c *Client) stopContainer(id string, timeout uint, opts doOptions) error {
 	path := fmt.Sprintf("/containers/%s/stop?t=%d", id, timeout)
 	resp, err := c.do("POST", path, opts)
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return &NoSuchContainer{ID: id}
 		}
 		return err
@@ -889,7 +894,8 @@ func (c *Client) RestartContainer(id string, timeout uint) error {
 	path := fmt.Sprintf("/containers/%s/restart?t=%d", id, timeout)
 	resp, err := c.do("POST", path, doOptions{})
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return &NoSuchContainer{ID: id}
 		}
 		return err
@@ -905,7 +911,8 @@ func (c *Client) PauseContainer(id string) error {
 	path := fmt.Sprintf("/containers/%s/pause", id)
 	resp, err := c.do("POST", path, doOptions{})
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return &NoSuchContainer{ID: id}
 		}
 		return err
@@ -921,7 +928,8 @@ func (c *Client) UnpauseContainer(id string) error {
 	path := fmt.Sprintf("/containers/%s/unpause", id)
 	resp, err := c.do("POST", path, doOptions{})
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return &NoSuchContainer{ID: id}
 		}
 		return err
@@ -951,7 +959,8 @@ func (c *Client) TopContainer(id string, psArgs string) (TopResult, error) {
 	path := fmt.Sprintf("/containers/%s/top%s", id, args)
 	resp, err := c.do("GET", path, doOptions{})
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return result, &NoSuchContainer{ID: id}
 		}
 		return result, err
@@ -1131,7 +1140,8 @@ func (c *Client) Stats(opts StatsOptions) (retErr error) {
 			reqSent:           reqSent,
 		})
 		if err != nil {
-			dockerError, ok := err.(*Error)
+			var dockerError *Error
+			ok := errors.As(err, &dockerError)
 			if ok {
 				if dockerError.Status == http.StatusNotFound {
 					err = &NoSuchContainer{ID: opts.ID}
@@ -1192,7 +1202,8 @@ func (c *Client) KillContainer(opts KillContainerOptions) error {
 	path := "/containers/" + opts.ID + "/kill" + "?" + queryString(opts)
 	resp, err := c.do("POST", path, doOptions{context: opts.Context})
 	if err != nil {
-		e, ok := err.(*Error)
+		var e *Error
+		ok := errors.As(err, &e)
 		if !ok {
 			return err
 		}
@@ -1233,7 +1244,8 @@ func (c *Client) RemoveContainer(opts RemoveContainerOptions) error {
 	path := "/containers/" + opts.ID + "?" + queryString(opts)
 	resp, err := c.do("DELETE", path, doOptions{context: opts.Context})
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return &NoSuchContainer{ID: opts.ID}
 		}
 		return err
@@ -1321,7 +1333,8 @@ func (c *Client) CopyFromContainer(opts CopyFromContainerOptions) error {
 		context: opts.Context,
 	})
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return &NoSuchContainer{ID: opts.Container}
 		}
 		return err
@@ -1351,7 +1364,8 @@ func (c *Client) WaitContainerWithContext(id string, ctx context.Context) (int, 
 func (c *Client) waitContainer(id string, opts doOptions) (int, error) {
 	resp, err := c.do("POST", "/containers/"+id+"/wait", opts)
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return 0, &NoSuchContainer{ID: id}
 		}
 		return 0, err
@@ -1388,7 +1402,8 @@ func (c *Client) CommitContainer(opts CommitContainerOptions) (*Image, error) {
 		context: opts.Context,
 	})
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return nil, &NoSuchContainer{ID: opts.Container}
 		}
 		return nil, err

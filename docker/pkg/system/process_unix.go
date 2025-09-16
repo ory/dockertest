@@ -7,6 +7,7 @@
 package system // import "github.com/ory/dockertest/v3/docker/pkg/system"
 
 import (
+	"errors"
 	"syscall"
 
 	"golang.org/x/sys/unix"
@@ -15,7 +16,7 @@ import (
 // IsProcessAlive returns true if process with a given pid is running.
 func IsProcessAlive(pid int) bool {
 	err := unix.Kill(pid, syscall.Signal(0))
-	if err == nil || err == unix.EPERM {
+	if err == nil || errors.Is(err, unix.EPERM) {
 		return true
 	}
 
