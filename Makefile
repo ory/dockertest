@@ -21,8 +21,7 @@ node_modules: package-lock.json
 	touch node_modules
 
 test:
-	go mod tidy
-	go vet -x .
+	go vet ./...
 	go test -covermode=atomic -coverprofile="coverage.out" .
 
 
