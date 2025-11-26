@@ -349,7 +349,7 @@ func (c *Client) eventHijack(startTime int64, eventChan chan *APIEvents, errChan
 		for {
 			var event APIEvents
 			if err = decoder.Decode(&event); err != nil {
-				if err == io.EOF || errors.Is(io.ErrUnexpectedEOF, err) {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 					c.eventMonitor.RLock()
 					if c.eventMonitor.enabled && c.eventMonitor.C == eventChan {
 						// Signal that we're exiting.
