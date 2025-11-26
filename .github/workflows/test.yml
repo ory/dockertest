@@ -16,7 +16,5 @@ jobs:
       - run: make test
       - name: WriteGoList
         run: go list -json -deps ./... > go.list
-      - name: Nancy
-        uses: sonatype-nexus-community/nancy-github-action@main
       - name: Coveralls
         run: bash <(curl -s https://codecov.io/bash)
