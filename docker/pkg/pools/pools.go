@@ -40,7 +40,7 @@ type BufioReaderPool struct {
 func newBufioReaderPoolWithSize(size int) *BufioReaderPool {
 	return &BufioReaderPool{
 		pool: sync.Pool{
-			New: func() interface{} { return bufio.NewReaderSize(nil, size) },
+			New: func() any { return bufio.NewReaderSize(nil, size) },
 		},
 	}
 }
@@ -65,7 +65,7 @@ type bufferPool struct {
 func newBufferPoolWithSize(size int) *bufferPool {
 	return &bufferPool{
 		pool: sync.Pool{
-			New: func() interface{} { return make([]byte, size) },
+			New: func() any { return make([]byte, size) },
 		},
 	}
 }
@@ -108,7 +108,7 @@ type BufioWriterPool struct {
 func newBufioWriterPoolWithSize(size int) *BufioWriterPool {
 	return &BufioWriterPool{
 		pool: sync.Pool{
-			New: func() interface{} { return bufio.NewWriterSize(nil, size) },
+			New: func() any { return bufio.NewWriterSize(nil, size) },
 		},
 	}
 }

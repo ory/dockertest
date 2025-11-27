@@ -113,15 +113,15 @@ func (c *Client) NetworkInfo(id string) (*Network, error) {
 //
 // See https://goo.gl/6GugX3 for more details.
 type CreateNetworkOptions struct {
-	Name           string                 `json:"Name" yaml:"Name" toml:"Name"`
-	Driver         string                 `json:"Driver" yaml:"Driver" toml:"Driver"`
-	IPAM           *IPAMOptions           `json:"IPAM,omitempty" yaml:"IPAM" toml:"IPAM"`
-	Options        map[string]interface{} `json:"Options" yaml:"Options" toml:"Options"`
-	Labels         map[string]string      `json:"Labels" yaml:"Labels" toml:"Labels"`
-	CheckDuplicate bool                   `json:"CheckDuplicate" yaml:"CheckDuplicate" toml:"CheckDuplicate"`
-	Internal       bool                   `json:"Internal" yaml:"Internal" toml:"Internal"`
-	EnableIPv6     bool                   `json:"EnableIPv6" yaml:"EnableIPv6" toml:"EnableIPv6"`
-	Context        context.Context        `json:"-"`
+	Name           string            `json:"Name" yaml:"Name" toml:"Name"`
+	Driver         string            `json:"Driver" yaml:"Driver" toml:"Driver"`
+	IPAM           *IPAMOptions      `json:"IPAM,omitempty" yaml:"IPAM" toml:"IPAM"`
+	Options        map[string]any    `json:"Options" yaml:"Options" toml:"Options"`
+	Labels         map[string]string `json:"Labels" yaml:"Labels" toml:"Labels"`
+	CheckDuplicate bool              `json:"CheckDuplicate" yaml:"CheckDuplicate" toml:"CheckDuplicate"`
+	Internal       bool              `json:"Internal" yaml:"Internal" toml:"Internal"`
+	EnableIPv6     bool              `json:"EnableIPv6" yaml:"EnableIPv6" toml:"EnableIPv6"`
+	Context        context.Context   `json:"-"`
 }
 
 // IPAMOptions controls IP Address Management when creating a network

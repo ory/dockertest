@@ -140,7 +140,8 @@ func (p *Pattern) match(path string) (bool, error) {
 }
 
 func (p *Pattern) compile() error {
-	regStr := "^"
+	var regStr strings.Builder
+	regStr.WriteString("^")
 	pattern := p.cleanedPattern
 	// Go through the pattern and convert it to a regexp.
 	// We use a scanner so we can support utf-8 chars.
@@ -168,24 +169,24 @@ func (p *Pattern) compile() error {
 
 				if scan.Peek() == scanner.EOF {
 					// is "**EOF" - to align with .gitignore just accept all
-					regStr += ".*"
+					regStr.WriteString(".*")
 				} else {
 					// is "**"
 					// Note that this allows for any # of /'s (even 0) because
 					// the .* will eat everything, even /'s
-					regStr += "(.*" + escSL + ")?"
+					regStr.WriteString("(.*" + escSL + ")?")
 				}
 			} else {
 				// is "*" so map it to anything but "/"
-				regStr += "[^" + escSL + "]*"
+				regStr.WriteString("[^" + escSL + "]*")
 			}
 		} else if ch == '?' {
 			// "?" is any char except "/"
-			regStr += "[^" + escSL + "]"
+			regStr.WriteString("[^" + escSL + "]")
 		} else if ch == '.' || ch == '$' {
 			// Escape some regexp special chars that have no meaning
 			// in golang's filepath.Match
-			regStr += `\` + string(ch)
+			regStr.WriteString(`\` + string(ch))
 		} else if ch == '\\' {
 			// escape next char. Note that a trailing \ in the pattern
 			// will be left alone (but need to escape it)
@@ -193,22 +194,22 @@ func (p *Pattern) compile() error {
 				// On windows map "\" to "\\", meaning an escaped backslash,
 				// and then just continue because filepath.Match on
 				// Windows doesn't allow escaping at all
-				regStr += escSL
+				regStr.WriteString(escSL)
 				continue
 			}
 			if scan.Peek() != scanner.EOF {
-				regStr += `\` + string(scan.Next())
+				regStr.WriteString(`\` + string(scan.Next()))
 			} else {
-				regStr += `\`
+				regStr.WriteString(`\`)
 			}
 		} else {
-			regStr += string(ch)
+			regStr.WriteString(string(ch))
 		}
 	}
 
-	regStr += "$"
+	regStr.WriteString("$")
 
-	re, err := regexp.Compile(regStr)
+	re, err := regexp.Compile(regStr.String())
 	if err != nil {
 		return err
 	}

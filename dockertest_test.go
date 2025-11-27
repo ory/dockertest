@@ -461,7 +461,7 @@ func TestClientRaceCondition(t *testing.T) {
 	pool, err := dockertest.NewPool(docker)
 	require.NoError(t, err)
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			// Tests must be run in parallel to recreate the issue
 			t.Parallel()

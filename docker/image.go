@@ -330,7 +330,7 @@ func (c *Client) PullImage(opts PullImageOptions, auth AuthConfiguration) error 
 	return c.createImage(&opts, headers, nil, opts.OutputStream, opts.RawJSONStream, opts.InactivityTimeout, opts.Context)
 }
 
-func (c *Client) createImage(opts interface{}, headers map[string]string, in io.Reader, w io.Writer, rawJSONStream bool, timeout time.Duration, context context.Context) error {
+func (c *Client) createImage(opts any, headers map[string]string, in io.Reader, w io.Writer, rawJSONStream bool, timeout time.Duration, context context.Context) error {
 	url, err := c.getPath("/images/create", opts)
 	if err != nil {
 		return err
@@ -411,12 +411,13 @@ func (c *Client) ExportImages(opts ExportImagesOptions) error {
 	var err error
 	var exporturl string
 	if c.requestedAPIVersion.GreaterThanOrEqualTo(apiVersion125) {
-		str := opts.Names[0]
+		var str strings.Builder
+		str.WriteString(opts.Names[0])
 		for _, val := range opts.Names[1:] {
-			str += "," + val
+			str.WriteString("," + val)
 		}
 		exporturl, err = c.getPath("/images/get", ExportImagesOptions{
-			Names:             []string{str},
+			Names:             []string{str.String()},
 			OutputStream:      opts.OutputStream,
 			InactivityTimeout: opts.InactivityTimeout,
 			Context:           opts.Context,

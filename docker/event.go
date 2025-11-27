@@ -16,6 +16,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -160,12 +161,7 @@ func (eventState *eventMonitoringState) listernersCount() int {
 }
 
 func listenerExists(a chan<- *APIEvents, list *[]chan<- *APIEvents) bool {
-	for _, b := range *list {
-		if b == a {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(*list, a)
 }
 
 func (eventState *eventMonitoringState) enableEventMonitoring(c *Client) error {

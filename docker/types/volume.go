@@ -44,7 +44,7 @@ type Volume struct {
 	// The `Status` field is optional, and is omitted if the volume driver
 	// does not support this feature.
 	//
-	Status map[string]interface{} `json:"Status,omitempty"`
+	Status map[string]any `json:"Status,omitempty"`
 
 	// usage data
 	UsageData *VolumeUsageData `json:"UsageData,omitempty"`
