@@ -4,6 +4,7 @@
 package system // import "github.com/ory/dockertest/v3/docker/pkg/system"
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"syscall"
@@ -40,7 +41,8 @@ func EnsureRemoveAll(dir string) error {
 			return err
 		}
 
-		pe, ok := err.(*os.PathError)
+		var pe *os.PathError
+		ok := errors.As(err, &pe)
 		if !ok {
 			return err
 		}
@@ -62,7 +64,7 @@ func EnsureRemoveAll(dir string) error {
 			continue
 		}
 
-		if pe.Err != syscall.EBUSY {
+		if !errors.Is(pe.Err, syscall.EBUSY) {
 			return err
 		}
 

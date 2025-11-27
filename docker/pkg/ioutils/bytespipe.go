@@ -73,7 +73,7 @@ loop0:
 		bp.bufLen += n
 
 		// errBufferFull is an error we expect to get if the buffer is full
-		if err != nil && err != errBufferFull {
+		if err != nil && !errors.Is(err, errBufferFull) {
 			bp.wait.Broadcast()
 			bp.mu.Unlock()
 			return written, err

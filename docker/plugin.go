@@ -10,6 +10,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 )
@@ -226,7 +227,8 @@ func (c *Client) InspectPlugins(name string, ctx context.Context) (*PluginDetail
 	}
 	defer resp.Body.Close()
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return nil, &NoSuchPlugin{ID: name}
 		}
 		return nil, err
@@ -261,7 +263,8 @@ func (c *Client) RemovePlugin(opts RemovePluginOptions) (*PluginDetail, error) {
 	}
 	defer resp.Body.Close()
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return nil, &NoSuchPlugin{ID: opts.Name}
 		}
 		return nil, err
@@ -396,7 +399,8 @@ func (c *Client) ConfigurePlugin(opts ConfigurePluginOptions) error {
 		context: opts.Context,
 	})
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return &NoSuchPlugin{ID: opts.Name}
 		}
 		return err

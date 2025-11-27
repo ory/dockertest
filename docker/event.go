@@ -236,7 +236,7 @@ func (eventState *eventMonitoringState) monitorEvents(c *Client) {
 			eventState.updateLastSeen(ev)
 			eventState.sendEvent(ev)
 		case err = <-eventState.errC:
-			if err == ErrNoListeners {
+			if errors.Is(err, ErrNoListeners) {
 				eventState.disableEventMonitoring()
 				return
 			} else if err != nil {
@@ -349,7 +349,7 @@ func (c *Client) eventHijack(startTime int64, eventChan chan *APIEvents, errChan
 		for {
 			var event APIEvents
 			if err = decoder.Decode(&event); err != nil {
-				if err == io.EOF || err == io.ErrUnexpectedEOF {
+				if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 					c.eventMonitor.RLock()
 					if c.eventMonitor.enabled && c.eventMonitor.C == eventChan {
 						// Signal that we're exiting.

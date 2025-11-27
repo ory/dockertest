@@ -4,6 +4,7 @@
 package mount // import "github.com/ory/dockertest/v3/docker/pkg/mount"
 
 import (
+	"errors"
 	"sort"
 	"strings"
 
@@ -93,7 +94,7 @@ func RecursiveUnmount(target string) error {
 			// We've purposefully used `syscall.EINVAL` here instead of `unix.EINVAL` to avoid platform branching
 			// Since `EINVAL` is defined for both Windows and Linux in the `syscall` package (and other platforms),
 			//   this is nicer than defining a custom value that we can refer to in each platform file.
-			if err == syscall.EINVAL {
+			if errors.Is(err, syscall.EINVAL) {
 				continue
 			}
 			if i == len(mounts)-1 {

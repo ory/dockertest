@@ -94,7 +94,8 @@ func (c *Client) NetworkInfo(id string) (*Network, error) {
 	path := "/networks/" + id
 	resp, err := c.do("GET", path, doOptions{})
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return nil, &NoSuchNetwork{ID: id}
 		}
 		return nil, err
@@ -184,7 +185,8 @@ func (c *Client) CreateNetwork(opts CreateNetworkOptions) (*Network, error) {
 func (c *Client) RemoveNetwork(id string) error {
 	resp, err := c.do("DELETE", "/networks/"+id, doOptions{})
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return &NoSuchNetwork{ID: id}
 		}
 		return err
@@ -246,7 +248,8 @@ func (c *Client) ConnectNetwork(id string, opts NetworkConnectionOptions) error 
 		context: opts.Context,
 	})
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return &NoSuchNetworkOrContainer{NetworkID: id, ContainerID: opts.Container}
 		}
 		return err
@@ -262,7 +265,8 @@ func (c *Client) ConnectNetwork(id string, opts NetworkConnectionOptions) error 
 func (c *Client) DisconnectNetwork(id string, opts NetworkConnectionOptions) error {
 	resp, err := c.do("POST", "/networks/"+id+"/disconnect", doOptions{data: opts})
 	if err != nil {
-		if e, ok := err.(*Error); ok && e.Status == http.StatusNotFound {
+		var e *Error
+		if errors.As(err, &e) && e.Status == http.StatusNotFound {
 			return &NoSuchNetworkOrContainer{NetworkID: id, ContainerID: opts.Container}
 		}
 		return err
