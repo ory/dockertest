@@ -63,8 +63,8 @@ func TestPostgres(t *testing.T) {
 func TestMongo(t *testing.T) {
 	options := &dockertest.RunOptions{
 		Repository: "mongo",
-		Tag:        "3.3.12",
-		Cmd:        []string{"mongod", "--smallfiles", "--port", "3000"},
+		Tag:        "7",
+		Cmd:        []string{"mongod", "--port", "3000"},
 		// expose a different port
 		ExposedPorts: []string{"3000"},
 	}
