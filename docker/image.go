@@ -594,6 +594,23 @@ func (c *Client) BuildImage(opts BuildImageOptions) error {
 		}
 	}
 
+	if ver != nil {
+		// make sure the version is at a supported level.
+		versionInfo, err := c.Version()
+		if err != nil {
+			return fmt.Errorf("error getting server version: %w", err)
+		}
+		if minimalSupportVersion := versionInfo.Get("MinAPIVersion"); minimalSupportVersion != "" {
+			minVer, err := NewAPIVersion(minimalSupportVersion)
+			if err != nil {
+				return fmt.Errorf("error parsing minimal supported version %s: %w", minimalSupportVersion, err)
+			}
+			if ver.LessThan(minVer) {
+				ver = minVer
+			}
+		}
+	}
+
 	buildURL, err := c.pathVersionCheck("/build", qs, ver)
 	if err != nil {
 		return err
