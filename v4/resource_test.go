@@ -195,6 +195,6 @@ func TestResourceExecNonZeroExit(t *testing.T) {
 
 	// Execute command that fails
 	exitCode, err := resource.Exec(ctx, []string{"false"})
-	require.NoError(t, err) // No exec error
+	require.NoError(t, err)      // No exec error
 	assert.Equal(t, 1, exitCode) // But exit code is non-zero
 }

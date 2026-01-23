@@ -35,11 +35,11 @@ type runConfig struct {
 	labels map[string]string
 
 	// Reuse options
-	reuseID    string
-	noReuse    bool
-	expiry     time.Duration
-	hasExpiry  bool
-	noExpiry   bool
+	reuseID   string
+	noReuse   bool
+	expiry    time.Duration
+	hasExpiry bool
+	noExpiry  bool
 }
 
 // RunOption configures container creation.

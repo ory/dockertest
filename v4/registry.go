@@ -17,8 +17,8 @@ const (
 
 // containerRegistry manages container reuse.
 type containerRegistry struct {
-	mu          sync.RWMutex
-	byReuseID   map[string]*Resource // reuseID -> Resource
+	mu           sync.RWMutex
+	byReuseID    map[string]*Resource // reuseID -> Resource
 	allResources map[*Resource]struct{}
 }
 
