@@ -12,7 +12,7 @@ This design outlines the migration of dockertest from its vendored Docker client
 - **Reduce dependency bloat** by using official lightweight client
 - **Modernize API** with context support, functional options, and typed errors
 - **Improve test performance** with automatic container reuse (2-3x faster)
-- **Maintain v3** for smooth migration path
+- **Keep v3** around
 
 ## Background
 
@@ -379,10 +379,11 @@ Each example test:
 - Convert all examples to tests
 - Migration guide
 - README updates
-- API documentation
+- API documentation (with godoc documents, link to pkg.go.dev docs for dockertest)
 - Troubleshooting guide
+- Godoc comments
 
-**Files:** `examples/`, `docs/`, `README.md`
+**Files:** `examples/`, `docs/`, `README.md`, `**/*.go`
 
 ### Phase 5: Integration Testing & CI
 - CI pipeline for v4
@@ -395,8 +396,7 @@ Each example test:
 
 ### Phase 6: v3 Maintenance Mode
 - Deprecation notice in v3
-- Maintenance policy document
-- Minimal CI for v3
+- PRs unlikely to be accepted to v3
 
 **Files:** `v3/README.md`, `v3/MAINTENANCE.md`
 
@@ -419,11 +419,10 @@ Each example test:
 
 ### Integration Tests
 - Require real Docker daemon
-- Test multiple Docker versions (20.10+, 23.0+, 24.0+)
 - Test actual container lifecycle
 - Test network operations
 - Test image building
-- Run in CI on Linux, macOS, Windows
+- Run in CI on Linux
 
 ### Example Tests
 - All examples must pass in CI
@@ -431,22 +430,16 @@ Each example test:
 - Ensure best practices
 - Run on every commit
 
-### Performance Tests
-- Benchmark reuse vs. recreation (target: 2-3x improvement)
-- Memory leak detection
-- Concurrent container creation
-- Large-scale test suite simulation
-
 ### Compatibility Matrix
-- **Docker versions:** 20.10+, 23.0+, 24.0+
-- **Go versions:** 1.22, 1.23
-- **Platforms:** Linux, macOS, Windows
+- **Docker versions:** 29.0+
+- **Go versions:** 1.23+
+- **Platforms:** Linux; untested: macOS, Windows
 
 ## Technical Decisions
 
 ### Finalized Decisions
 
-1. **Minimum Go version:** 1.22
+1. **Minimum Go version:** 1.23
    - Rationale: Modern features, iterators, improved generics
 
 2. **Moby client version:** Use latest (not version-locked)
@@ -455,7 +448,7 @@ Each example test:
 
 3. **Backward compatibility:** No v3 wrapper in v4
    - Rationale: Clean break encourages modern patterns
-   - Migration path: Manual with comprehensive guide
+   - Migration path: Manual with guide
 
 4. **Migration tooling:** No automated v3tov4 CLI
    - Rationale: Simple enough for manual migration
@@ -482,25 +475,6 @@ From v3 analysis, we use these client methods:
 
 All map cleanly to moby/moby/client API.
 
-## Risk Mitigation
-
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| Moby client API changes | Low | Abstract behind interface |
-| Performance regression | Medium | Early benchmarking vs v3 |
-| Breaking user workflows | High | Maintain v3, clear migration guide |
-| Registry memory leaks | High | Extensive testing, clear docs |
-| Docker version compatibility | Medium | Test matrix, document minimums |
-
-## Success Metrics
-
-1. **Adoption:** v4 downloads vs v3 (6 months post-release)
-2. **Migration:** GitHub issues tagged "v4-migration"
-3. **Stability:** Bug reports per 1000 downloads
-4. **Performance:** Test suite speed (target: 2-3x faster)
-5. **Community:** Stars, forks, contributors
-6. **Dependencies:** Reduction in dependency tree size vs v3
-
 ## Release Process
 
 ### Pre-release Checklist
@@ -514,24 +488,7 @@ All map cleanly to moby/moby/client API.
 - [ ] Breaking changes clearly documented
 
 ### Release Steps
-1. Create release candidate: `v4.0.0-rc.1`
-2. Announce RC in GitHub Discussions
-3. Gather community feedback (2-week window)
-4. Address critical issues
-5. Final release: `v4.0.0`
-6. Update v3 with deprecation notice
-7. Publish blog post
-8. Monitor issues and discussions
-
-### Versioning
-- v4.0.0 - Initial release
-- v4.x.0 - Feature additions (backward compatible)
-- v4.0.x - Bug fixes and patches
-- v5.0.0 - Next major (future breaking changes)
-
-## Open Questions (Resolved)
-
-All questions resolved during design phase. See "Finalized Decisions" section.
+1. No release, only create a PR against branch v3 for now.
 
 ## Appendix: API Comparison
 
@@ -564,13 +521,3 @@ exitCode := resource.ExecT(t, []string{"psql", "-V"})
 - Automatic cleanup
 - Container reuse by default
 - Type-safe configuration
-
-## Conclusion
-
-This design provides a clear path to modernize dockertest while maintaining backward compatibility through v3. The phased approach allows for incremental development and testing, reducing risk while delivering significant improvements to the developer experience.
-
-**Next Steps:**
-1. Create v4 branch
-2. Setup CI infrastructure
-3. Begin Phase 1 implementation
-4. Regular design reviews as implementation progresses

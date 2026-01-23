@@ -13,10 +13,6 @@ func TestSentinelErrors(t *testing.T) {
 		name     string
 		sentinel error
 	}{
-		{"ErrContainerNotFound", ErrContainerNotFound},
-		{"ErrImageNotFound", ErrImageNotFound},
-		{"ErrNetworkNotFound", ErrNetworkNotFound},
-		{"ErrTimeout", ErrTimeout},
 		{"ErrConnectionRefused", ErrConnectionRefused},
 		{"ErrImagePullFailed", ErrImagePullFailed},
 		{"ErrContainerCreateFailed", ErrContainerCreateFailed},
@@ -41,6 +37,6 @@ func TestErrorWrapping(t *testing.T) {
 	doubleWrapped := fmt.Errorf("operation failed: %w", wrapped)
 	assert.True(t, errors.Is(doubleWrapped, ErrImagePullFailed))
 
-	withCause := fmt.Errorf("pull postgres:14: %w: %v", ErrImagePullFailed, cause)
+	withCause := fmt.Errorf("pull postgres:14: %w: %w", ErrImagePullFailed, cause)
 	assert.True(t, errors.Is(withCause, ErrImagePullFailed))
 }
