@@ -69,7 +69,7 @@ func NewPoolWithContext(ctx context.Context, endpoint string, opts ...PoolOption
 	// Apply options first (they might set a custom client)
 	for _, opt := range opts {
 		if err := opt(pool); err != nil {
-			return nil, wrapError(ErrTypeUnknown, "failed to apply pool option", err)
+			return nil, fmt.Errorf("failed to apply pool option: %w", err)
 		}
 	}
 
@@ -88,7 +88,7 @@ func NewPoolWithContext(ctx context.Context, endpoint string, opts ...PoolOption
 		}
 
 		if err != nil {
-			return nil, wrapError(ErrTypeUnknown, "failed to create Docker client", err)
+			return nil, fmt.Errorf("failed to create Docker client: %w", err)
 		}
 
 		pool.client = c
@@ -97,7 +97,7 @@ func NewPoolWithContext(ctx context.Context, endpoint string, opts ...PoolOption
 
 	// Ping to verify connection
 	if _, err := pool.client.Ping(ctx); err != nil {
-		return nil, wrapError(ErrTypeConnectionRefused, "failed to connect to Docker daemon", err)
+		return nil, fmt.Errorf("failed to connect to Docker daemon: %w: %w", ErrConnectionRefused, err)
 	}
 
 	return pool, nil
@@ -107,7 +107,7 @@ func NewPoolWithContext(ctx context.Context, endpoint string, opts ...PoolOption
 func (p *Pool) Ping(ctx context.Context) error {
 	_, err := p.client.Ping(ctx)
 	if err != nil {
-		return wrapError(ErrTypeConnectionRefused, "failed to ping Docker daemon", err)
+		return fmt.Errorf("failed to ping Docker daemon: %w: %w", ErrConnectionRefused, err)
 	}
 	return nil
 }
@@ -129,7 +129,7 @@ func (p *Pool) Run(ctx context.Context, repository string, opts ...RunOption) (*
 	cfg := newRunConfig()
 	for _, opt := range opts {
 		if err := opt(cfg); err != nil {
-			return nil, wrapError(ErrTypeUnknown, "failed to apply run option", err)
+			return nil, fmt.Errorf("failed to apply run option: %w", err)
 		}
 	}
 
@@ -178,14 +178,14 @@ func (p *Pool) Run(ctx context.Context, repository string, opts ...RunOption) (*
 		cfg.name,
 	)
 	if err != nil {
-		return nil, wrapError(ErrTypeContainerCreateFailed, "failed to create container", err)
+		return nil, fmt.Errorf("failed to create container: %w: %w", ErrContainerCreateFailed, err)
 	}
 
 	// Start container
 	if err := p.client.ContainerStart(ctx, createResp.ID, types.ContainerStartOptions{}); err != nil {
 		// Clean up created container on start failure
 		_ = p.client.ContainerRemove(ctx, createResp.ID, types.ContainerRemoveOptions{Force: true})
-		return nil, wrapError(ErrTypeContainerStartFailed, "failed to start container", err)
+		return nil, fmt.Errorf("failed to start container: %w: %w", ErrContainerStartFailed, err)
 	}
 
 	// Inspect to get full container info
@@ -193,7 +193,7 @@ func (p *Pool) Run(ctx context.Context, repository string, opts ...RunOption) (*
 	if err != nil {
 		// Clean up started container on inspect failure
 		_ = p.client.ContainerRemove(ctx, createResp.ID, types.ContainerRemoveOptions{Force: true})
-		return nil, wrapError(ErrTypeUnknown, "failed to inspect container", err)
+		return nil, fmt.Errorf("failed to inspect container: %w", err)
 	}
 
 	resource := &Resource{
@@ -246,14 +246,14 @@ func (p *Pool) pullImage(ctx context.Context, imageRef string) error {
 	// Pull image
 	reader, err := p.client.ImagePull(ctx, imageRef, types.ImagePullOptions{})
 	if err != nil {
-		return wrapError(ErrTypeImagePullFailed, fmt.Sprintf("failed to pull image %s", imageRef), err)
+		return fmt.Errorf("failed to pull image %s: %w: %w", imageRef, ErrImagePullFailed, err)
 	}
 	defer reader.Close()
 
 	// Consume the output to ensure pull completes
 	_, err = io.Copy(io.Discard, reader)
 	if err != nil {
-		return wrapError(ErrTypeImagePullFailed, fmt.Sprintf("failed to read pull output for %s", imageRef), err)
+		return fmt.Errorf("failed to read pull output for %s: %w: %w", imageRef, ErrImagePullFailed, err)
 	}
 
 	return nil

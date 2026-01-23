@@ -5,6 +5,7 @@ package dockertest
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/docker/docker/api/types"
@@ -15,7 +16,7 @@ func (p *Pool) CreateNetwork(ctx context.Context, name string, opts ...NetworkOp
 	cfg := newNetworkConfig()
 	for _, opt := range opts {
 		if err := opt(cfg); err != nil {
-			return nil, wrapError(ErrTypeUnknown, "failed to apply network option", err)
+			return nil, fmt.Errorf("failed to apply network option: %w", err)
 		}
 	}
 
@@ -28,13 +29,13 @@ func (p *Pool) CreateNetwork(ctx context.Context, name string, opts ...NetworkOp
 
 	resp, err := p.client.NetworkCreate(ctx, name, createOpts)
 	if err != nil {
-		return nil, wrapError(ErrTypeUnknown, "failed to create network", err)
+		return nil, fmt.Errorf("failed to create network: %w", err)
 	}
 
 	// Inspect to get full network info
 	inspected, err := p.client.NetworkInspect(ctx, resp.ID, types.NetworkInspectOptions{})
 	if err != nil {
-		return nil, wrapError(ErrTypeUnknown, "failed to inspect network", err)
+		return nil, fmt.Errorf("failed to inspect network: %w", err)
 	}
 
 	// Convert network.Inspect to types.NetworkResource
@@ -79,7 +80,7 @@ func (p *Pool) CreateNetworkT(t testing.TB, name string, opts ...NetworkOption) 
 // RemoveNetwork removes a Docker network.
 func (p *Pool) RemoveNetwork(ctx context.Context, network *Network) error {
 	if err := p.client.NetworkRemove(ctx, network.Network.ID); err != nil {
-		return wrapError(ErrTypeUnknown, "failed to remove network", err)
+		return fmt.Errorf("failed to remove network: %w", err)
 	}
 	return nil
 }

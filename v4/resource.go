@@ -5,6 +5,7 @@ package dockertest
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -103,7 +104,7 @@ func (r *Resource) Close(ctx context.Context) error {
 		Force:         true,
 	}
 	if err := r.pool.client.ContainerRemove(ctx, r.Container.ID, removeOpts); err != nil {
-		return wrapError(ErrTypeUnknown, "failed to remove container", err)
+		return fmt.Errorf("failed to remove container: %w", err)
 	}
 
 	return nil
@@ -155,13 +156,13 @@ func (r *Resource) Expire(ctx context.Context, seconds uint) error {
 func (r *Resource) ConnectToNetwork(ctx context.Context, network *Network) error {
 	err := r.pool.client.NetworkConnect(ctx, network.Network.ID, r.Container.ID, nil)
 	if err != nil {
-		return wrapError(ErrTypeUnknown, "failed to connect container to network", err)
+		return fmt.Errorf("failed to connect container to network: %w", err)
 	}
 
 	// Refresh container info to get updated network settings
 	updated, err := r.pool.client.ContainerInspect(ctx, r.Container.ID)
 	if err != nil {
-		return wrapError(ErrTypeUnknown, "failed to inspect container after network connect", err)
+		return fmt.Errorf("failed to inspect container after network connect: %w", err)
 	}
 	r.Container = updated
 
@@ -172,13 +173,13 @@ func (r *Resource) ConnectToNetwork(ctx context.Context, network *Network) error
 func (r *Resource) DisconnectFromNetwork(ctx context.Context, network *Network) error {
 	err := r.pool.client.NetworkDisconnect(ctx, network.Network.ID, r.Container.ID, false)
 	if err != nil {
-		return wrapError(ErrTypeUnknown, "failed to disconnect container from network", err)
+		return fmt.Errorf("failed to disconnect container from network: %w", err)
 	}
 
 	// Refresh container info
 	updated, err := r.pool.client.ContainerInspect(ctx, r.Container.ID)
 	if err != nil {
-		return wrapError(ErrTypeUnknown, "failed to inspect container after network disconnect", err)
+		return fmt.Errorf("failed to inspect container after network disconnect: %w", err)
 	}
 	r.Container = updated
 
@@ -190,7 +191,7 @@ func (r *Resource) Exec(ctx context.Context, cmd []string, opts ...ExecOption) (
 	cfg := newExecConfig()
 	for _, opt := range opts {
 		if err := opt(cfg); err != nil {
-			return -1, wrapError(ErrTypeUnknown, "failed to apply exec option", err)
+			return -1, fmt.Errorf("failed to apply exec option: %w", err)
 		}
 	}
 
@@ -207,7 +208,7 @@ func (r *Resource) Exec(ctx context.Context, cmd []string, opts ...ExecOption) (
 
 	execID, err := r.pool.client.ContainerExecCreate(ctx, r.Container.ID, execConfig)
 	if err != nil {
-		return -1, wrapError(ErrTypeExecFailed, "failed to create exec instance", err)
+		return -1, fmt.Errorf("failed to create exec instance: %w: %w", ErrExecFailed, err)
 	}
 
 	// Start exec
@@ -215,13 +216,13 @@ func (r *Resource) Exec(ctx context.Context, cmd []string, opts ...ExecOption) (
 		Detach: false,
 	}
 	if err := r.pool.client.ContainerExecStart(ctx, execID.ID, startConfig); err != nil {
-		return -1, wrapError(ErrTypeExecFailed, "failed to start exec", err)
+		return -1, fmt.Errorf("failed to start exec: %w: %w", ErrExecFailed, err)
 	}
 
 	// Inspect to get exit code
 	inspect, err := r.pool.client.ContainerExecInspect(ctx, execID.ID)
 	if err != nil {
-		return -1, wrapError(ErrTypeExecFailed, "failed to inspect exec", err)
+		return -1, fmt.Errorf("failed to inspect exec: %w: %w", ErrExecFailed, err)
 	}
 
 	return inspect.ExitCode, nil
