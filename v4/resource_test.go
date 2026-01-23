@@ -1,12 +1,14 @@
 package dockertest
 
 import (
+	"context"
 	"testing"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/go-connections/nat"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestResourceGetPort(t *testing.T) {
@@ -129,4 +131,70 @@ func TestResourceGetIPInNetwork(t *testing.T) {
 	}
 	ip = r.GetIPInNetwork(otherNet)
 	assert.Equal(t, "", ip)
+}
+
+func TestResourceExec(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, err := NewPool("")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	resource, err := pool.Run(ctx, "postgres",
+		WithTag("14-alpine"),
+		WithEnv([]string{"POSTGRES_PASSWORD=secret"}),
+		WithoutReuse(),
+	)
+	require.NoError(t, err)
+	defer resource.Close(ctx)
+
+	// Execute command
+	exitCode, err := resource.Exec(ctx, []string{"echo", "hello"})
+	require.NoError(t, err)
+	assert.Equal(t, 0, exitCode)
+}
+
+func TestResourceExecT(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, err := NewPool("")
+	require.NoError(t, err)
+
+	resource := pool.RunT(t, "postgres",
+		WithTag("14-alpine"),
+		WithEnv([]string{"POSTGRES_PASSWORD=secret"}),
+		WithoutReuse(),
+	)
+	defer resource.Close(context.Background())
+
+	// Execute command - fails test on error
+	exitCode := resource.ExecT(t, []string{"echo", "hello"})
+	assert.Equal(t, 0, exitCode)
+}
+
+func TestResourceExecNonZeroExit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	pool, err := NewPool("")
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	resource, err := pool.Run(ctx, "postgres",
+		WithTag("14-alpine"),
+		WithEnv([]string{"POSTGRES_PASSWORD=secret"}),
+		WithoutReuse(),
+	)
+	require.NoError(t, err)
+	defer resource.Close(ctx)
+
+	// Execute command that fails
+	exitCode, err := resource.Exec(ctx, []string{"false"})
+	require.NoError(t, err) // No exec error
+	assert.Equal(t, 1, exitCode) // But exit code is non-zero
 }

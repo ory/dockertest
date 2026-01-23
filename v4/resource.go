@@ -184,3 +184,62 @@ func (r *Resource) DisconnectFromNetwork(ctx context.Context, network *Network) 
 
 	return nil
 }
+
+// Exec executes a command in the container and returns the exit code.
+func (r *Resource) Exec(ctx context.Context, cmd []string, opts ...ExecOption) (int, error) {
+	cfg := newExecConfig()
+	for _, opt := range opts {
+		if err := opt(cfg); err != nil {
+			return -1, wrapError(ErrTypeUnknown, "failed to apply exec option", err)
+		}
+	}
+
+	// Create exec instance
+	execConfig := types.ExecConfig{
+		Cmd:          cmd,
+		Env:          cfg.env,
+		WorkingDir:   cfg.workingDir,
+		Privileged:   cfg.privileged,
+		User:         cfg.user,
+		AttachStdout: cfg.attachStdout,
+		AttachStderr: cfg.attachStderr,
+	}
+
+	execID, err := r.pool.client.ContainerExecCreate(ctx, r.Container.ID, execConfig)
+	if err != nil {
+		return -1, wrapError(ErrTypeExecFailed, "failed to create exec instance", err)
+	}
+
+	// Start exec
+	startConfig := types.ExecStartCheck{
+		Detach: false,
+	}
+	if err := r.pool.client.ContainerExecStart(ctx, execID.ID, startConfig); err != nil {
+		return -1, wrapError(ErrTypeExecFailed, "failed to start exec", err)
+	}
+
+	// Inspect to get exit code
+	inspect, err := r.pool.client.ContainerExecInspect(ctx, execID.ID)
+	if err != nil {
+		return -1, wrapError(ErrTypeExecFailed, "failed to inspect exec", err)
+	}
+
+	return inspect.ExitCode, nil
+}
+
+// ExecT executes a command in the container, failing the test on error.
+func (r *Resource) ExecT(t testing.TB, cmd []string, opts ...ExecOption) int {
+	t.Helper()
+
+	ctx := context.Background()
+	// Try to get context from testing.TB if available (Go 1.23+)
+	if ctxT, ok := any(t).(interface{ Context() context.Context }); ok {
+		ctx = ctxT.Context()
+	}
+
+	exitCode, err := r.Exec(ctx, cmd, opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return exitCode
+}
