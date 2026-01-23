@@ -5,7 +5,7 @@ package dockertest
 
 import "errors"
 
-// Sentinel errors for common dockertest failures.
+// Common errors returned by dockertest operations.
 // Use errors.Is() to check for these errors in wrapped error chains.
 var (
 	// ErrConnectionRefused indicates a connection was refused.

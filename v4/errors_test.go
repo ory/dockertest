@@ -8,10 +8,10 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestSentinelErrors(t *testing.T) {
+func TestErrors(t *testing.T) {
 	tests := []struct {
-		name     string
-		sentinel error
+		name string
+		err  error
 	}{
 		{"ErrConnectionRefused", ErrConnectionRefused},
 		{"ErrImagePullFailed", ErrImagePullFailed},
@@ -22,8 +22,8 @@ func TestSentinelErrors(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			assert.NotNil(t, tt.sentinel)
-			assert.Error(t, tt.sentinel)
+			assert.NotNil(t, tt.err)
+			assert.Error(t, tt.err)
 		})
 	}
 }
