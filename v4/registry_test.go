@@ -79,8 +79,11 @@ func TestRegistryAll(t *testing.T) {
 }
 
 func TestCleanup(t *testing.T) {
+	// Clear registry before test to avoid issues with nil pools
+	registry = newContainerRegistry()
+
 	// This is hard to test without real containers
-	// Just verify it doesn't panic
+	// Just verify it doesn't panic with empty registry
 	err := Cleanup()
 	// May error if no containers, that's OK
 	_ = err
