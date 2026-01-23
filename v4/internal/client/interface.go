@@ -11,7 +11,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // Client defines the Docker operations needed by dockertest.
@@ -21,7 +21,7 @@ type Client interface {
 	// Container operations
 	ContainerCreate(ctx context.Context, config *container.Config,
 		hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig,
-		platform *specs.Platform, containerName string) (container.ContainerCreateCreatedBody, error)
+		platform *ocispec.Platform, containerName string) (container.ContainerCreateCreatedBody, error)
 	ContainerStart(ctx context.Context, containerID string, options types.ContainerStartOptions) error
 	ContainerStop(ctx context.Context, containerID string, timeout *time.Duration) error
 	ContainerInspect(ctx context.Context, containerID string) (types.ContainerJSON, error)

@@ -11,7 +11,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
-	specs "github.com/opencontainers/image-spec/specs-go/v1"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -22,7 +22,7 @@ type MockClient struct {
 
 func (m *MockClient) ContainerCreate(ctx context.Context, config *container.Config,
 	hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig,
-	platform *specs.Platform, containerName string) (container.ContainerCreateCreatedBody, error) {
+	platform *ocispec.Platform, containerName string) (container.ContainerCreateCreatedBody, error) {
 	args := m.Called(ctx, config, hostConfig, networkingConfig, platform, containerName)
 	return args.Get(0).(container.ContainerCreateCreatedBody), args.Error(1)
 }
