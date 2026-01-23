@@ -14,8 +14,10 @@ type MobyClient struct {
 
 // NewMobyClient creates a new Moby client with default options.
 // It uses environment variables (DOCKER_HOST, etc.) for configuration.
+// Note: Uses a fixed API version (1.44) for compatibility with modern Docker daemons.
+// The v20.10 client library supports API versions up to 1.44 even though it's older.
 func NewMobyClient() (*MobyClient, error) {
-	c, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	c, err := client.NewClientWithOpts(client.FromEnv, client.WithVersion("1.44"))
 	if err != nil {
 		return nil, err
 	}

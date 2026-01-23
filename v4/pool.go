@@ -5,10 +5,18 @@ package dockertest
 
 import (
 	"context"
+	"fmt"
+	"io"
+	"strings"
+	"testing"
 	"time"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/docker/go-connections/nat"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	internalclient "github.com/ory/dockertest/v4/internal/client"
 )
 
@@ -75,7 +83,7 @@ func NewPoolWithContext(ctx context.Context, endpoint string, opts ...PoolOption
 		} else {
 			c, err = internalclient.NewMobyClientWithOptions(
 				client.WithHost(endpoint),
-				client.WithAPIVersionNegotiation(),
+				client.WithVersion("1.44"),
 			)
 		}
 
@@ -113,4 +121,201 @@ func (p *Pool) Client() *client.Client {
 type Network struct {
 	pool    *Pool
 	Network types.NetworkResource
+}
+
+// Run starts a container with the given options.
+// Containers are reused by default based on repository:tag.
+func (p *Pool) Run(ctx context.Context, repository string, opts ...RunOption) (*Resource, error) {
+	cfg := newRunConfig()
+	for _, opt := range opts {
+		if err := opt(cfg); err != nil {
+			return nil, wrapError(ErrTypeUnknown, "failed to apply run option", err)
+		}
+	}
+
+	// Build image reference
+	imageRef := repository
+	if cfg.tag != "" {
+		imageRef = repository + ":" + cfg.tag
+	}
+
+	// Build reuse ID
+	reuseID := imageRef
+	if cfg.reuseID != "" {
+		reuseID = cfg.reuseID
+	}
+
+	// Check for existing container if reuse is enabled
+	if !cfg.noReuse {
+		if existing := registry.lookup(reuseID); existing != nil {
+			// Inspect to verify it's still running
+			inspected, err := p.client.ContainerInspect(ctx, existing.Container.ID)
+			if err == nil && inspected.State.Running {
+				// Update resource with fresh inspection
+				existing.Container = inspected
+				return existing, nil
+			}
+			// Container no longer exists or not running, remove from registry
+			registry.unregister(existing)
+		}
+	}
+
+	// Pull image if needed
+	if err := p.pullImage(ctx, imageRef); err != nil {
+		return nil, err
+	}
+
+	// Create container config
+	containerConfig, hostConfig, networkingConfig, platform := p.buildContainerConfig(cfg, imageRef)
+
+	// Create container
+	createResp, err := p.client.ContainerCreate(
+		ctx,
+		containerConfig,
+		hostConfig,
+		networkingConfig,
+		platform,
+		cfg.name,
+	)
+	if err != nil {
+		return nil, wrapError(ErrTypeContainerCreateFailed, "failed to create container", err)
+	}
+
+	// Start container
+	if err := p.client.ContainerStart(ctx, createResp.ID, types.ContainerStartOptions{}); err != nil {
+		// Clean up created container on start failure
+		_ = p.client.ContainerRemove(ctx, createResp.ID, types.ContainerRemoveOptions{Force: true})
+		return nil, wrapError(ErrTypeContainerStartFailed, "failed to start container", err)
+	}
+
+	// Inspect to get full container info
+	inspected, err := p.client.ContainerInspect(ctx, createResp.ID)
+	if err != nil {
+		// Clean up started container on inspect failure
+		_ = p.client.ContainerRemove(ctx, createResp.ID, types.ContainerRemoveOptions{Force: true})
+		return nil, wrapError(ErrTypeUnknown, "failed to inspect container", err)
+	}
+
+	resource := &Resource{
+		pool:      p,
+		Container: inspected,
+	}
+
+	// Register for reuse if enabled
+	if !cfg.noReuse {
+		registry.register(reuseID, resource)
+	}
+
+	// Set expiry if configured
+	if cfg.hasExpiry && !cfg.noExpiry {
+		_ = resource.Expire(ctx, uint(cfg.expiry.Seconds()))
+	} else if !cfg.noExpiry {
+		// Default expiry
+		_ = resource.Expire(ctx, uint(DefaultExpiry.Seconds()))
+	}
+
+	return resource, nil
+}
+
+// RunT is a test helper that starts a container, failing the test on error.
+// It uses t.Context() for automatic cancellation when the test ends.
+func (p *Pool) RunT(t testing.TB, repository string, opts ...RunOption) *Resource {
+	t.Helper()
+
+	ctx := context.Background()
+	// Try to get context from testing.TB if available (Go 1.23+)
+	if ctxT, ok := any(t).(interface{ Context() context.Context }); ok {
+		ctx = ctxT.Context()
+	}
+
+	resource, err := p.Run(ctx, repository, opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return resource
+}
+
+func (p *Pool) pullImage(ctx context.Context, imageRef string) error {
+	// Check if image exists locally
+	_, _, err := p.client.ImageInspectWithRaw(ctx, imageRef)
+	if err == nil {
+		// Image exists
+		return nil
+	}
+
+	// Pull image
+	reader, err := p.client.ImagePull(ctx, imageRef, types.ImagePullOptions{})
+	if err != nil {
+		return wrapError(ErrTypeImagePullFailed, fmt.Sprintf("failed to pull image %s", imageRef), err)
+	}
+	defer reader.Close()
+
+	// Consume the output to ensure pull completes
+	_, err = io.Copy(io.Discard, reader)
+	if err != nil {
+		return wrapError(ErrTypeImagePullFailed, fmt.Sprintf("failed to read pull output for %s", imageRef), err)
+	}
+
+	return nil
+}
+
+func (p *Pool) buildContainerConfig(cfg *runConfig, imageRef string) (
+	*container.Config,
+	*container.HostConfig,
+	*network.NetworkingConfig,
+	*specs.Platform,
+) {
+	// Container config
+	containerConfig := &container.Config{
+		Image:  imageRef,
+		Env:    cfg.env,
+		Cmd:    cfg.cmd,
+		Labels: cfg.labels,
+		Tty:    cfg.tty,
+	}
+
+	// Exposed ports
+	if len(cfg.exposedPorts) > 0 {
+		exposedPorts := make(nat.PortSet)
+		for _, port := range cfg.exposedPorts {
+			// Add protocol if not specified
+			if !strings.Contains(port, "/") {
+				port = port + "/tcp"
+			}
+			exposedPorts[nat.Port(port)] = struct{}{}
+		}
+		containerConfig.ExposedPorts = exposedPorts
+	}
+
+	// Host config
+	hostConfig := &container.HostConfig{
+		Privileged:      cfg.privileged,
+		PublishAllPorts: true, // Auto-bind to random host ports
+		Mounts:          cfg.mounts,
+	}
+
+	// Port bindings
+	if cfg.portBindings != nil {
+		hostConfig.PortBindings = cfg.portBindings
+	}
+
+	// Networking config
+	networkingConfig := &network.NetworkingConfig{}
+	if len(cfg.networks) > 0 {
+		endpoints := make(map[string]*network.EndpointSettings)
+		for _, net := range cfg.networks {
+			endpoints[net.Network.Name] = &network.EndpointSettings{}
+		}
+		networkingConfig.EndpointsConfig = endpoints
+	}
+
+	// Platform
+	var platform *specs.Platform
+	if cfg.platform != "" {
+		platform = &specs.Platform{
+			Architecture: cfg.platform,
+		}
+	}
+
+	return containerConfig, hostConfig, networkingConfig, platform
 }
