@@ -3,8 +3,9 @@ format: .bin/ory node_modules   # formats the source code
 	gofmt -l -s -w .
 	npm exec -- prettier --write .
 
-help:
-	cat Makefile | grep '^[^ ]*:' | grep -v '^\.bin/' | grep -v '.SILENT:' | grep -v '^node_modules:' | grep -v help | sed 's/:.*#/#/' | column -s "#" -t
+lint:  # runs golangci-lint
+	@echo "Linting..."
+	golangci-lint run --config=.golangci.yml ./...
 
 licenses: .bin/licenses node_modules  # checks open-source licenses
 	.bin/licenses
@@ -23,6 +24,3 @@ node_modules: package-lock.json
 test:
 	go vet ./...
 	go test -covermode=atomic -coverprofile="coverage.out" .
-
-
-.DEFAULT_GOAL := help

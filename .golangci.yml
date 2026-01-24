@@ -1,0 +1,123 @@
+version: "2"
+
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+  build-tags: []
+  modules-download-mode: readonly
+  allow-parallel-runners: true
+
+linters:
+  default: standard
+  enable:
+    - errcheck # Check for unchecked errors
+    - govet # Vet examines Go source code
+    - ineffassign # Detect ineffectual assignments
+    - staticcheck # Advanced static analysis
+    - unused # Check for unused constants, variables, functions and types
+    - misspell # Check for misspelled words
+    - gocritic # Highly extensible linter
+    - revive # Fast, configurable, extensible, and beautiful linter
+    - gosec # Security checker
+    - goconst # Find repeated strings that could be constants
+    - unconvert # Remove unnecessary type conversions
+    - unparam # Report unused function parameters
+    - prealloc # Find slice declarations that could be pre-allocated
+
+  exclusions:
+    # Exclude some linters from running on test files
+    rules:
+      - path: _test\.go
+        linters:
+          - goconst
+          - gosec
+          - errcheck
+
+      # Ignore package comment requirements for examples
+      - path: examples/
+        linters:
+          - revive
+        text: "package-comments"
+
+  settings:
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+
+    govet:
+      enable-all: true
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+        - experimental
+        - opinionated
+
+    gosec:
+      excludes:
+        - G104 # Audit errors not checked - covered by errcheck
+        - G306 # Poor file permissions - often needed for temp files
+
+    goconst:
+      min-len: 3
+      min-occurrences: 3
+
+    revive:
+      enable-all-rules: false
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: context-keys-type
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: error-naming
+        - name: exported
+        - name: if-return
+        - name: increment-decrement
+        - name: var-naming
+        - name: var-declaration
+        - name: package-comments
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: empty-block
+        - name: superfluous-else
+        - name: unused-parameter
+        - name: unreachable-code
+        - name: redefines-builtin-id
+
+    staticcheck:
+      checks: ["all"]
+
+    unparam:
+      check-exported: false
+
+formatters:
+  enable:
+    - gofmt # Check code is formatted
+    - goimports # Check imports are formatted
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  new: false
+  fix: false
+
+output:
+  formats:
+    text:
+      path: stdout
+      print-linter-name: true
+      print-issued-lines: true
+      colors: true
+  sort-order:
+    - linter
+    - severity
+    - file
