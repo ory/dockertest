@@ -53,9 +53,9 @@ The Dockertest library provides easy to use commands for spinning up Docker
 containers and using them for your tests.
 
 > [!WARNING]
-> 
-> Version 4 of this is not yet finalized and may still receive
-> breaking changes before the stable release.
+>
+> Version 4 of this is not yet finalized and may still receive breaking changes
+> before the stable release.
 
 ## Installation
 
