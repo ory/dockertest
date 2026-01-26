@@ -40,7 +40,9 @@ func TestCockroachDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not connect to CockroachDB: %v", err)
 	}
-	defer db.Close()
+	t.Cleanup(func() {
+		db.Close()
+	})
 
 	// Create a table and insert data
 	_, err = db.Exec("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(50))")

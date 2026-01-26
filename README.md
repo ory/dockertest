@@ -1,4 +1,4 @@
-# [ory.am](https://ory.am)/dockertest
+<h1 align="center"><img src="./docs/images/banner_dockertest.png" alt="ORY Dockertest"></h1>
 
 [![Build Status](https://travis-ci.org/ory/dockertest.svg)](https://travis-ci.org/ory/dockertest?branch=master)
 [![Coverage Status](https://coveralls.io/repos/github/ory/dockertest/badge.svg?branch=v4)](https://coveralls.io/github/ory/dockertest?branch=v4)
@@ -6,7 +6,7 @@
 Use Docker to run your Go language integration tests against third party
 services on **Microsoft Windows, Mac OSX and Linux**! Dockertest uses
 [Docker](https://www.docker.com/toolbox) to spin up images on Windows and Mac
-OSX as well.
+OSX.
 
 Dockertest supports running any Docker Image from Docker Hub and Dockerfile.
 
@@ -52,6 +52,13 @@ kill them when the test completes.
 The Dockertest library provides easy to use commands for spinning up Docker
 containers and using them for your tests.
 
+:::note
+
+Version 4 of this is not yet finalized and may still receive breaking changes before
+the stable release.
+
+:::
+
 ## Installation
 
 ```bash
@@ -81,7 +88,7 @@ func TestPostgres(t *testing.T) {
             "POSTGRES_DB=testdb",
         }),
     )
-    defer db.Cleanup(t)
+    db.Cleanup(t)
 
     // Use db.GetHostPort("5432/tcp") to connect
     hostPort := db.GetHostPort("5432/tcp")
@@ -89,35 +96,30 @@ func TestPostgres(t *testing.T) {
 }
 
 func TestMain(m *testing.M) {
+    // Note: TestMain doesn't have testing.T, so we create a context here
+    // In regular tests, always use t.Context() instead
     ctx := context.Background()
     pool, _ := dockertest.NewPool(ctx, "")
+    code := m.Run()
     defer pool.Cleanup(ctx)
-    os.Exit(m.Run())
+    os.Exit(code)
 }
 ```
 
 ## Migration from v3
 
-**Version 4 introduces automatic container reuse, making tests significantly
+Version 4 introduces automatic container reuse, making tests significantly
 faster by reusing containers across test runs. Additionally, a lightweight
-docker client is used which reduces third party dependencies significantly.**
+docker client is used which reduces third party dependencies significantly.
 
-See [docs/migration-v3-to-v4.md](../docs/migration-v3-to-v4.md) for the complete
-migration guide.
+See [UPGRADE.md](UPGRADE.md) for the complete migration guide.
 
-### Key Differences
+## API overview
 
-| v3                                                                                  | v4                                                                                                             |
-| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `pool, err := dockertest.NewPool("")`                                               | `pool := dockertest.NewPoolT(t, "")`                                                                           |
-| `pool.MaxWait = time.Minute`                                                        | `dockertest.WithMaxWait(time.Minute)`                                                                          |
-| `resource, err := pool.Run("postgres", "14", []string{"POSTGRES_PASSWORD=secret"})` | `pool.RunT(t, "postgres", dockertest.WithTag("14"), dockertest.WithEnv([]string{"POSTGRES_PASSWORD=secret"}))` |
-| `defer pool.Purge(resource)`                                                        | `defer resource.Cleanup(t)` or automatic via `pool.Cleanup()`                                                  |
-| No context support                                                                  | Context throughout                                                                                             |
+View the Go
+[API documentation](https://pkg.go.dev/github.com/ory/dockertest/v4).
 
-## API Overview
-
-### Pool Creation
+### Pool creation
 
 ```go
 // For tests - auto-cleanup with t.Cleanup()
@@ -137,7 +139,7 @@ if err != nil {
 defer pool.Close()
 ```
 
-### Running Containers
+### Running containers
 
 ```go
 // Test helper - fails test on error
@@ -157,7 +159,7 @@ if err != nil {
 }
 ```
 
-### Container Configuration
+### Container configuration
 
 Customize container settings with configuration options:
 
@@ -204,7 +206,7 @@ resource := pool.RunT(t, "app",
 )
 ```
 
-### Container Reuse
+### Container reuse
 
 Containers are automatically reused based on `repository:tag`:
 
@@ -227,7 +229,7 @@ resource := pool.RunT(t, "postgres",
 )
 ```
 
-### Getting Connection Info
+### Getting connection info
 
 ```go
 resource := pool.RunT(t, "postgres", dockertest.WithTag("14"))
@@ -278,12 +280,88 @@ if errors.Is(err, dockertest.ErrContainerStartFailed) {
 
 ## Examples
 
-See the [examples directory](./examples/) for complete examples with:
+See the [examples directory](./examples) for complete examples.
 
-- PostgreSQL
-- Redis
-- More coming soon
+## Troubleshoot & FAQ
 
-## License
+### Out of disk space
 
-Apache 2.0
+Try cleaning up the images with
+[docker-cleanup-volumes](https://github.com/chadoe/docker-cleanup-volumes).
+
+## Running dockertest in Gitlab CI
+
+### How to run dockertest on shared gitlab runners?
+
+You should add docker dind service to your job which starts in sibling
+container. That means database will be available on host `docker`.  
+You app should be able to change db host through environment variable.
+
+Here is the simple example of `gitlab-ci.yml`:
+
+```yaml
+stages:
+  - test
+go-test:
+  stage: test
+  image: golang:1.15
+  services:
+    - docker:dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_DRIVER: overlay2
+    YOUR_APP_DB_HOST: docker
+  script:
+    - go test ./...
+```
+
+Plus in the `pool.Retry` method that checks for connection readiness, you need
+to use `$YOUR_APP_DB_HOST` instead of localhost.
+
+### How to run dockertest on group(custom) gitlab runners?
+
+Gitlab runner can be run in docker executor mode to save compatibility with
+shared runners.  
+Here is the simple register command:
+
+```shell script
+gitlab-runner register -n \
+ --url https://gitlab.com/ \
+ --registration-token $YOUR_TOKEN \
+ --executor docker \
+ --description "My Docker Runner" \
+ --docker-image "docker:19.03.12" \
+ --docker-privileged
+```
+
+You only need to instruct docker dind to start with disabled tls.  
+Add variable `DOCKER_TLS_CERTDIR: ""` to `gitlab-ci.yml` above. It will tell
+docker daemon to start on 2375 port over http.
+
+## Running Dockertest using GitHub actions
+
+```yaml
+name: Test with Docker
+
+on: [push]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      dind:
+        image: docker:23.0-rc-dind-rootless
+        ports:
+          - 2375:2375
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: "1.21"
+
+      - name: Test with Docker
+        run: go test -v ./...
+```

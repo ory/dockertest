@@ -19,7 +19,9 @@ func TestBuildAndRun(t *testing.T) {
 	}
 
 	dockertest.ResetRegistry()
-	defer dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
 
 	pool := dockertest.NewPoolT(t, "")
 
@@ -61,7 +63,9 @@ func TestBuildAndRunWithBuildArgs(t *testing.T) {
 	}
 
 	dockertest.ResetRegistry()
-	defer dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
 
 	pool := dockertest.NewPoolT(t, "")
 
@@ -107,7 +111,9 @@ func TestBuildAndRunWithRunOptions(t *testing.T) {
 	}
 
 	dockertest.ResetRegistry()
-	defer dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
 
 	pool := dockertest.NewPoolT(t, "")
 
@@ -151,7 +157,9 @@ func TestBuildAndRunWithBuildContext(t *testing.T) {
 	}
 
 	dockertest.ResetRegistry()
-	defer dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
 
 	pool := dockertest.NewPoolT(t, "")
 

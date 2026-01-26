@@ -4,7 +4,6 @@
 package dockertest
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -14,7 +13,7 @@ import (
 
 func TestNewPool(t *testing.T) {
 	t.Run("creates pool with default options", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		pool, err := NewPool(ctx, "")
 		if err != nil {
 			t.Fatalf("NewPool() error = %v, want nil", err)
@@ -22,7 +21,9 @@ func TestNewPool(t *testing.T) {
 		if pool == nil {
 			t.Fatal("NewPool() pool = nil, want non-nil")
 		}
-		defer pool.Close()
+		t.Cleanup(func() {
+			pool.Close()
+		})
 
 		if pool.MaxWait != 60*time.Second {
 			t.Errorf("pool.MaxWait = %v, want %v", pool.MaxWait, 60*time.Second)
@@ -33,12 +34,14 @@ func TestNewPool(t *testing.T) {
 	})
 
 	t.Run("creates pool with custom MaxWait", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		pool, err := NewPool(ctx, "", WithMaxWait(30*time.Second))
 		if err != nil {
 			t.Fatalf("NewPool() error = %v, want nil", err)
 		}
-		defer pool.Close()
+		t.Cleanup(func() {
+			pool.Close()
+		})
 
 		if pool.MaxWait != 30*time.Second {
 			t.Errorf("pool.MaxWait = %v, want %v", pool.MaxWait, 30*time.Second)
@@ -46,18 +49,22 @@ func TestNewPool(t *testing.T) {
 	})
 
 	t.Run("creates pool with custom client", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		customClient, err := client.NewMobyClient(ctx)
 		if err != nil {
 			t.Fatalf("NewMobyClient() error = %v, want nil", err)
 		}
-		defer customClient.Close()
+		t.Cleanup(func() {
+			customClient.Close()
+		})
 
 		pool, err := NewPool(ctx, "", WithMobyClient(customClient))
 		if err != nil {
 			t.Fatalf("NewPool() error = %v, want nil", err)
 		}
-		defer pool.Close()
+		t.Cleanup(func() {
+			pool.Close()
+		})
 
 		if pool.client != customClient {
 			t.Error("pool.client != customClient, want same client")
@@ -65,19 +72,23 @@ func TestNewPool(t *testing.T) {
 	})
 
 	t.Run("custom client option prevents client creation", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		customClient, err := client.NewMobyClient(ctx)
 		if err != nil {
 			t.Fatalf("NewMobyClient() error = %v, want nil", err)
 		}
-		defer customClient.Close()
+		t.Cleanup(func() {
+			customClient.Close()
+		})
 
 		// Use invalid endpoint - should not fail because custom client is used
 		pool, err := NewPool(ctx, "invalid://endpoint", WithMobyClient(customClient))
 		if err != nil {
 			t.Fatalf("NewPool() error = %v, want nil (custom client should bypass endpoint)", err)
 		}
-		defer pool.Close()
+		t.Cleanup(func() {
+			pool.Close()
+		})
 	})
 }
 
@@ -105,7 +116,7 @@ func TestNewPoolT(t *testing.T) {
 
 func TestPoolClose(t *testing.T) {
 	t.Run("closes client", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		pool, err := NewPool(ctx, "")
 		if err != nil {
 			t.Fatalf("NewPool() error = %v, want nil", err)
@@ -118,12 +129,14 @@ func TestPoolClose(t *testing.T) {
 	})
 
 	t.Run("does not close custom client", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		customClient, err := client.NewMobyClient(ctx)
 		if err != nil {
 			t.Fatalf("NewMobyClient() error = %v, want nil", err)
 		}
-		defer customClient.Close()
+		t.Cleanup(func() {
+			customClient.Close()
+		})
 
 		pool, err := NewPool(ctx, "", WithMobyClient(customClient))
 		if err != nil {
@@ -137,7 +150,7 @@ func TestPoolClose(t *testing.T) {
 		}
 
 		// Verify custom client is still usable by pinging
-		ctx2 := context.Background()
+		ctx2 := t.Context()
 		_, pingErr := customClient.Ping(ctx2, mobyclient.PingOptions{})
 		if pingErr != nil {
 			t.Error("custom client was closed by pool.Close(), want it to remain open")
@@ -148,12 +161,14 @@ func TestPoolClose(t *testing.T) {
 func TestPoolCleanup(t *testing.T) {
 	t.Run("cleanup with empty registry", func(t *testing.T) {
 		ResetRegistry()
-		ctx := context.Background()
+		ctx := t.Context()
 		pool, err := NewPool(ctx, "")
 		if err != nil {
 			t.Fatalf("NewPool() error = %v, want nil", err)
 		}
-		defer pool.Close()
+		t.Cleanup(func() {
+			pool.Close()
+		})
 
 		err = pool.Cleanup(ctx)
 		if err != nil {

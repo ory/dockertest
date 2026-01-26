@@ -14,7 +14,7 @@
 //	        dockertest.WithTag("14"),
 //	        dockertest.WithEnv([]string{"POSTGRES_PASSWORD=secret"}),
 //	    )
-//	    defer db.Cleanup(t)
+//	    db.Cleanup(t)
 //
 //	    hostPort := db.GetHostPort("5432/tcp")
 //	    connStr := fmt.Sprintf("postgres://postgres:secret@%s/postgres?sslmode=disable", hostPort)

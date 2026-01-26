@@ -43,7 +43,9 @@ func TestPostgreSQL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not connect to PostgreSQL: %v", err)
 	}
-	defer db.Close()
+	t.Cleanup(func() {
+		db.Close()
+	})
 
 	// Run a query
 	var version string

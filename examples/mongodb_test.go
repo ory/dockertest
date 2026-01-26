@@ -40,7 +40,9 @@ func TestMongoDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Could not connect to MongoDB: %v", err)
 	}
-	defer client.Disconnect(ctx)
+	t.Cleanup(func() {
+		client.Disconnect(ctx)
+	})
 
 	// Insert a document
 	collection := client.Database("testdb").Collection("users")

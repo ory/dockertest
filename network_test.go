@@ -20,7 +20,9 @@ func TestPoolCreateNetwork(t *testing.T) {
 		if network == nil {
 			t.Fatal("CreateNetwork() network = nil, want non-nil")
 		}
-		defer network.Close(t.Context())
+		t.Cleanup(func() {
+			network.Close(t.Context())
+		})
 
 		if network.Network.Name != "test-network" {
 			t.Errorf("network.Network.Name = %q, want %q", network.Network.Name, "test-network")
@@ -44,7 +46,9 @@ func TestPoolCreateNetwork(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateNetwork() error = %v, want nil", err)
 		}
-		defer network.Close(t.Context())
+		t.Cleanup(func() {
+			network.Close(t.Context())
+		})
 
 		if network.Network.Driver != "bridge" {
 			t.Errorf("network.Network.Driver = %q, want %q", network.Network.Driver, "bridge")
@@ -61,7 +65,9 @@ func TestPoolCreateNetwork(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateNetwork() error = %v, want nil", err)
 		}
-		defer network.Close(t.Context())
+		t.Cleanup(func() {
+			network.Close(t.Context())
+		})
 
 		if network.Network.Name != "test-network-nil" {
 			t.Errorf("network.Network.Name = %q, want %q", network.Network.Name, "test-network-nil")
@@ -77,7 +83,9 @@ func TestPoolCreateNetworkT(t *testing.T) {
 		if network == nil {
 			t.Fatal("CreateNetworkT() network = nil, want non-nil")
 		}
-		defer network.Close(t.Context())
+		t.Cleanup(func() {
+			network.Close(t.Context())
+		})
 
 		if network.Network.Name != "test-network-t" {
 			t.Errorf("network.Network.Name = %q, want %q", network.Network.Name, "test-network-t")
@@ -102,7 +110,9 @@ func TestNetworkClose(t *testing.T) {
 		if err != nil {
 			t.Fatalf("CreateNetwork() after Close() error = %v, want nil", err)
 		}
-		defer network2.Close(t.Context())
+		t.Cleanup(func() {
+			network2.Close(t.Context())
+		})
 	})
 }
 
@@ -121,10 +131,14 @@ func TestResourceConnectToNetwork(t *testing.T) {
 	t.Run("connects container to network", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
 		network := pool.CreateNetworkT(t, "test-connect-network", nil)
-		defer network.Close(t.Context())
+		t.Cleanup(func() {
+			network.Close(t.Context())
+		})
 
 		resource := pool.RunT(t, "alpine", dockertest.WithTag("latest"), dockertest.WithCmd([]string{"sleep", "300"}), dockertest.WithoutReuse())
-		defer resource.Close(t.Context())
+		t.Cleanup(func() {
+			resource.Close(t.Context())
+		})
 
 		err := resource.ConnectToNetwork(t.Context(), network)
 		if err != nil {
@@ -143,10 +157,14 @@ func TestResourceDisconnectFromNetwork(t *testing.T) {
 	t.Run("disconnects container from network", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
 		network := pool.CreateNetworkT(t, "test-disconnect-network", nil)
-		defer network.Close(t.Context())
+		t.Cleanup(func() {
+			network.Close(t.Context())
+		})
 
 		resource := pool.RunT(t, "alpine", dockertest.WithTag("latest"), dockertest.WithCmd([]string{"sleep", "300"}), dockertest.WithoutReuse())
-		defer resource.Close(t.Context())
+		t.Cleanup(func() {
+			resource.Close(t.Context())
+		})
 
 		// First connect
 		err := resource.ConnectToNetwork(t.Context(), network)
@@ -178,10 +196,14 @@ func TestResourceGetIPInNetwork(t *testing.T) {
 	t.Run("returns IP in network", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
 		network := pool.CreateNetworkT(t, "test-getip-network", nil)
-		defer network.Close(t.Context())
+		t.Cleanup(func() {
+			network.Close(t.Context())
+		})
 
 		resource := pool.RunT(t, "alpine", dockertest.WithTag("latest"), dockertest.WithCmd([]string{"sleep", "300"}), dockertest.WithoutReuse())
-		defer resource.Close(t.Context())
+		t.Cleanup(func() {
+			resource.Close(t.Context())
+		})
 
 		err := resource.ConnectToNetwork(t.Context(), network)
 		if err != nil {
@@ -202,10 +224,14 @@ func TestResourceGetIPInNetwork(t *testing.T) {
 	t.Run("returns empty for non-connected network", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
 		network := pool.CreateNetworkT(t, "test-noip-network", nil)
-		defer network.Close(t.Context())
+		t.Cleanup(func() {
+			network.Close(t.Context())
+		})
 
 		resource := pool.RunT(t, "alpine", dockertest.WithTag("latest"), dockertest.WithCmd([]string{"sleep", "300"}), dockertest.WithoutReuse())
-		defer resource.Close(t.Context())
+		t.Cleanup(func() {
+			resource.Close(t.Context())
+		})
 
 		// Don't connect to network
 		ip := resource.GetIPInNetwork(network)
@@ -221,11 +247,15 @@ func TestNetworkIntegration(t *testing.T) {
 
 		// Create custom network
 		network := pool.CreateNetworkT(t, "test-integration-network", nil)
-		defer network.Close(t.Context())
+		t.Cleanup(func() {
+			network.Close(t.Context())
+		})
 
 		// Start first container
 		resource1 := pool.RunT(t, "alpine", dockertest.WithTag("latest"), dockertest.WithCmd([]string{"sleep", "300"}), dockertest.WithoutReuse())
-		defer resource1.Close(t.Context())
+		t.Cleanup(func() {
+			resource1.Close(t.Context())
+		})
 
 		// Connect to network
 		err := resource1.ConnectToNetwork(t.Context(), network)
@@ -235,7 +265,9 @@ func TestNetworkIntegration(t *testing.T) {
 
 		// Start second container
 		resource2 := pool.RunT(t, "alpine", dockertest.WithTag("latest"), dockertest.WithCmd([]string{"sleep", "300"}), dockertest.WithoutReuse())
-		defer resource2.Close(t.Context())
+		t.Cleanup(func() {
+			resource2.Close(t.Context())
+		})
 
 		// Connect to network
 		err = resource2.ConnectToNetwork(t.Context(), network)

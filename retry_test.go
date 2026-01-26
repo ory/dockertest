@@ -13,7 +13,7 @@ import (
 // TestRetry tests the Retry function with constant backoff.
 func TestRetry(t *testing.T) {
 	t.Run("succeeds after N attempts", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		attempts := 0
 		expectedAttempts := 3
 
@@ -36,7 +36,7 @@ func TestRetry(t *testing.T) {
 	})
 
 	t.Run("succeeds on first attempt", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		attempts := 0
 
 		fn := func() error {
@@ -55,7 +55,7 @@ func TestRetry(t *testing.T) {
 	})
 
 	t.Run("times out", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		attempts := 0
 
 		fn := func() error {
@@ -74,7 +74,7 @@ func TestRetry(t *testing.T) {
 	})
 
 	t.Run("respects context cancellation", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		attempts := 0
 
 		fn := func() error {
@@ -95,7 +95,7 @@ func TestRetry(t *testing.T) {
 // TestRetryWithBackoff tests the RetryWithBackoff function with exponential backoff.
 func TestRetryWithBackoff(t *testing.T) {
 	t.Run("succeeds after N attempts", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		attempts := 0
 		expectedAttempts := 3
 
@@ -118,7 +118,7 @@ func TestRetryWithBackoff(t *testing.T) {
 	})
 
 	t.Run("times out", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		attempts := 0
 
 		fn := func() error {
@@ -137,7 +137,7 @@ func TestRetryWithBackoff(t *testing.T) {
 	})
 
 	t.Run("respects context cancellation", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(t.Context())
 		attempts := 0
 
 		fn := func() error {
@@ -158,7 +158,7 @@ func TestRetryWithBackoff(t *testing.T) {
 // TestPoolRetry tests the Pool.Retry convenience method.
 func TestPoolRetry(t *testing.T) {
 	t.Run("succeeds after N attempts", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		pool, err := NewPool(ctx, "")
 		if err != nil {
 			t.Fatalf("NewPool() error = %v", err)
@@ -187,7 +187,7 @@ func TestPoolRetry(t *testing.T) {
 	})
 
 	t.Run("times out", func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		pool, err := NewPool(ctx, "")
 		if err != nil {
 			t.Fatalf("NewPool() error = %v", err)

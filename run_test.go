@@ -41,7 +41,9 @@ func TestPoolRunWithReuse(t *testing.T) {
 	}
 
 	dockertest.ResetRegistry()
-	defer dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
 
 	pool := dockertest.NewPoolT(t, "")
 
@@ -70,7 +72,9 @@ func TestPoolRunWithoutReuse(t *testing.T) {
 	}
 
 	dockertest.ResetRegistry()
-	defer dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
 
 	pool := dockertest.NewPoolT(t, "")
 
@@ -102,7 +106,9 @@ func TestPoolRunWithReuseID(t *testing.T) {
 	}
 
 	dockertest.ResetRegistry()
-	defer dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
 
 	pool := dockertest.NewPoolT(t, "")
 
@@ -133,7 +139,9 @@ func TestPoolRunWithDifferentReuseIDs(t *testing.T) {
 	}
 
 	dockertest.ResetRegistry()
-	defer dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
 
 	pool := dockertest.NewPoolT(t, "")
 
@@ -165,7 +173,9 @@ func TestPoolRunWithReuseIDIgnoresTag(t *testing.T) {
 	}
 
 	dockertest.ResetRegistry()
-	defer dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
 
 	pool := dockertest.NewPoolT(t, "")
 
@@ -196,7 +206,9 @@ func TestRunWithUser(t *testing.T) {
 	}
 
 	dockertest.ResetRegistry()
-	defer dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
 
 	pool := dockertest.NewPoolT(t, "")
 
@@ -206,7 +218,9 @@ func TestRunWithUser(t *testing.T) {
 		dockertest.WithCmd([]string{"sleep", "10"}),
 		dockertest.WithoutReuse(),
 	)
-	defer resource.CloseT(t)
+	t.Cleanup(func() {
+		resource.CloseT(t)
+	})
 
 	// Verify the user was set in container config
 	if resource.Container.Config.User != "nobody" {
@@ -220,7 +234,9 @@ func TestRunWithWorkingDir(t *testing.T) {
 	}
 
 	dockertest.ResetRegistry()
-	defer dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
 
 	pool := dockertest.NewPoolT(t, "")
 
@@ -230,7 +246,9 @@ func TestRunWithWorkingDir(t *testing.T) {
 		dockertest.WithCmd([]string{"sleep", "10"}),
 		dockertest.WithoutReuse(),
 	)
-	defer resource.CloseT(t)
+	t.Cleanup(func() {
+		resource.CloseT(t)
+	})
 
 	if resource.Container.Config.WorkingDir != "/tmp" {
 		t.Errorf("expected working dir '/tmp', got %q", resource.Container.Config.WorkingDir)
@@ -243,7 +261,9 @@ func TestRunWithLabelsAndHostname(t *testing.T) {
 	}
 
 	dockertest.ResetRegistry()
-	defer dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
 
 	pool := dockertest.NewPoolT(t, "")
 
@@ -259,7 +279,9 @@ func TestRunWithLabelsAndHostname(t *testing.T) {
 		dockertest.WithCmd([]string{"sleep", "10"}),
 		dockertest.WithoutReuse(),
 	)
-	defer resource.CloseT(t)
+	t.Cleanup(func() {
+		resource.CloseT(t)
+	})
 
 	// Verify labels
 	for k, v := range labels {
@@ -280,7 +302,9 @@ func TestRunWithContainerConfig(t *testing.T) {
 	}
 
 	dockertest.ResetRegistry()
-	defer dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
 
 	pool := dockertest.NewPoolT(t, "")
 
@@ -295,7 +319,9 @@ func TestRunWithContainerConfig(t *testing.T) {
 		dockertest.WithCmd([]string{"sleep", "10"}),
 		dockertest.WithoutReuse(),
 	)
-	defer resource.CloseT(t)
+	t.Cleanup(func() {
+		resource.CloseT(t)
+	})
 
 	if resource.Container.Config.StopTimeout == nil || *resource.Container.Config.StopTimeout != 5 {
 		t.Errorf("expected stop timeout 5, got %v", resource.Container.Config.StopTimeout)

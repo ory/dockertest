@@ -27,7 +27,9 @@ func TestRedis(t *testing.T) {
 	client := redis.NewClient(&redis.Options{
 		Addr: addr,
 	})
-	defer client.Close()
+	t.Cleanup(func() {
+		client.Close()
+	})
 
 	// Wait for Redis to be ready
 	ctx := t.Context()
