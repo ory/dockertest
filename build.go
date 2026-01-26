@@ -5,6 +5,7 @@ package dockertest
 
 import (
 	"archive/tar"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -83,10 +84,7 @@ func (p *Pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 		return nil, fmt.Errorf("buildOpts.ContextDir cannot be empty")
 	}
 
-	dockerfile := buildOpts.Dockerfile
-	if dockerfile == "" {
-		dockerfile = "Dockerfile"
-	}
+	dockerfile := cmp.Or(buildOpts.Dockerfile, "Dockerfile")
 
 	// Create tar archive of build context
 	buildContext, err := createBuildContext(buildOpts.ContextDir)

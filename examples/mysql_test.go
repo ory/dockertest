@@ -6,11 +6,10 @@ package examples_test
 import (
 	"database/sql"
 	"fmt"
+	_ "github.com/go-sql-driver/mysql"
+	"github.com/ory/dockertest/v4"
 	"testing"
 	"time"
-
-	_ "github.com/go-sql-driver/mysql"
-	dockertest "github.com/ory/dockertest/v4"
 )
 
 func TestMySQL(t *testing.T) {

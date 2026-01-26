@@ -6,7 +6,9 @@ package dockertest_test
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	dockertest "github.com/ory/dockertest/v4"
 )
@@ -137,6 +139,51 @@ CMD ["sh", "-c", "echo $TEST_VAR && sleep 300"]
 	}
 	if r.ID() == "" {
 		t.Fatal("Resource has empty container ID")
+	}
+
+	// Cleanup
+	r.CloseT(t)
+}
+
+func TestBuildAndRunWithBuildContext(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	defer dockertest.ResetRegistry()
+
+	pool := dockertest.NewPoolT(t, "")
+
+	// Use test fixture with Go program (main.go, go.mod, Dockerfile)
+	contextDir := filepath.Join("testdata", "build_context")
+
+	buildOpts := &dockertest.BuildOptions{
+		Dockerfile: "Dockerfile",
+		ContextDir: contextDir,
+	}
+
+	r := pool.BuildAndRunT(t, "test-build-context", buildOpts)
+
+	// Verify container was created
+	if r == nil {
+		t.Fatal("BuildAndRunT returned nil resource")
+	}
+	if r.ID() == "" {
+		t.Fatal("Resource has empty container ID")
+	}
+
+	// Wait for container to output
+	time.Sleep(2 * time.Second)
+
+	// Get logs and verify output
+	logs, err := r.Logs(t.Context())
+	if err != nil {
+		t.Fatalf("Failed to get container logs: %v", err)
+	}
+
+	if !strings.Contains(logs, "Hello, World!") {
+		t.Fatalf("Expected logs to contain 'Hello, World!', got: %s", logs)
 	}
 
 	// Cleanup

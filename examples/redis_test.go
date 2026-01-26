@@ -4,11 +4,10 @@
 package examples_test
 
 import (
+	"github.com/ory/dockertest/v4"
+	"github.com/redis/go-redis/v9"
 	"testing"
 	"time"
-
-	dockertest "github.com/ory/dockertest/v4"
-	"github.com/redis/go-redis/v9"
 )
 
 func TestRedis(t *testing.T) {

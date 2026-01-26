@@ -20,6 +20,7 @@ type DockerClient interface {
 	ContainerInspect(ctx context.Context, containerID string, options mobyclient.ContainerInspectOptions) (mobyclient.ContainerInspectResult, error)
 	ContainerRemove(ctx context.Context, containerID string, options mobyclient.ContainerRemoveOptions) (mobyclient.ContainerRemoveResult, error)
 	ContainerList(ctx context.Context, options mobyclient.ContainerListOptions) (mobyclient.ContainerListResult, error)
+	ContainerLogs(ctx context.Context, containerID string, options mobyclient.ContainerLogsOptions) (mobyclient.ContainerLogsResult, error)
 
 	ExecCreate(ctx context.Context, containerID string, options mobyclient.ExecCreateOptions) (mobyclient.ExecCreateResult, error)
 	ExecStart(ctx context.Context, execID string, options mobyclient.ExecStartOptions) (mobyclient.ExecStartResult, error)

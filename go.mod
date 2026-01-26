@@ -3,13 +3,13 @@ module github.com/ory/dockertest/v4
 go 1.25.5
 
 require (
+	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/moby/moby/api v1.52.0
 	github.com/moby/moby/client v0.2.1
 )
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
-	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/distribution/reference v0.6.0 // indirect

@@ -4,8 +4,12 @@
 package dockertest
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
+	"errors"
 	"fmt"
+	"io"
 
 	"github.com/moby/moby/api/types/network"
 	mobyclient "github.com/moby/moby/client"
@@ -95,4 +99,59 @@ func (r *Resource) Cleanup(t TestingTB) {
 	t.Cleanup(func() {
 		_ = r.Close(context.Background()) //nolint:errcheck // Best effort cleanup in test cleanup
 	})
+}
+
+// Logs returns the container logs, demultiplexing stdout and stderr streams.
+// Both stdout and stderr are combined in the returned string.
+func (r *Resource) Logs(ctx context.Context) (string, error) {
+	if r.pool == nil || r.pool.client == nil {
+		return "", fmt.Errorf("pool or client is nil")
+	}
+
+	reader, err := r.pool.client.ContainerLogs(ctx, r.Container.ID, mobyclient.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to get container logs: %w", err)
+	}
+	defer reader.Close()
+
+	// Read and demultiplex Docker log format
+	var result bytes.Buffer
+	header := make([]byte, 8)
+
+	for {
+		// Read header: [stream_type (1 byte), padding (3 bytes), size (4 bytes)]
+		n, err := io.ReadFull(reader, header)
+		if err == io.EOF {
+			break
+		}
+		if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
+			return "", fmt.Errorf("failed to read log header: %w", err)
+		}
+		if n == 0 {
+			break
+		}
+		if n < 8 {
+			// Partial header at end of stream, ignore
+			break
+		}
+
+		// Extract size from header (big-endian uint32 at bytes 4-7)
+		size := binary.BigEndian.Uint32(header[4:8])
+		if size == 0 {
+			continue
+		}
+
+		// Read the log message
+		message := make([]byte, size)
+		if _, err := io.ReadFull(reader, message); err != nil {
+			return "", fmt.Errorf("failed to read log message: %w", err)
+		}
+
+		result.Write(message)
+	}
+
+	return result.String(), nil
 }

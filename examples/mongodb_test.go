@@ -4,13 +4,12 @@
 package examples_test
 
 import (
-	"testing"
-	"time"
-
-	dockertest "github.com/ory/dockertest/v4"
+	"github.com/ory/dockertest/v4"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"testing"
+	"time"
 )
 
 func TestMongoDB(t *testing.T) {

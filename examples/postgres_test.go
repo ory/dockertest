@@ -6,11 +6,10 @@ package examples_test
 import (
 	"database/sql"
 	"fmt"
+	_ "github.com/lib/pq"
+	"github.com/ory/dockertest/v4"
 	"testing"
 	"time"
-
-	_ "github.com/lib/pq"
-	dockertest "github.com/ory/dockertest/v4"
 )
 
 func TestPostgreSQL(t *testing.T) {
