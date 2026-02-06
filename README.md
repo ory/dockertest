@@ -41,8 +41,7 @@ Dockertest supports running any Docker Image from Docker Hub and Dockerfile.
 When developing applications, it is often necessary to use services that talk to
 a database system. Unit testing these services can be cumbersome because mocking
 rewriting at least some, if not all mocks. The same goes for API changes in the
-database/DBAL is strenuous. Making slight changes to the schema implies
-DBAL.
+database/DBAL is strenuous. Making slight changes to the schema implies DBAL.
 
 To avoid this, it is smarter to test these specific services against a real
 database that is destroyed after testing. Docker is the perfect system for

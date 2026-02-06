@@ -5,6 +5,10 @@ package dockertest
 
 import (
 	"context"
+	"fmt"
+	"net/netip"
+	"strings"
+	"time"
 
 	"github.com/moby/moby/api/types/network"
 	mobyclient "github.com/moby/moby/client"
@@ -65,7 +69,10 @@ func (p *Pool) CreateNetwork(ctx context.Context, name string, opts *NetworkCrea
 	// Create the network
 	createResp, err := p.client.NetworkCreate(ctx, name, createOpts)
 	if err != nil {
-		return nil, err
+		createResp, err = p.retryNetworkCreateWithCustomSubnet(ctx, name, createOpts, err)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Inspect the network to get full details
@@ -80,6 +87,50 @@ func (p *Pool) CreateNetwork(ctx context.Context, name string, opts *NetworkCrea
 		pool:    p,
 		Network: inspectResp.Network,
 	}, nil
+}
+
+func (p *Pool) retryNetworkCreateWithCustomSubnet(
+	ctx context.Context,
+	name string,
+	createOpts mobyclient.NetworkCreateOptions,
+	createErr error,
+) (mobyclient.NetworkCreateResult, error) {
+	if createOpts.IPAM != nil || !strings.Contains(createErr.Error(), "all predefined address pools have been fully subnetted") {
+		return mobyclient.NetworkCreateResult{}, createErr
+	}
+
+	seed := time.Now().UnixNano()
+	for i := 0; i < 128; i++ {
+		thirdOctet := (int(seed>>8) + i) % 256
+		secondOctet := 16 + ((int(seed>>16) + i) % 16) // 172.16.0.0/12 private range
+		subnet := fmt.Sprintf("172.%d.%d.0/24", secondOctet, thirdOctet)
+		prefix, err := netip.ParsePrefix(subnet)
+		if err != nil {
+			continue
+		}
+
+		retryOpts := createOpts
+		retryOpts.IPAM = &network.IPAM{
+			Driver: "default",
+			Config: []network.IPAMConfig{
+				{Subnet: prefix},
+			},
+		}
+
+		createResp, err := p.client.NetworkCreate(ctx, name, retryOpts)
+		if err == nil {
+			return createResp, nil
+		}
+
+		if strings.Contains(err.Error(), "Pool overlaps with other one on this address space") ||
+			strings.Contains(err.Error(), "all predefined address pools have been fully subnetted") {
+			continue
+		}
+
+		return mobyclient.NetworkCreateResult{}, err
+	}
+
+	return mobyclient.NetworkCreateResult{}, createErr
 }
 
 // CreateNetworkT creates a network using t.Context() and calls t.Fatalf on error.
@@ -109,7 +160,7 @@ func (n *Network) Close(ctx context.Context) error {
 // CloseT removes the network and calls t.Fatalf on error.
 func (n *Network) CloseT(t TestingTB) {
 	t.Helper()
-	if err := n.Close(t.Context()); err != nil {
+	if err := n.Close(context.WithoutCancel(t.Context())); err != nil {
 		t.Fatalf("CloseT failed: %v", err)
 	}
 }

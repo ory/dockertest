@@ -20,7 +20,7 @@ This guide helps you migrate from dockertest v3 to v4.
 | `defer pool.Purge(resource)`                                                        | `resource.Cleanup(t)` or automatic via `pool.Cleanup()`                                                        |
 | No context support                                                                  | Context throughout                                                                                             |
 | Manual container reuse                                                              | Automatic container reuse by default                                                                           |
-| Generic errors                                                                      | Sentinel errors (`ErrImagePullFailed`, `ErrTimeout`)                                                           |
+| Generic errors                                                                      | Sentinel errors (`ErrImagePullFailed`) plus context errors (`context.DeadlineExceeded`)                        |
 
 ## Breaking Changes
 
@@ -130,7 +130,7 @@ resource, err := pool.Run(ctx, "postgres", dockertest.WithTag("14"))
 if errors.Is(err, dockertest.ErrImagePullFailed) {
     // Handle image pull failure
 }
-if errors.Is(err, dockertest.ErrTimeout) {
+if errors.Is(err, context.DeadlineExceeded) {
     // Handle timeout
 }
 ```

@@ -15,12 +15,20 @@ import (
 type Resource struct {
 	pool      *Pool
 	Container container.InspectResponse
+	reuseID   string
 }
 
 // ID returns the container ID.
 func (r *Resource) ID() string {
 	return r.Container.ID
 }
+
+type registryKey struct {
+	scope   string
+	reuseID string
+}
+
+const defaultRegistryScope = "default"
 
 // globalRegistry is the package-level container registry using sync.Map for thread-safety.
 var globalRegistry sync.Map
@@ -39,9 +47,7 @@ var globalRegistry sync.Map
 // Note: This function is called automatically by Pool.Run when container reuse
 // is enabled. You typically don't need to call it directly.
 func Register(reuseID string, r *Resource) error {
-	// LoadOrStore is atomic; race conditions are safe because competing
-	// resources have identical configurations.
-	globalRegistry.LoadOrStore(reuseID, r)
+	_, _ = registerWithScope(defaultRegistryScope, reuseID, r)
 	return nil
 }
 
@@ -54,15 +60,7 @@ func Register(reuseID string, r *Resource) error {
 // Note: This function is called automatically by Pool.Run when checking for
 // existing containers. You typically don't need to call it directly.
 func Get(reuseID string) (*Resource, bool) {
-	val, ok := globalRegistry.Load(reuseID)
-	if !ok {
-		return nil, false
-	}
-	resource, ok := val.(*Resource)
-	if !ok {
-		return nil, false
-	}
-	return resource, true
+	return getWithScope(defaultRegistryScope, reuseID)
 }
 
 // GetAll returns a slice of all resources in the global registry.
@@ -77,9 +75,43 @@ func Get(reuseID string) (*Resource, bool) {
 //		dockertest.ResetRegistry()
 //	}
 func GetAll() []*Resource {
+	return getAllWithScope(defaultRegistryScope)
+}
+
+func registerWithScope(scope, reuseID string, r *Resource) (*Resource, bool) {
+	key := registryKey{scope: scope, reuseID: reuseID}
+	actual, loaded := globalRegistry.LoadOrStore(key, r)
+	resource, ok := actual.(*Resource)
+	if !ok {
+		return r, loaded
+	}
+	return resource, loaded
+}
+
+func unregisterWithScope(scope, reuseID string) {
+	globalRegistry.Delete(registryKey{scope: scope, reuseID: reuseID})
+}
+
+func getWithScope(scope, reuseID string) (*Resource, bool) {
+	val, ok := globalRegistry.Load(registryKey{scope: scope, reuseID: reuseID})
+	if !ok {
+		return nil, false
+	}
+	resource, ok := val.(*Resource)
+	if !ok {
+		return nil, false
+	}
+	return resource, true
+}
+
+func getAllWithScope(scope string) []*Resource {
 	var resources []*Resource
 
-	globalRegistry.Range(func(_, value any) bool {
+	globalRegistry.Range(func(key, value any) bool {
+		regKey, ok := key.(registryKey)
+		if !ok || regKey.scope != scope {
+			return true
+		}
 		if resource, ok := value.(*Resource); ok {
 			resources = append(resources, resource)
 		}
@@ -87,6 +119,21 @@ func GetAll() []*Resource {
 	})
 
 	return resources
+}
+
+func resetRegistryWithScope(scope string) {
+	var keys []registryKey
+	globalRegistry.Range(func(key, _ any) bool {
+		regKey, ok := key.(registryKey)
+		if ok && regKey.scope == scope {
+			keys = append(keys, regKey)
+		}
+		return true
+	})
+
+	for _, key := range keys {
+		globalRegistry.Delete(key)
+	}
 }
 
 // ResetRegistry clears all resources from the global registry.

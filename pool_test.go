@@ -7,6 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containerd/errdefs"
+	"github.com/moby/moby/api/types/container"
 	mobyclient "github.com/moby/moby/client"
 	"github.com/ory/dockertest/v4/internal/client"
 )
@@ -175,4 +177,48 @@ func TestPoolCleanup(t *testing.T) {
 			t.Errorf("Cleanup() error = %v, want nil", err)
 		}
 	})
+}
+
+func TestCheckForExistingUsesPoolScope(t *testing.T) {
+	ResetRegistry()
+
+	resource := &Resource{Container: container.InspectResponse{ID: "scoped-container"}}
+	_, _ = registerWithScope("scope-a", "reuse-id", resource)
+
+	poolA := &Pool{reuseScope: "scope-a"}
+	if got := checkForExisting(poolA, "reuse-id"); got == nil || got.ID() != "scoped-container" {
+		t.Fatalf("checkForExisting(scope-a) = %#v, want container scoped-container", got)
+	}
+
+	poolB := &Pool{reuseScope: "scope-b"}
+	if got := checkForExisting(poolB, "reuse-id"); got != nil {
+		t.Fatalf("checkForExisting(scope-b) = %#v, want nil", got)
+	}
+}
+
+func TestPoolCleanupRemovesWithoutReuse(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	ResetRegistry()
+	t.Cleanup(func() {
+		ResetRegistry()
+	})
+
+	pool := NewPoolT(t, "")
+	resource := pool.RunT(t, "alpine",
+		WithTag("latest"),
+		WithCmd([]string{"sleep", "300"}),
+		WithoutReuse(),
+	)
+
+	if err := pool.Cleanup(t.Context()); err != nil {
+		t.Fatalf("Cleanup() error = %v", err)
+	}
+
+	_, err := pool.client.ContainerInspect(t.Context(), resource.ID(), mobyclient.ContainerInspectOptions{})
+	if !errdefs.IsNotFound(err) {
+		t.Fatalf("ContainerInspect() error = %v, want not found", err)
+	}
 }

@@ -4,16 +4,23 @@
 package dockertest_test
 
 import (
+	"fmt"
 	"testing"
+	"time"
 
 	dockertest "github.com/ory/dockertest/v4"
 )
 
+func uniqueNetworkName(prefix string) string {
+	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
+}
+
 func TestPoolCreateNetwork(t *testing.T) {
 	t.Run("creates network with name", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
+		name := uniqueNetworkName("test-network")
 
-		network, err := pool.CreateNetwork(t.Context(), "test-network", nil)
+		network, err := pool.CreateNetwork(t.Context(), name, nil)
 		if err != nil {
 			t.Fatalf("CreateNetwork() error = %v, want nil", err)
 		}
@@ -24,8 +31,8 @@ func TestPoolCreateNetwork(t *testing.T) {
 			network.Close(t.Context())
 		})
 
-		if network.Network.Name != "test-network" {
-			t.Errorf("network.Network.Name = %q, want %q", network.Network.Name, "test-network")
+		if network.Network.Name != name {
+			t.Errorf("network.Network.Name = %q, want %q", network.Network.Name, name)
 		}
 		if network.Network.ID == "" {
 			t.Error("network.Network.ID is empty, want non-empty")
@@ -41,8 +48,9 @@ func TestPoolCreateNetwork(t *testing.T) {
 				"test": "label",
 			},
 		}
+		name := uniqueNetworkName("test-network-opts")
 
-		network, err := pool.CreateNetwork(t.Context(), "test-network-opts", &opts)
+		network, err := pool.CreateNetwork(t.Context(), name, &opts)
 		if err != nil {
 			t.Fatalf("CreateNetwork() error = %v, want nil", err)
 		}
@@ -60,8 +68,9 @@ func TestPoolCreateNetwork(t *testing.T) {
 
 	t.Run("creates network with nil options", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
+		name := uniqueNetworkName("test-network-nil")
 
-		network, err := pool.CreateNetwork(t.Context(), "test-network-nil", nil)
+		network, err := pool.CreateNetwork(t.Context(), name, nil)
 		if err != nil {
 			t.Fatalf("CreateNetwork() error = %v, want nil", err)
 		}
@@ -69,8 +78,8 @@ func TestPoolCreateNetwork(t *testing.T) {
 			network.Close(t.Context())
 		})
 
-		if network.Network.Name != "test-network-nil" {
-			t.Errorf("network.Network.Name = %q, want %q", network.Network.Name, "test-network-nil")
+		if network.Network.Name != name {
+			t.Errorf("network.Network.Name = %q, want %q", network.Network.Name, name)
 		}
 	})
 }
@@ -78,8 +87,9 @@ func TestPoolCreateNetwork(t *testing.T) {
 func TestPoolCreateNetworkT(t *testing.T) {
 	t.Run("creates network using t.Context", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
+		name := uniqueNetworkName("test-network-t")
 
-		network := pool.CreateNetworkT(t, "test-network-t", nil)
+		network := pool.CreateNetworkT(t, name, nil)
 		if network == nil {
 			t.Fatal("CreateNetworkT() network = nil, want non-nil")
 		}
@@ -87,8 +97,8 @@ func TestPoolCreateNetworkT(t *testing.T) {
 			network.Close(t.Context())
 		})
 
-		if network.Network.Name != "test-network-t" {
-			t.Errorf("network.Network.Name = %q, want %q", network.Network.Name, "test-network-t")
+		if network.Network.Name != name {
+			t.Errorf("network.Network.Name = %q, want %q", network.Network.Name, name)
 		}
 	})
 }
@@ -96,8 +106,7 @@ func TestPoolCreateNetworkT(t *testing.T) {
 func TestNetworkClose(t *testing.T) {
 	t.Run("removes network", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
-		// Use a unique name based on current time to avoid conflicts
-		networkName := "test-network-close-" + t.Name()
+		networkName := uniqueNetworkName("test-network-close")
 		network := pool.CreateNetworkT(t, networkName, nil)
 
 		err := network.Close(t.Context())
@@ -119,7 +128,7 @@ func TestNetworkClose(t *testing.T) {
 func TestNetworkCloseT(t *testing.T) {
 	t.Run("removes network using t.Context", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
-		network := pool.CreateNetworkT(t, "test-network-closet", nil)
+		network := pool.CreateNetworkT(t, uniqueNetworkName("test-network-closet"), nil)
 
 		network.CloseT(t)
 
@@ -130,7 +139,7 @@ func TestNetworkCloseT(t *testing.T) {
 func TestResourceConnectToNetwork(t *testing.T) {
 	t.Run("connects container to network", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
-		network := pool.CreateNetworkT(t, "test-connect-network", nil)
+		network := pool.CreateNetworkT(t, uniqueNetworkName("test-connect-network"), nil)
 		t.Cleanup(func() {
 			network.Close(t.Context())
 		})
@@ -156,7 +165,7 @@ func TestResourceConnectToNetwork(t *testing.T) {
 func TestResourceDisconnectFromNetwork(t *testing.T) {
 	t.Run("disconnects container from network", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
-		network := pool.CreateNetworkT(t, "test-disconnect-network", nil)
+		network := pool.CreateNetworkT(t, uniqueNetworkName("test-disconnect-network"), nil)
 		t.Cleanup(func() {
 			network.Close(t.Context())
 		})
@@ -195,7 +204,7 @@ func TestResourceDisconnectFromNetwork(t *testing.T) {
 func TestResourceGetIPInNetwork(t *testing.T) {
 	t.Run("returns IP in network", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
-		network := pool.CreateNetworkT(t, "test-getip-network", nil)
+		network := pool.CreateNetworkT(t, uniqueNetworkName("test-getip-network"), nil)
 		t.Cleanup(func() {
 			network.Close(t.Context())
 		})
@@ -223,7 +232,7 @@ func TestResourceGetIPInNetwork(t *testing.T) {
 
 	t.Run("returns empty for non-connected network", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
-		network := pool.CreateNetworkT(t, "test-noip-network", nil)
+		network := pool.CreateNetworkT(t, uniqueNetworkName("test-noip-network"), nil)
 		t.Cleanup(func() {
 			network.Close(t.Context())
 		})
@@ -246,7 +255,7 @@ func TestNetworkIntegration(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
 
 		// Create custom network
-		network := pool.CreateNetworkT(t, "test-integration-network", nil)
+		network := pool.CreateNetworkT(t, uniqueNetworkName("test-integration-network"), nil)
 		t.Cleanup(func() {
 			network.Close(t.Context())
 		})

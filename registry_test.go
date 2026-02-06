@@ -162,3 +162,60 @@ func TestRegistryConcurrency(t *testing.T) {
 		t.Errorf("GetAll() length = %v, want 1 (only first registration should succeed)", len(all))
 	}
 }
+
+func TestRegistryScopes(t *testing.T) {
+	ResetRegistry()
+
+	r1 := &Resource{Container: container.InspectResponse{ID: "scope-a-container"}}
+	r2 := &Resource{Container: container.InspectResponse{ID: "scope-b-container"}}
+
+	_, loadedA := registerWithScope("scope-a", "same-reuse-id", r1)
+	if loadedA {
+		t.Fatal("registerWithScope(scope-a) loaded = true, want false")
+	}
+	_, loadedB := registerWithScope("scope-b", "same-reuse-id", r2)
+	if loadedB {
+		t.Fatal("registerWithScope(scope-b) loaded = true, want false")
+	}
+
+	gotA, okA := getWithScope("scope-a", "same-reuse-id")
+	if !okA || gotA.ID() != "scope-a-container" {
+		t.Fatalf("scope-a lookup failed: ok=%v id=%v", okA, gotA)
+	}
+
+	gotB, okB := getWithScope("scope-b", "same-reuse-id")
+	if !okB || gotB.ID() != "scope-b-container" {
+		t.Fatalf("scope-b lookup failed: ok=%v id=%v", okB, gotB)
+	}
+
+	resetRegistryWithScope("scope-a")
+	if _, ok := getWithScope("scope-a", "same-reuse-id"); ok {
+		t.Fatal("scope-a entry still present after resetRegistryWithScope")
+	}
+	if _, ok := getWithScope("scope-b", "same-reuse-id"); !ok {
+		t.Fatal("scope-b entry unexpectedly removed by scope-a reset")
+	}
+}
+
+func TestRegisterWithScopeLoadOrStore(t *testing.T) {
+	ResetRegistry()
+
+	first := &Resource{Container: container.InspectResponse{ID: "first"}}
+	second := &Resource{Container: container.InspectResponse{ID: "second"}}
+
+	stored, loaded := registerWithScope("scope", "reuse", first)
+	if loaded {
+		t.Fatal("first registerWithScope call loaded = true, want false")
+	}
+	if stored.ID() != first.ID() {
+		t.Fatalf("first stored resource = %q, want %q", stored.ID(), first.ID())
+	}
+
+	stored, loaded = registerWithScope("scope", "reuse", second)
+	if !loaded {
+		t.Fatal("second registerWithScope call loaded = false, want true")
+	}
+	if stored.ID() != first.ID() {
+		t.Fatalf("second stored resource = %q, want %q", stored.ID(), first.ID())
+	}
+}

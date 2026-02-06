@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 
 	"github.com/moby/moby/api/types/network"
 	mobyclient "github.com/moby/moby/client"
@@ -50,7 +51,12 @@ func (r *Resource) GetBoundIP(portID string) string {
 		return ""
 	}
 
-	return bindings[0].HostIP.String()
+	ip := bindings[0].HostIP.String()
+	if ip == "" || ip == "0.0.0.0" || ip == "::" {
+		return "localhost"
+	}
+
+	return ip
 }
 
 // GetHostPort returns the host:port combination for the given container port.
@@ -63,7 +69,7 @@ func (r *Resource) GetHostPort(portID string) string {
 		return ""
 	}
 
-	return fmt.Sprintf("%s:%s", ip, port)
+	return net.JoinHostPort(ip, port)
 }
 
 // Close stops and removes the container.
@@ -81,13 +87,22 @@ func (r *Resource) Close(ctx context.Context) error {
 		RemoveVolumes: true,
 		Force:         true,
 	})
-	return err
+	if err != nil {
+		return err
+	}
+
+	if r.reuseID != "" {
+		unregisterWithScope(r.pool.reuseScope, r.reuseID)
+	}
+	r.pool.untrackResource(r.Container.ID)
+
+	return nil
 }
 
 // CloseT stops and removes the container and calls t.Fatalf on error.
 func (r *Resource) CloseT(t TestingTB) {
 	t.Helper()
-	if err := r.Close(t.Context()); err != nil {
+	if err := r.Close(context.WithoutCancel(t.Context())); err != nil {
 		t.Fatalf("CloseT failed: %v", err)
 	}
 }
