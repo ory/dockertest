@@ -159,8 +159,8 @@ func (r *Resource) Logs(ctx context.Context) (string, error) {
 			continue
 		}
 
-		const maxLogMessageSize = 64 * 1024 * 1024  // 64 MiB per message
-		const maxTotalLogSize = 256 * 1024 * 1024   // 256 MiB total
+		const maxLogMessageSize = 64 * 1024 * 1024 // 64 MiB per message
+		const maxTotalLogSize = 256 * 1024 * 1024  // 256 MiB total
 		if size > maxLogMessageSize {
 			return "", fmt.Errorf("log message size %d exceeds maximum %d", size, maxLogMessageSize)
 		}

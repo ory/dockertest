@@ -1,6 +1,8 @@
 ---
 date: 2026-02-06
-reason: Critical code review of entire Go codebase by Opus 4.6, finding issues from earlier AI-generated code
+reason:
+  Critical code review of entire Go codebase by Opus 4.6, finding issues from
+  earlier AI-generated code
 ---
 
 # Code Review: ory/dockertest v4
@@ -28,8 +30,8 @@ if err == io.EOF {
 ```
 
 Violates project rule: "Do not use equality for error comparison. Always use
-errors.Is()." Line 145 in the same function correctly uses `errors.Is(err,
-io.ErrUnexpectedEOF)`.
+errors.Is()." Line 145 in the same function correctly uses
+`errors.Is(err, io.ErrUnexpectedEOF)`.
 
 ### B3: `Remove` field logic is inverted (build.go:113)
 
@@ -47,9 +49,9 @@ with `!buildOpts.ForceRemove` -> use a `NoRemove` bool, or hardcode `true`.
 if _, drainErr := io.Copy(io.Discard, buildResult.Body); drainErr != nil {
 ```
 
-Docker build API returns errors *inside* the JSON stream body as
-`{"error":"..."}` messages, not as HTTP errors. Draining to `io.Discard` means
-a failing `RUN` command, Dockerfile syntax error, etc. is silently swallowed.
+Docker build API returns errors _inside_ the JSON stream body as
+`{"error":"..."}` messages, not as HTTP errors. Draining to `io.Discard` means a
+failing `RUN` command, Dockerfile syntax error, etc. is silently swallowed.
 `BuildAndRun` appears to succeed, then `Run` fails with confusing "image not
 found".
 
@@ -59,8 +61,8 @@ found".
 header, err := tar.FileInfoHeader(info, "")
 ```
 
-The second argument to `FileInfoHeader` is the symlink target. Passing `""` means
-symlinks get empty targets. The walk callback then opens the file
+The second argument to `FileInfoHeader` is the symlink target. Passing `""`
+means symlinks get empty targets. The walk callback then opens the file
 (`os.Open(path)` follows the symlink) and writes content, but the tar header
 says `TypeSymlink` with `Linkname: ""`. This is an inconsistent tar entry.
 
@@ -87,8 +89,8 @@ be equally effective at avoiding collisions and easier to debug.
 
 ### I1: `Pool.Close()` not truly idempotent (pool.go:161-166)
 
-Doc says "safe to call Close multiple times" but after first call, `p.client`
-is still non-nil and `p.ownedClient` is still true. Second call calls
+Doc says "safe to call Close multiple times" but after first call, `p.client` is
+still non-nil and `p.ownedClient` is still true. Second call calls
 `p.client.Close()` again. Should set `p.client = nil` after first close.
 
 ### I2: Shallow clone of Resource shares InspectResponse (pool.go:260-261)
@@ -138,8 +140,8 @@ errors (handled line 145), `n` can never be 0 at line 148.
 
 ### I7: `Cleanup` swallows close error silently (resource.go:115)
 
-Compare with `NewPoolT` (pool.go:148-149) which reports errors via
-`t.Errorf`. `Cleanup` should at minimum log cleanup failures.
+Compare with `NewPoolT` (pool.go:148-149) which reports errors via `t.Errorf`.
+`Cleanup` should at minimum log cleanup failures.
 
 ### I8: `ConnectToNetwork`/`DisconnectFromNetwork` return nil on nil pool (network.go:172-174, 199-201)
 
@@ -150,8 +152,8 @@ Silently returns nil on what is a programming error. Should return an error.
 
 Two goroutines calling `Run` concurrently with same `reuseID` both pass
 `checkForExisting`, both create containers, then `inspectAndRegister` cleans up
-the duplicate. This works but wastes Docker resources. A `singleflight`
-approach keyed on `reuseID` would be the proper fix.
+the duplicate. This works but wastes Docker resources. A `singleflight` approach
+keyed on `reuseID` would be the proper fix.
 
 ### I10: `Pool.MaxWait` is dead configuration (pool.go:40, retry.go:61)
 
@@ -171,12 +173,13 @@ standard Docker behavior.
 
 ### I13: `filepath.Walk` vs `filepath.WalkDir` (build.go:205)
 
-`filepath.WalkDir` (Go 1.16+) avoids `os.Lstat` per file. Better performance
-for large build contexts.
+`filepath.WalkDir` (Go 1.16+) avoids `os.Lstat` per file. Better performance for
+large build contexts.
 
 ### I14: `clientScope` uses reflect for pointer-based scoping (pool.go:98-110)
 
-Overly complex. Since `DockerClient` is always a pointer type, `fmt.Sprintf("%p", c)` suffices.
+Overly complex. Since `DockerClient` is always a pointer type,
+`fmt.Sprintf("%p", c)` suffices.
 
 ## TEST GAPS
 
