@@ -4,6 +4,7 @@
 package dockertest_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -72,11 +73,11 @@ func TestBuildAndRunWithBuildArgs(t *testing.T) {
 	// Create a temporary directory for build context
 	tmpDir := t.TempDir()
 
-	// Write a Dockerfile that uses build args
+	// Write a Dockerfile that uses build args and prints the value
 	dockerfile := `FROM alpine:latest
 ARG TEST_ARG
 ENV TEST_ENV=${TEST_ARG}
-CMD ["sleep", "300"]
+CMD ["sh", "-c", "echo TEST_ENV=$TEST_ENV && sleep 300"]
 `
 	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
 	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0o644); err != nil {
@@ -92,17 +93,24 @@ CMD ["sleep", "300"]
 	}
 
 	r := pool.BuildAndRunT(t, "test-build-args", buildOpts)
+	t.Cleanup(func() { r.Close(t.Context()) })
 
-	// Verify container was created
-	if r == nil {
-		t.Fatal("BuildAndRunT returned nil resource")
+	// Verify build arg was applied by checking container env via logs
+	var logs string
+	err := pool.Retry(t.Context(), 10*time.Second, func() error {
+		var logErr error
+		logs, logErr = r.Logs(t.Context())
+		if logErr != nil {
+			return logErr
+		}
+		if !strings.Contains(logs, "TEST_ENV=test-value") {
+			return fmt.Errorf("logs do not yet contain expected env")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Expected logs to contain 'TEST_ENV=test-value', got: %s", logs)
 	}
-	if r.ID() == "" {
-		t.Fatal("Resource has empty container ID")
-	}
-
-	// Cleanup
-	r.CloseT(t)
 }
 
 func TestBuildAndRunWithRunOptions(t *testing.T) {
@@ -138,17 +146,24 @@ CMD ["sh", "-c", "echo $TEST_VAR && sleep 300"]
 	r := pool.BuildAndRunT(t, "test-build-env", buildOpts,
 		dockertest.WithEnv([]string{"TEST_VAR=hello"}),
 	)
+	t.Cleanup(func() { r.Close(t.Context()) })
 
-	// Verify container was created
-	if r == nil {
-		t.Fatal("BuildAndRunT returned nil resource")
+	// Verify env var took effect via logs
+	var logs string
+	err := pool.Retry(t.Context(), 10*time.Second, func() error {
+		var logErr error
+		logs, logErr = r.Logs(t.Context())
+		if logErr != nil {
+			return logErr
+		}
+		if !strings.Contains(logs, "hello") {
+			return fmt.Errorf("logs do not yet contain expected env value")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Expected logs to contain 'hello', got: %s", logs)
 	}
-	if r.ID() == "" {
-		t.Fatal("Resource has empty container ID")
-	}
-
-	// Cleanup
-	r.CloseT(t)
 }
 
 func TestBuildAndRunWithBuildContext(t *testing.T) {
@@ -181,17 +196,21 @@ func TestBuildAndRunWithBuildContext(t *testing.T) {
 		t.Fatal("Resource has empty container ID")
 	}
 
-	// Wait for container to output
-	time.Sleep(2 * time.Second)
-
-	// Get logs and verify output
-	logs, err := r.Logs(t.Context())
+	// Poll for expected log output
+	var logs string
+	err := pool.Retry(t.Context(), 10*time.Second, func() error {
+		var logErr error
+		logs, logErr = r.Logs(t.Context())
+		if logErr != nil {
+			return logErr
+		}
+		if !strings.Contains(logs, "Hello, World!") {
+			return fmt.Errorf("logs do not yet contain 'Hello, World!'")
+		}
+		return nil
+	})
 	if err != nil {
-		t.Fatalf("Failed to get container logs: %v", err)
-	}
-
-	if !strings.Contains(logs, "Hello, World!") {
-		t.Fatalf("Expected logs to contain 'Hello, World!', got: %s", logs)
+		t.Fatalf("Expected logs to contain 'Hello, World!', got: %s (error: %v)", logs, err)
 	}
 
 	// Cleanup

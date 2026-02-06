@@ -28,24 +28,24 @@ func TestPostgreSQL(t *testing.T) {
 	)
 	postgres.Cleanup(t)
 
+	// Open connection outside retry loop to avoid leaking connection pools
+	dsn := fmt.Sprintf("postgres://postgres:secret@%s/testdb?sslmode=disable",
+		postgres.GetHostPort("5432/tcp"))
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("sql.Open failed: %v", err)
+	}
+	t.Cleanup(func() {
+		db.Close()
+	})
+
 	// Wait for PostgreSQL to be ready
-	var db *sql.DB
-	err := pool.Retry(t.Context(), 30*time.Second, func() error {
-		var err error
-		dsn := fmt.Sprintf("postgres://postgres:secret@%s/testdb?sslmode=disable",
-			postgres.GetHostPort("5432/tcp"))
-		db, err = sql.Open("postgres", dsn)
-		if err != nil {
-			return err
-		}
+	err = pool.Retry(t.Context(), 30*time.Second, func() error {
 		return db.Ping()
 	})
 	if err != nil {
 		t.Fatalf("Could not connect to PostgreSQL: %v", err)
 	}
-	t.Cleanup(func() {
-		db.Close()
-	})
 
 	// Run a query
 	var version string

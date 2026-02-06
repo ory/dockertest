@@ -25,24 +25,24 @@ func TestCockroachDB(t *testing.T) {
 	)
 	cockroach.Cleanup(t)
 
+	// Open connection outside retry loop to avoid leaking connection pools
+	dsn := fmt.Sprintf("postgres://root@%s/defaultdb?sslmode=disable",
+		cockroach.GetHostPort("26257/tcp"))
+	db, err := sql.Open("postgres", dsn)
+	if err != nil {
+		t.Fatalf("sql.Open failed: %v", err)
+	}
+	t.Cleanup(func() {
+		db.Close()
+	})
+
 	// Wait for CockroachDB to be ready
-	var db *sql.DB
-	err := pool.Retry(t.Context(), 30*time.Second, func() error {
-		var err error
-		dsn := fmt.Sprintf("postgres://root@%s/defaultdb?sslmode=disable",
-			cockroach.GetHostPort("26257/tcp"))
-		db, err = sql.Open("postgres", dsn)
-		if err != nil {
-			return err
-		}
+	err = pool.Retry(t.Context(), 30*time.Second, func() error {
 		return db.Ping()
 	})
 	if err != nil {
 		t.Fatalf("Could not connect to CockroachDB: %v", err)
 	}
-	t.Cleanup(func() {
-		db.Close()
-	})
 
 	// Create a table and insert data
 	_, err = db.Exec("CREATE TABLE users (id INT PRIMARY KEY, name VARCHAR(50))")

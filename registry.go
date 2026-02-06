@@ -4,6 +4,7 @@
 package dockertest
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/moby/moby/api/types/container"
@@ -47,6 +48,12 @@ var globalRegistry sync.Map
 // Note: This function is called automatically by Pool.Run when container reuse
 // is enabled. You typically don't need to call it directly.
 func Register(reuseID string, r *Resource) error {
+	if reuseID == "" {
+		return fmt.Errorf("reuseID cannot be empty")
+	}
+	if r == nil {
+		return fmt.Errorf("resource cannot be nil")
+	}
 	_, _ = registerWithScope(defaultRegistryScope, reuseID, r)
 	return nil
 }
