@@ -7,9 +7,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"reflect"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	mobyclient "github.com/moby/moby/client"
 	"github.com/ory/dockertest/v4/internal/client"
@@ -35,6 +38,8 @@ type Pool struct {
 	client      client.DockerClient
 	ownedClient bool          // true if Pool created the client and should close it
 	MaxWait     time.Duration // maximum wait time for operations
+	reuseScope  string
+	resources   sync.Map
 }
 
 // NewPool creates a new Pool with the given endpoint and options.
@@ -85,7 +90,49 @@ func NewPool(ctx context.Context, endpoint string, opts ...PoolOption) (*Pool, e
 		p.ownedClient = true
 	}
 
+	p.reuseScope = clientScope(p.client)
+
 	return p, nil
+}
+
+func clientScope(c client.DockerClient) string {
+	if c == nil {
+		return "nil-client"
+	}
+
+	v := reflect.ValueOf(c)
+	switch v.Kind() {
+	case reflect.Ptr, reflect.UnsafePointer, reflect.Map, reflect.Chan, reflect.Func, reflect.Slice:
+		return fmt.Sprintf("%T:%x", c, v.Pointer())
+	default:
+		return fmt.Sprintf("%T:%v", c, c)
+	}
+}
+
+func (p *Pool) trackResource(resource *Resource) {
+	if resource == nil || resource.Container.ID == "" {
+		return
+	}
+	p.resources.Store(resource.Container.ID, resource)
+}
+
+func (p *Pool) untrackResource(containerID string) {
+	if containerID == "" {
+		return
+	}
+	p.resources.Delete(containerID)
+}
+
+func (p *Pool) trackedResources() []*Resource {
+	var resources []*Resource
+	p.resources.Range(func(_, value any) bool {
+		resource, ok := value.(*Resource)
+		if ok {
+			resources = append(resources, resource)
+		}
+		return true
+	})
+	return resources
 }
 
 // NewPoolT creates a new Pool using t.Context() and registers cleanup with t.Cleanup().
@@ -118,21 +165,24 @@ func (p *Pool) Close() error {
 	return nil
 }
 
-// Cleanup removes all containers in the global registry.
+// Cleanup removes all containers tracked by this pool.
 // Errors during cleanup do not stop the cleanup process.
 // The first error encountered is returned.
 func (p *Pool) Cleanup(ctx context.Context) error {
-	resources := GetAll()
+	cleanupCtx := context.WithoutCancel(ctx)
+	resources := p.trackedResources()
 
 	var firstErr error
 	for _, resource := range resources {
-		if err := resource.Close(ctx); err != nil && firstErr == nil {
+		if err := resource.Close(cleanupCtx); err != nil && firstErr == nil {
 			firstErr = err
 		}
+		p.untrackResource(resource.Container.ID)
 	}
 
-	// Clear the registry after cleanup
-	ResetRegistry()
+	if p.reuseScope != "" {
+		resetRegistryWithScope(p.reuseScope)
+	}
 
 	return firstErr
 }
@@ -158,7 +208,8 @@ func (p *Pool) Run(ctx context.Context, repository string, opts ...RunOption) (*
 
 	reuseID := computeReuseID(repository, cfg)
 
-	if existing := checkForExisting(reuseID); existing != nil {
+	if existing := checkForExisting(p, reuseID); existing != nil {
+		p.trackResource(existing)
 		return existing, nil
 	}
 
@@ -201,12 +252,14 @@ func computeReuseID(repository string, cfg *runConfig) string {
 }
 
 // checkForExisting looks up an existing container in the registry.
-func checkForExisting(reuseID string) *Resource {
+func checkForExisting(p *Pool, reuseID string) *Resource {
 	if reuseID == "" {
 		return nil
 	}
-	if existing, ok := Get(reuseID); ok {
-		return existing
+	if existing, ok := getWithScope(p.reuseScope, reuseID); ok {
+		cloned := *existing
+		cloned.pool = p
+		return &cloned
 	}
 	return nil
 }
@@ -215,6 +268,12 @@ func checkForExisting(reuseID string) *Resource {
 func (p *Pool) pullImage(ctx context.Context, ref string, noPull bool) error {
 	if noPull {
 		return nil
+	}
+
+	if _, err := p.client.ImageInspect(ctx, ref); err == nil {
+		return nil
+	} else if !errdefs.IsNotFound(err) {
+		return fmt.Errorf("image inspect failed for %s: %w", ref, err)
 	}
 
 	pullResp, err := p.client.ImagePull(ctx, ref, mobyclient.ImagePullOptions{})
@@ -285,13 +344,27 @@ func (p *Pool) inspectAndRegister(ctx context.Context, containerID, reuseID stri
 	resource := &Resource{
 		pool:      p,
 		Container: inspectResp.Container,
+		reuseID:   reuseID,
 	}
 
 	if reuseID != "" {
-		if err := Register(reuseID, resource); err != nil {
-			return nil, err
+		canonical, loaded := registerWithScope(p.reuseScope, reuseID, resource)
+		if loaded {
+			cleanupCtx := context.WithoutCancel(ctx)
+			_, _ = p.client.ContainerRemove(cleanupCtx, containerID, mobyclient.ContainerRemoveOptions{
+				Force:         true,
+				RemoveVolumes: true,
+			}) //nolint:errcheck // Best effort cleanup of duplicate container
+
+			cloned := *canonical
+			cloned.pool = p
+			resource = &cloned
+		} else {
+			resource = canonical
 		}
 	}
+
+	p.trackResource(resource)
 
 	return resource, nil
 }

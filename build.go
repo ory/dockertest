@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/distribution/reference"
 	mobyclient "github.com/moby/moby/client"
 )
 
@@ -131,16 +132,20 @@ func (p *Pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 		return nil, fmt.Errorf("failed to drain build response: %w", drainErr)
 	}
 
-	// Run the built image
-	// Use the first tag as the repository
-	// Add noPull option since we just built the image locally
+	// Run the built image.
+	repository, tag, err := splitImageReference(tags[0])
+	if err != nil {
+		return nil, fmt.Errorf("invalid image reference %q: %w", tags[0], err)
+	}
+
+	// Add noPull option since we just built the image locally.
 	noPullOpt := RunOption(func(rc *runConfig) error {
 		rc.noPull = true
 		return nil
 	})
-	allOpts := append([]RunOption{noPullOpt}, runOpts...)
+	allOpts := append(runOpts, noPullOpt, WithTag(tag))
 
-	resource, err := p.Run(ctx, tags[0], allOpts...)
+	resource, err := p.Run(ctx, repository, allOpts...)
 	if err != nil {
 		cleanupCtx := context.WithoutCancel(ctx)
 		for _, tag := range tags {
@@ -162,6 +167,21 @@ func (p *Pool) BuildAndRunT(t TestingTB, name string, buildOpts *BuildOptions, r
 	}
 
 	return r
+}
+
+func splitImageReference(ref string) (repository, tag string, err error) {
+	named, err := reference.ParseNormalizedNamed(ref)
+	if err != nil {
+		return "", "", err
+	}
+
+	repository = reference.FamiliarName(named)
+	tag = "latest"
+	if tagged, ok := named.(reference.Tagged); ok {
+		tag = tagged.Tag()
+	}
+
+	return repository, tag, nil
 }
 
 // createBuildContext creates a tar archive of the given directory for Docker build context.

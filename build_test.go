@@ -197,3 +197,74 @@ func TestBuildAndRunWithBuildContext(t *testing.T) {
 	// Cleanup
 	r.CloseT(t)
 }
+
+func TestBuildAndRunWithTaggedName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
+
+	pool := dockertest.NewPoolT(t, "")
+	tmpDir := t.TempDir()
+
+	dockerfile := `FROM alpine:latest
+CMD ["sleep", "300"]
+`
+	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
+	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0o644); err != nil {
+		t.Fatalf("Failed to write Dockerfile: %v", err)
+	}
+
+	imageRef := "dockertest-build-tagged:v1"
+	r := pool.BuildAndRunT(t, imageRef, &dockertest.BuildOptions{
+		Dockerfile: "Dockerfile",
+		ContextDir: tmpDir,
+	})
+
+	if r.Container.Config.Image != imageRef {
+		t.Fatalf("container image = %q, want %q", r.Container.Config.Image, imageRef)
+	}
+
+	r.CloseT(t)
+}
+
+func TestRunUsesLocalImageWithoutPull(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
+
+	pool := dockertest.NewPoolT(t, "")
+	tmpDir := t.TempDir()
+
+	dockerfile := `FROM alpine:latest
+CMD ["sleep", "300"]
+`
+	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
+	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0o644); err != nil {
+		t.Fatalf("Failed to write Dockerfile: %v", err)
+	}
+
+	// If Run attempts a pull, this registry will fail DNS resolution.
+	repository := "example.invalid/dockertest-local-skip-pull"
+
+	first := pool.BuildAndRunT(t, repository, &dockertest.BuildOptions{
+		Dockerfile: "Dockerfile",
+		ContextDir: tmpDir,
+	}, dockertest.WithoutReuse())
+	first.CloseT(t)
+
+	second := pool.RunT(t, repository,
+		dockertest.WithTag("latest"),
+		dockertest.WithoutReuse(),
+	)
+	second.CloseT(t)
+}
