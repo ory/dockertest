@@ -6,9 +6,9 @@ package dockertest
 import (
 	"context"
 	"fmt"
+	"hash/fnv"
 	"net/netip"
 	"strings"
-	"time"
 
 	"github.com/moby/moby/api/types/network"
 	mobyclient "github.com/moby/moby/client"
@@ -83,10 +83,13 @@ func (p *Pool) CreateNetwork(ctx context.Context, name string, opts *NetworkCrea
 		return nil, err
 	}
 
-	return &Network{
+	net := &Network{
 		pool:    p,
 		Network: inspectResp.Network,
-	}, nil
+	}
+	p.trackNetwork(net)
+
+	return net, nil
 }
 
 func (p *Pool) retryNetworkCreateWithCustomSubnet(
@@ -95,11 +98,15 @@ func (p *Pool) retryNetworkCreateWithCustomSubnet(
 	createOpts mobyclient.NetworkCreateOptions,
 	createErr error,
 ) (mobyclient.NetworkCreateResult, error) {
+	// NOTE: Error string matching is fragile and may break across Docker versions.
+	// Tested against Docker Engine 27.x. There is no structured error type for this.
 	if createOpts.IPAM != nil || !strings.Contains(createErr.Error(), "all predefined address pools have been fully subnetted") {
 		return mobyclient.NetworkCreateResult{}, createErr
 	}
 
-	seed := time.Now().UnixNano()
+	h := fnv.New64a()
+	h.Write([]byte(name))
+	seed := int64(h.Sum64())
 	for i := 0; i < 128; i++ {
 		thirdOctet := (int(seed>>8) + i) % 256
 		secondOctet := 16 + ((int(seed>>16) + i) % 16) // 172.16.0.0/12 private range
@@ -154,7 +161,12 @@ func (n *Network) Close(ctx context.Context) error {
 	}
 
 	_, err := n.pool.client.NetworkRemove(ctx, n.Network.ID, mobyclient.NetworkRemoveOptions{})
-	return err
+	if err != nil {
+		return err
+	}
+
+	n.pool.untrackNetwork(n.Network.ID)
+	return nil
 }
 
 // CloseT removes the network and calls t.Fatalf on error.
@@ -170,7 +182,7 @@ func (n *Network) CloseT(t TestingTB) {
 // network settings after connection.
 func (r *Resource) ConnectToNetwork(ctx context.Context, net *Network) error {
 	if r.pool == nil || r.pool.client == nil {
-		return nil
+		return fmt.Errorf("pool or client is nil")
 	}
 
 	connectOpts := mobyclient.NetworkConnectOptions{
@@ -197,7 +209,7 @@ func (r *Resource) ConnectToNetwork(ctx context.Context, net *Network) error {
 // network settings after disconnection.
 func (r *Resource) DisconnectFromNetwork(ctx context.Context, net *Network) error {
 	if r.pool == nil || r.pool.client == nil {
-		return nil
+		return fmt.Errorf("pool or client is nil")
 	}
 
 	disconnectOpts := mobyclient.NetworkDisconnectOptions{

@@ -6,8 +6,6 @@ package dockertest
 import (
 	"context"
 	"fmt"
-	"io"
-	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -25,7 +23,8 @@ type TestingTB interface {
 	Helper()
 	Context() context.Context
 	Cleanup(func())
-	Fatalf(format string, args ...interface{})
+	Logf(format string, args ...any)
+	Fatalf(format string, args ...any)
 }
 
 // Pool manages Docker resources and operations.
@@ -40,6 +39,7 @@ type Pool struct {
 	MaxWait     time.Duration // maximum wait time for operations
 	reuseScope  string
 	resources   sync.Map
+	networks    sync.Map
 }
 
 // NewPool creates a new Pool with the given endpoint and options.
@@ -99,14 +99,7 @@ func clientScope(c client.DockerClient) string {
 	if c == nil {
 		return "nil-client"
 	}
-
-	v := reflect.ValueOf(c)
-	switch v.Kind() {
-	case reflect.Ptr, reflect.UnsafePointer, reflect.Map, reflect.Chan, reflect.Func, reflect.Slice:
-		return fmt.Sprintf("%T:%x", c, v.Pointer())
-	default:
-		return fmt.Sprintf("%T:%v", c, c)
-	}
+	return fmt.Sprintf("%p", c)
 }
 
 func (p *Pool) trackResource(resource *Resource) {
@@ -121,6 +114,32 @@ func (p *Pool) untrackResource(containerID string) {
 		return
 	}
 	p.resources.Delete(containerID)
+}
+
+func (p *Pool) trackNetwork(net *Network) {
+	if net == nil || net.Network.ID == "" {
+		return
+	}
+	p.networks.Store(net.Network.ID, net)
+}
+
+func (p *Pool) untrackNetwork(networkID string) {
+	if networkID == "" {
+		return
+	}
+	p.networks.Delete(networkID)
+}
+
+func (p *Pool) trackedNetworks() []*Network {
+	var networks []*Network
+	p.networks.Range(func(_, value any) bool {
+		net, ok := value.(*Network)
+		if ok {
+			networks = append(networks, net)
+		}
+		return true
+	})
+	return networks
 }
 
 func (p *Pool) trackedResources() []*Resource {
@@ -160,24 +179,35 @@ func NewPoolT(t *testing.T, endpoint string, opts ...PoolOption) *Pool {
 // It is safe to call Close multiple times.
 func (p *Pool) Close() error {
 	if p.ownedClient && p.client != nil {
-		return p.client.Close()
+		err := p.client.Close()
+		p.client = nil
+		return err
 	}
 	return nil
 }
 
-// Cleanup removes all containers tracked by this pool.
-// Errors during cleanup do not stop the cleanup process.
-// The first error encountered is returned.
+// Cleanup removes all containers and networks tracked by this pool.
+// Containers are removed first, then networks. Errors during cleanup
+// do not stop the cleanup process. The first error encountered is returned.
 func (p *Pool) Cleanup(ctx context.Context) error {
 	cleanupCtx := context.WithoutCancel(ctx)
-	resources := p.trackedResources()
 
 	var firstErr error
-	for _, resource := range resources {
+
+	// Remove containers first (they may be connected to tracked networks)
+	for _, resource := range p.trackedResources() {
 		if err := resource.Close(cleanupCtx); err != nil && firstErr == nil {
 			firstErr = err
 		}
 		p.untrackResource(resource.Container.ID)
+	}
+
+	// Remove networks after containers are gone
+	for _, net := range p.trackedNetworks() {
+		if err := net.Close(cleanupCtx); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		p.untrackNetwork(net.Network.ID)
 	}
 
 	if p.reuseScope != "" {
@@ -252,6 +282,9 @@ func computeReuseID(repository string, cfg *runConfig) string {
 }
 
 // checkForExisting looks up an existing container in the registry.
+// The returned Resource is a shallow clone of the canonical registry entry
+// with the pool pointer updated to the caller's pool. This is safe because
+// Container (a value type) is copied, and reuseID is an immutable string.
 func checkForExisting(p *Pool, reuseID string) *Resource {
 	if reuseID == "" {
 		return nil
@@ -284,8 +317,10 @@ func (p *Pool) pullImage(ctx context.Context, ref string, noPull bool) error {
 		_ = pullResp.Close() //nolint:errcheck // Best effort close in defer
 	}()
 
-	if _, err := io.Copy(io.Discard, pullResp); err != nil {
-		return fmt.Errorf("%w: drain response for %s: %w", ErrImagePullFailed, ref, err)
+	// Wait consumes the JSON stream and surfaces any errors embedded in it
+	// (e.g. "manifest not found", authentication failures).
+	if err := pullResp.Wait(ctx); err != nil {
+		return fmt.Errorf("%w: %s: %w", ErrImagePullFailed, ref, err)
 	}
 
 	return nil

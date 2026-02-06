@@ -7,12 +7,14 @@ import (
 	"archive/tar"
 	"cmp"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/distribution/reference"
+	"github.com/moby/moby/api/types/jsonstream"
 	mobyclient "github.com/moby/moby/client"
 )
 
@@ -48,10 +50,6 @@ type BuildOptions struct {
 	// NoCache disables build cache when set to true.
 	// Useful for ensuring a clean build.
 	NoCache bool
-
-	// Remove removes intermediate containers after a successful build.
-	// Defaults to true.
-	Remove bool
 
 	// ForceRemove always removes intermediate containers, even on build failure.
 	// Useful for keeping the build environment clean.
@@ -110,7 +108,7 @@ func (p *Pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 		Dockerfile:  dockerfile,
 		BuildArgs:   buildOpts.BuildArgs,
 		NoCache:     buildOpts.NoCache,
-		Remove:      buildOpts.Remove || !buildOpts.ForceRemove, // default to true
+		Remove:      true,
 		ForceRemove: buildOpts.ForceRemove,
 		Labels:      buildOpts.Labels,
 	}
@@ -123,13 +121,15 @@ func (p *Pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 		_ = buildResult.Body.Close() //nolint:errcheck // Best effort close in defer
 	}()
 
-	// Drain build response to complete the build
-	if _, drainErr := io.Copy(io.Discard, buildResult.Body); drainErr != nil {
+	// Consume build response and check for errors in the JSON stream.
+	// Docker embeds build errors (failed RUN, syntax errors) as {"errorDetail":...}
+	// messages rather than returning them from ImageBuild directly.
+	if buildErr := drainBuildStream(buildResult.Body); buildErr != nil {
 		cleanupCtx := context.WithoutCancel(ctx)
 		for _, tag := range tags {
 			_, _ = p.client.ImageRemove(cleanupCtx, tag, mobyclient.ImageRemoveOptions{Force: true}) //nolint:errcheck // Best effort cleanup
 		}
-		return nil, fmt.Errorf("failed to drain build response: %w", drainErr)
+		return nil, fmt.Errorf("image build failed: %w", buildErr)
 	}
 
 	// Run the built image.
@@ -143,7 +143,9 @@ func (p *Pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 		rc.noPull = true
 		return nil
 	})
-	allOpts := append(runOpts, noPullOpt, WithTag(tag))
+	allOpts := make([]RunOption, 0, len(runOpts)+2)
+	allOpts = append(allOpts, runOpts...)
+	allOpts = append(allOpts, noPullOpt, WithTag(tag))
 
 	resource, err := p.Run(ctx, repository, allOpts...)
 	if err != nil {
@@ -185,24 +187,23 @@ func splitImageReference(ref string) (repository, tag string, err error) {
 }
 
 // createBuildContext creates a tar archive of the given directory for Docker build context.
-//
-//nolint:unparam // error is always nil by design; errors communicated via pipe
 func createBuildContext(contextDir string) (io.ReadCloser, error) {
+	info, err := os.Stat(contextDir)
+	if err != nil {
+		return nil, fmt.Errorf("build context directory: %w", err)
+	}
+	if !info.IsDir() {
+		return nil, fmt.Errorf("build context path %q is not a directory", contextDir)
+	}
+
 	// Create a pipe for streaming the tar archive
 	pr, pw := io.Pipe()
 
 	go func() {
-		defer func() {
-			_ = pw.Close() //nolint:errcheck // Error handled via CloseWithError below
-		}()
-
 		tw := tar.NewWriter(pw)
-		defer func() {
-			_ = tw.Close() //nolint:errcheck // Error handled via CloseWithError below
-		}()
 
 		// Walk the context directory and add files to tar
-		err := filepath.Walk(contextDir, func(path string, info os.FileInfo, err error) error {
+		err := filepath.WalkDir(contextDir, func(path string, d os.DirEntry, err error) error {
 			if err != nil {
 				return err
 			}
@@ -218,8 +219,27 @@ func createBuildContext(contextDir string) (io.ReadCloser, error) {
 				return nil
 			}
 
+			info, err := d.Info()
+			if err != nil {
+				return err
+			}
+
+			// Resolve symlink target for tar header
+			var link string
+			if info.Mode()&os.ModeSymlink != 0 {
+				link, err = os.Readlink(path)
+				if err != nil {
+					return err
+				}
+			}
+
+			// Skip non-regular files (devices, sockets, named pipes)
+			if !info.Mode().IsRegular() && !info.IsDir() && info.Mode()&os.ModeSymlink == 0 {
+				return nil
+			}
+
 			// Create tar header
-			header, err := tar.FileInfoHeader(info, "")
+			header, err := tar.FileInfoHeader(info, link)
 			if err != nil {
 				return err
 			}
@@ -232,9 +252,9 @@ func createBuildContext(contextDir string) (io.ReadCloser, error) {
 				return err
 			}
 
-			// Write file content for regular files
-			if !info.IsDir() {
-				// #nosec G304 -- path is from filepath.Walk of a known build context directory
+			// Write file content for regular files only
+			if info.Mode().IsRegular() {
+				// #nosec G304 -- path is from filepath.WalkDir of a known build context directory
 				file, err := os.Open(path)
 				if err != nil {
 					return err
@@ -252,10 +272,32 @@ func createBuildContext(contextDir string) (io.ReadCloser, error) {
 			return nil
 		})
 
-		if err != nil {
-			_ = pw.CloseWithError(err)
+		// Close tar writer to flush end-of-archive marker
+		if closeErr := tw.Close(); closeErr != nil && err == nil {
+			err = closeErr
 		}
+
+		// Always signal the pipe reader: nil for EOF, non-nil for error
+		pw.CloseWithError(err)
 	}()
 
 	return pr, nil
+}
+
+// drainBuildStream consumes the Docker build JSON stream and returns the first
+// error found. Docker embeds build errors (failed RUN commands, syntax errors)
+// as {"errorDetail":...} messages in the stream rather than returning them from
+// ImageBuild directly.
+func drainBuildStream(r io.Reader) error {
+	dec := json.NewDecoder(r)
+	for dec.More() {
+		var msg jsonstream.Message
+		if err := dec.Decode(&msg); err != nil {
+			return fmt.Errorf("decoding build stream: %w", err)
+		}
+		if msg.Error != nil {
+			return msg.Error
+		}
+	}
+	return nil
 }

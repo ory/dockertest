@@ -24,25 +24,25 @@ func TestMongoDB(t *testing.T) {
 	)
 	mongodb.Cleanup(t)
 
-	// Create MongoDB client
+	// Create MongoDB client outside retry loop to avoid leaking connections
 	ctx := t.Context()
 	uri := "mongodb://" + mongodb.GetHostPort("27017/tcp")
 
-	var client *mongo.Client
-	err := pool.Retry(ctx, 30*time.Second, func() error {
-		var err error
-		client, err = mongo.Connect(ctx, options.Client().ApplyURI(uri))
-		if err != nil {
-			return err
-		}
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+	if err != nil {
+		t.Fatalf("mongo.Connect failed: %v", err)
+	}
+	t.Cleanup(func() {
+		client.Disconnect(ctx)
+	})
+
+	// Wait for MongoDB to be ready
+	err = pool.Retry(ctx, 30*time.Second, func() error {
 		return client.Ping(ctx, nil)
 	})
 	if err != nil {
 		t.Fatalf("Could not connect to MongoDB: %v", err)
 	}
-	t.Cleanup(func() {
-		client.Disconnect(ctx)
-	})
 
 	// Insert a document
 	collection := client.Database("testdb").Collection("users")

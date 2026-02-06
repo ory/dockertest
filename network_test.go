@@ -4,21 +4,16 @@
 package dockertest_test
 
 import (
-	"fmt"
+	"net/netip"
 	"testing"
-	"time"
 
 	dockertest "github.com/ory/dockertest/v4"
 )
 
-func uniqueNetworkName(prefix string) string {
-	return fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
-}
-
 func TestPoolCreateNetwork(t *testing.T) {
 	t.Run("creates network with name", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
-		name := uniqueNetworkName("test-network")
+		name := t.Name()
 
 		network, err := pool.CreateNetwork(t.Context(), name, nil)
 		if err != nil {
@@ -48,7 +43,7 @@ func TestPoolCreateNetwork(t *testing.T) {
 				"test": "label",
 			},
 		}
-		name := uniqueNetworkName("test-network-opts")
+		name := t.Name()
 
 		network, err := pool.CreateNetwork(t.Context(), name, &opts)
 		if err != nil {
@@ -68,7 +63,7 @@ func TestPoolCreateNetwork(t *testing.T) {
 
 	t.Run("creates network with nil options", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
-		name := uniqueNetworkName("test-network-nil")
+		name := t.Name()
 
 		network, err := pool.CreateNetwork(t.Context(), name, nil)
 		if err != nil {
@@ -87,7 +82,7 @@ func TestPoolCreateNetwork(t *testing.T) {
 func TestPoolCreateNetworkT(t *testing.T) {
 	t.Run("creates network using t.Context", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
-		name := uniqueNetworkName("test-network-t")
+		name := t.Name()
 
 		network := pool.CreateNetworkT(t, name, nil)
 		if network == nil {
@@ -106,7 +101,7 @@ func TestPoolCreateNetworkT(t *testing.T) {
 func TestNetworkClose(t *testing.T) {
 	t.Run("removes network", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
-		networkName := uniqueNetworkName("test-network-close")
+		networkName := t.Name()
 		network := pool.CreateNetworkT(t, networkName, nil)
 
 		err := network.Close(t.Context())
@@ -128,18 +123,26 @@ func TestNetworkClose(t *testing.T) {
 func TestNetworkCloseT(t *testing.T) {
 	t.Run("removes network using t.Context", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
-		network := pool.CreateNetworkT(t, uniqueNetworkName("test-network-closet"), nil)
+		name := t.Name()
+		network := pool.CreateNetworkT(t, name, nil)
 
 		network.CloseT(t)
 
-		// Network should be removed
+		// Verify network was removed by creating a new one with the same name
+		network2, err := pool.CreateNetwork(t.Context(), name, nil)
+		if err != nil {
+			t.Fatalf("CreateNetwork() after CloseT should succeed, got: %v", err)
+		}
+		t.Cleanup(func() {
+			network2.Close(t.Context())
+		})
 	})
 }
 
 func TestResourceConnectToNetwork(t *testing.T) {
 	t.Run("connects container to network", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
-		network := pool.CreateNetworkT(t, uniqueNetworkName("test-connect-network"), nil)
+		network := pool.CreateNetworkT(t, t.Name(), nil)
 		t.Cleanup(func() {
 			network.Close(t.Context())
 		})
@@ -165,7 +168,7 @@ func TestResourceConnectToNetwork(t *testing.T) {
 func TestResourceDisconnectFromNetwork(t *testing.T) {
 	t.Run("disconnects container from network", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
-		network := pool.CreateNetworkT(t, uniqueNetworkName("test-disconnect-network"), nil)
+		network := pool.CreateNetworkT(t, t.Name(), nil)
 		t.Cleanup(func() {
 			network.Close(t.Context())
 		})
@@ -204,7 +207,7 @@ func TestResourceDisconnectFromNetwork(t *testing.T) {
 func TestResourceGetIPInNetwork(t *testing.T) {
 	t.Run("returns IP in network", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
-		network := pool.CreateNetworkT(t, uniqueNetworkName("test-getip-network"), nil)
+		network := pool.CreateNetworkT(t, t.Name(), nil)
 		t.Cleanup(func() {
 			network.Close(t.Context())
 		})
@@ -224,15 +227,15 @@ func TestResourceGetIPInNetwork(t *testing.T) {
 			t.Error("GetIPInNetwork() = empty, want non-empty IP")
 		}
 
-		// Verify IP format (basic validation)
-		if len(ip) < 7 {
-			t.Errorf("GetIPInNetwork() = %q, want valid IP address", ip)
+		// Verify IP is a valid address
+		if _, err := netip.ParseAddr(ip); err != nil {
+			t.Errorf("GetIPInNetwork() = %q, want valid IP address: %v", ip, err)
 		}
 	})
 
 	t.Run("returns empty for non-connected network", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
-		network := pool.CreateNetworkT(t, uniqueNetworkName("test-noip-network"), nil)
+		network := pool.CreateNetworkT(t, t.Name(), nil)
 		t.Cleanup(func() {
 			network.Close(t.Context())
 		})
@@ -255,7 +258,7 @@ func TestNetworkIntegration(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
 
 		// Create custom network
-		network := pool.CreateNetworkT(t, uniqueNetworkName("test-integration-network"), nil)
+		network := pool.CreateNetworkT(t, t.Name(), nil)
 		t.Cleanup(func() {
 			network.Close(t.Context())
 		})

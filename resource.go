@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 
+	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/network"
 	mobyclient "github.com/moby/moby/client"
 )
@@ -82,12 +83,12 @@ func (r *Resource) Close(ctx context.Context) error {
 	// Stop container (ignore errors if already stopped)
 	_, _ = r.pool.client.ContainerStop(ctx, r.Container.ID, mobyclient.ContainerStopOptions{}) //nolint:errcheck // Best effort stop
 
-	// Remove container
+	// Remove container (tolerate already-removed containers)
 	_, err := r.pool.client.ContainerRemove(ctx, r.Container.ID, mobyclient.ContainerRemoveOptions{
 		RemoveVolumes: true,
 		Force:         true,
 	})
-	if err != nil {
+	if err != nil && !errdefs.IsNotFound(err) {
 		return err
 	}
 
@@ -112,7 +113,9 @@ func (r *Resource) CloseT(t TestingTB) {
 func (r *Resource) Cleanup(t TestingTB) {
 	t.Helper()
 	t.Cleanup(func() {
-		_ = r.Close(context.Background()) //nolint:errcheck // Best effort cleanup in test cleanup
+		if err := r.Close(context.WithoutCancel(t.Context())); err != nil {
+			t.Logf("Resource.Cleanup: close failed: %v", err)
+		}
 	})
 }
 
@@ -139,14 +142,11 @@ func (r *Resource) Logs(ctx context.Context) (string, error) {
 	for {
 		// Read header: [stream_type (1 byte), padding (3 bytes), size (4 bytes)]
 		n, err := io.ReadFull(reader, header)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
 			return "", fmt.Errorf("failed to read log header: %w", err)
-		}
-		if n == 0 {
-			break
 		}
 		if n < 8 {
 			// Partial header at end of stream, ignore
@@ -157,6 +157,16 @@ func (r *Resource) Logs(ctx context.Context) (string, error) {
 		size := binary.BigEndian.Uint32(header[4:8])
 		if size == 0 {
 			continue
+		}
+
+		const maxLogMessageSize = 64 * 1024 * 1024  // 64 MiB per message
+		const maxTotalLogSize = 256 * 1024 * 1024   // 256 MiB total
+		if size > maxLogMessageSize {
+			return "", fmt.Errorf("log message size %d exceeds maximum %d", size, maxLogMessageSize)
+		}
+
+		if uint64(result.Len())+uint64(size) > maxTotalLogSize {
+			return "", fmt.Errorf("total log size exceeds maximum %d bytes", maxTotalLogSize)
 		}
 
 		// Read the log message
