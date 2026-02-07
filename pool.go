@@ -161,7 +161,7 @@ func NewPoolT(t *testing.T, endpoint string, opts ...PoolOption) *Pool {
 	}
 
 	t.Cleanup(func() {
-		if err := pool.Close(context.WithoutCancel(t.Context())); err != nil {
+		if err := pool.Close(t.Context()); err != nil {
 			t.Logf("pool.Close() error: %v", err)
 		}
 	})
@@ -191,7 +191,8 @@ func (p *Pool) Close(ctx context.Context) error {
 // Containers are removed first, then networks. Errors during cleanup
 // do not stop the cleanup process. The first error encountered is returned.
 func (p *Pool) cleanup(ctx context.Context) error {
-	cleanupCtx := context.WithoutCancel(ctx)
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
+	defer cancel()
 
 	var firstErr error
 
