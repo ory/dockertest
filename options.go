@@ -39,19 +39,19 @@ type RunOption func(*runConfig) error
 //
 //nolint:govet // field alignment traded for readability
 type runConfig struct {
-	env            []string
-	cmd            []string
-	entrypoint     []string
-	tag            string
-	reuseID        string
-	user           string
-	workingDir     string
-	hostname       string
-	labels         map[string]string
+	env                []string
+	cmd                []string
+	entrypoint         []string
+	tag                string
+	reuseID            string
+	user               string
+	workingDir         string
+	hostname           string
+	labels             map[string]string
 	configModifier     func(*container.Config)
 	hostConfigModifier func(*container.HostConfig)
 	noReuse            bool
-	noPull         bool // skip image pull (for locally built images)
+	noPull             bool // skip image pull (for locally built images)
 }
 
 // WithTag sets the image tag. Default is "latest".

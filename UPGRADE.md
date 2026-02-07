@@ -32,14 +32,16 @@ intended due to Docker API limitations.
 **Workarounds for container cleanup in CI:**
 
 - Use `pool.Cleanup(ctx)` in `TestMain` to remove all containers after tests.
-- Run `docker container prune -f` as a CI post-step to remove stopped containers.
+- Run `docker container prune -f` as a CI post-step to remove stopped
+  containers.
 - Use `WithLabels` to tag test containers for targeted cleanup:
   ```go
   resource := pool.RunT(t, "postgres",
       dockertest.WithLabels(map[string]string{"ci-run": os.Getenv("CI_RUN_ID")}),
   )
   ```
-  Then in CI: `docker container rm $(docker container ls -q --filter label=ci-run=$CI_RUN_ID)`
+  Then in CI:
+  `docker container rm $(docker container ls -q --filter label=ci-run=$CI_RUN_ID)`
 
 ### Import Path
 
@@ -239,9 +241,9 @@ cache.Cleanup(t)
 > container for all other tests that depend on it. Only use `pool.Cleanup(ctx)`
 > in `TestMain` to clean up reused containers after all tests have finished.
 
-v4 automatically reuses containers with the same `repo:tag` across tests.
-Each `NewPoolT` call creates a separate pool, but containers are still shared
-because default pools use a common reuse scope:
+v4 automatically reuses containers with the same `repo:tag` across tests. Each
+`NewPoolT` call creates a separate pool, but containers are still shared because
+default pools use a common reuse scope:
 
 ```go
 func TestUser(t *testing.T) {
