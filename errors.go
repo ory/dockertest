@@ -13,3 +13,7 @@ var ErrContainerCreateFailed = errors.New("container creation failed")
 
 // ErrContainerStartFailed is returned when starting a container fails.
 var ErrContainerStartFailed = errors.New("container start failed")
+
+// ErrClientClosed is returned when an operation is attempted on a resource
+// whose pool or client has already been closed.
+var ErrClientClosed = errors.New("client is closed")

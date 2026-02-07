@@ -13,6 +13,7 @@ import (
 	"net"
 
 	"github.com/containerd/errdefs"
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/network"
 	mobyclient "github.com/moby/moby/client"
 )
@@ -77,7 +78,7 @@ func (r *Resource) GetHostPort(portID string) string {
 // Anonymous volumes created by the container are also removed.
 func (r *Resource) Close(ctx context.Context) error {
 	if r.pool == nil || r.pool.client == nil {
-		return nil
+		return ErrClientClosed
 	}
 
 	// Stop container (ignore errors if already stopped)
@@ -123,7 +124,7 @@ func (r *Resource) Cleanup(t TestingTB) {
 // Both stdout and stderr are combined in the returned string.
 func (r *Resource) Logs(ctx context.Context) (string, error) {
 	if r.pool == nil || r.pool.client == nil {
-		return "", fmt.Errorf("pool or client is nil")
+		return "", ErrClientClosed
 	}
 
 	reader, err := r.pool.client.ContainerLogs(ctx, r.Container.ID, mobyclient.ContainerLogsOptions{
@@ -179,4 +180,49 @@ func (r *Resource) Logs(ctx context.Context) (string, error) {
 	}
 
 	return result.String(), nil
+}
+
+// ExecResult holds the output of a command executed inside a container.
+type ExecResult struct {
+	StdOut   string
+	StdErr   string
+	ExitCode int
+}
+
+// Exec runs a command inside the container and returns the result.
+func (r *Resource) Exec(ctx context.Context, cmd []string) (ExecResult, error) {
+	if r.pool == nil || r.pool.client == nil {
+		return ExecResult{}, ErrClientClosed
+	}
+
+	createResp, err := r.pool.client.ExecCreate(ctx, r.Container.ID, mobyclient.ExecCreateOptions{
+		Cmd:          cmd,
+		AttachStdout: true,
+		AttachStderr: true,
+	})
+	if err != nil {
+		return ExecResult{}, fmt.Errorf("exec create failed: %w", err)
+	}
+
+	attachResp, err := r.pool.client.ExecAttach(ctx, createResp.ID, mobyclient.ExecAttachOptions{})
+	if err != nil {
+		return ExecResult{}, fmt.Errorf("exec attach failed: %w", err)
+	}
+	defer attachResp.Conn.Close()
+
+	var stdout, stderr bytes.Buffer
+	if _, err := stdcopy.StdCopy(&stdout, &stderr, attachResp.Reader); err != nil {
+		return ExecResult{}, fmt.Errorf("exec read failed: %w", err)
+	}
+
+	inspectResp, err := r.pool.client.ExecInspect(ctx, createResp.ID, mobyclient.ExecInspectOptions{})
+	if err != nil {
+		return ExecResult{}, fmt.Errorf("exec inspect failed: %w", err)
+	}
+
+	return ExecResult{
+		StdOut:   stdout.String(),
+		StdErr:   stderr.String(),
+		ExitCode: inspectResp.ExitCode,
+	}, nil
 }

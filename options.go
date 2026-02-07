@@ -48,8 +48,9 @@ type runConfig struct {
 	workingDir     string
 	hostname       string
 	labels         map[string]string
-	configModifier func(*container.Config)
-	noReuse        bool
+	configModifier     func(*container.Config)
+	hostConfigModifier func(*container.HostConfig)
+	noReuse            bool
 	noPull         bool // skip image pull (for locally built images)
 }
 
@@ -144,6 +145,17 @@ func WithHostname(hostname string) RunOption {
 func WithContainerConfig(modifier func(*container.Config)) RunOption {
 	return func(rc *runConfig) error {
 		rc.configModifier = modifier
+		return nil
+	}
+}
+
+// WithHostConfig allows direct modification of the container.HostConfig.
+// Use this to set host-level options like port bindings, volume mounts,
+// restart policies, memory/CPU limits, or AutoRemove.
+// The modifier is applied after the default HostConfig is constructed.
+func WithHostConfig(modifier func(*container.HostConfig)) RunOption {
+	return func(rc *runConfig) error {
+		rc.hostConfigModifier = modifier
 		return nil
 	}
 }

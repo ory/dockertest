@@ -331,3 +331,106 @@ func TestRunWithContainerConfig(t *testing.T) {
 		t.Errorf("expected stop signal 'SIGTERM', got %q", resource.Container.Config.StopSignal)
 	}
 }
+
+func TestRunWithHostConfig(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
+
+	pool := dockertest.NewPoolT(t, "")
+
+	resource := pool.RunT(t, "alpine",
+		dockertest.WithTag("latest"),
+		dockertest.WithHostConfig(func(hc *container.HostConfig) {
+			hc.RestartPolicy = container.RestartPolicy{Name: container.RestartPolicyOnFailure, MaximumRetryCount: 3}
+		}),
+		dockertest.WithCmd([]string{"sleep", "10"}),
+		dockertest.WithoutReuse(),
+	)
+	t.Cleanup(func() {
+		resource.CloseT(t)
+	})
+
+	if resource.Container.HostConfig.RestartPolicy.Name != container.RestartPolicyOnFailure {
+		t.Errorf("expected restart policy %q, got %q", container.RestartPolicyOnFailure, resource.Container.HostConfig.RestartPolicy.Name)
+	}
+	if resource.Container.HostConfig.RestartPolicy.MaximumRetryCount != 3 {
+		t.Errorf("expected max retry count 3, got %d", resource.Container.HostConfig.RestartPolicy.MaximumRetryCount)
+	}
+}
+
+func TestResourceExec(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
+
+	pool := dockertest.NewPoolT(t, "")
+
+	resource := pool.RunT(t, "alpine",
+		dockertest.WithTag("latest"),
+		dockertest.WithCmd([]string{"sleep", "300"}),
+		dockertest.WithoutReuse(),
+	)
+	t.Cleanup(func() {
+		resource.CloseT(t)
+	})
+
+	result, err := resource.Exec(t.Context(), []string{"echo", "hello world"})
+	if err != nil {
+		t.Fatalf("Exec() error = %v", err)
+	}
+
+	if result.ExitCode != 0 {
+		t.Errorf("Exec() exit code = %d, want 0", result.ExitCode)
+	}
+	if result.StdOut != "hello world\n" {
+		t.Errorf("Exec() stdout = %q, want %q", result.StdOut, "hello world\n")
+	}
+	if result.StdErr != "" {
+		t.Errorf("Exec() stderr = %q, want empty", result.StdErr)
+	}
+}
+
+func TestResourceExecNonZeroExit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
+
+	pool := dockertest.NewPoolT(t, "")
+
+	resource := pool.RunT(t, "alpine",
+		dockertest.WithTag("latest"),
+		dockertest.WithCmd([]string{"sleep", "300"}),
+		dockertest.WithoutReuse(),
+	)
+	t.Cleanup(func() {
+		resource.CloseT(t)
+	})
+
+	result, err := resource.Exec(t.Context(), []string{"sh", "-c", "echo err >&2; exit 1"})
+	if err != nil {
+		t.Fatalf("Exec() error = %v", err)
+	}
+
+	if result.ExitCode != 1 {
+		t.Errorf("Exec() exit code = %d, want 1", result.ExitCode)
+	}
+	if result.StdErr != "err\n" {
+		t.Errorf("Exec() stderr = %q, want %q", result.StdErr, "err\n")
+	}
+}

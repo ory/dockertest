@@ -98,7 +98,9 @@ func TestMain(m *testing.M) {
     ctx := context.Background()
     pool, _ := dockertest.NewPool(ctx, "")
     code := m.Run()
-    defer pool.Cleanup(ctx)
+    // Clean up before os.Exit — deferred functions do not run after os.Exit.
+    pool.Cleanup(ctx)
+    pool.Close()
     os.Exit(code)
 }
 ```
@@ -184,8 +186,10 @@ Available configuration options:
 - `WithEnv(env []string)` - Set environment variables
 - `WithCmd(cmd []string)` - Override the default command
 - `WithEntrypoint(entrypoint []string)` - Override the default entrypoint
+- `WithHostConfig(modifier func(*container.HostConfig))` - Modify the host
+  config (port bindings, volumes, restart policy, memory/CPU limits)
 
-For advanced configuration, use `WithContainerConfig`:
+For advanced container configuration, use `WithContainerConfig`:
 
 ```go
 stopTimeout := 30
@@ -203,7 +207,28 @@ resource := pool.RunT(t, "app",
 )
 ```
 
+For host-level configuration, use `WithHostConfig`:
+
+```go
+resource := pool.RunT(t, "postgres",
+    dockertest.WithTag("14"),
+    dockertest.WithHostConfig(func(hc *container.HostConfig) {
+        hc.RestartPolicy = container.RestartPolicy{
+            Name:              container.RestartPolicyOnFailure,
+            MaximumRetryCount: 3,
+        }
+    }),
+)
+```
+
 ### Container reuse
+
+> [!WARNING]
+>
+> Do not use `resource.Cleanup(t)` on reused containers. Because reused
+> containers are shared across tests, cleaning up one reference will remove the
+> container for all other tests that depend on it. Only use `pool.Cleanup(ctx)`
+> in `TestMain` to clean up reused containers after all tests have finished.
 
 Containers are automatically reused based on `repository:tag`:
 
@@ -242,6 +267,21 @@ ip := resource.GetBoundIP("5432/tcp")
 
 // Get container ID
 id := resource.ID()
+```
+
+### Executing commands
+
+Run commands inside a running container:
+
+```go
+result, err := resource.Exec(ctx, []string{"pg_isready", "-U", "postgres"})
+if err != nil {
+    t.Fatal(err)
+}
+if result.ExitCode != 0 {
+    t.Fatalf("command failed: %s", result.StdErr)
+}
+t.Log(result.StdOut)
 ```
 
 ### Cleanup

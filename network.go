@@ -157,7 +157,7 @@ func (p *Pool) CreateNetworkT(t TestingTB, name string, opts *NetworkCreateOptio
 // or the network removal will fail.
 func (n *Network) Close(ctx context.Context) error {
 	if n.pool == nil || n.pool.client == nil {
-		return nil
+		return ErrClientClosed
 	}
 
 	_, err := n.pool.client.NetworkRemove(ctx, n.Network.ID, mobyclient.NetworkRemoveOptions{})
@@ -182,7 +182,7 @@ func (n *Network) CloseT(t TestingTB) {
 // network settings after connection.
 func (r *Resource) ConnectToNetwork(ctx context.Context, net *Network) error {
 	if r.pool == nil || r.pool.client == nil {
-		return fmt.Errorf("pool or client is nil")
+		return ErrClientClosed
 	}
 
 	connectOpts := mobyclient.NetworkConnectOptions{
@@ -209,7 +209,7 @@ func (r *Resource) ConnectToNetwork(ctx context.Context, net *Network) error {
 // network settings after disconnection.
 func (r *Resource) DisconnectFromNetwork(ctx context.Context, net *Network) error {
 	if r.pool == nil || r.pool.client == nil {
-		return fmt.Errorf("pool or client is nil")
+		return ErrClientClosed
 	}
 
 	disconnectOpts := mobyclient.NetworkDisconnectOptions{
