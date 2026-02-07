@@ -29,6 +29,20 @@ This guide helps you migrate from dockertest v3 to v4.
 The `Expire` method from v3 is removed as it was not working as documented /
 intended due to Docker API limitations.
 
+**Workarounds for container cleanup in CI:**
+
+- Use `pool.Cleanup(ctx)` in `TestMain` to remove all containers after tests.
+- Run `docker container prune -f` as a CI post-step to remove stopped
+  containers.
+- Use `WithLabels` to tag test containers for targeted cleanup:
+  ```go
+  resource := pool.RunT(t, "postgres",
+      dockertest.WithLabels(map[string]string{"ci-run": os.Getenv("CI_RUN_ID")}),
+  )
+  ```
+  Then in CI:
+  `docker container rm $(docker container ls -q --filter label=ci-run=$CI_RUN_ID)`
+
 ### Import Path
 
 ```diff
@@ -111,12 +125,14 @@ func TestMain(m *testing.M) {
     os.Exit(code)
 }
 
-// v4 - TestMain with automatic cleanup
+// v4 - TestMain with cleanup
 func TestMain(m *testing.M) {
     ctx := context.Background()
     pool, _ := dockertest.NewPool(ctx, "")
     code := m.Run()
-    defer pool.Cleanup(ctx)
+    // Clean up before os.Exit — deferred functions do not run after os.Exit.
+    pool.Cleanup(ctx)
+    pool.Close()
     os.Exit(code)
 }
 ```
@@ -157,7 +173,9 @@ if errors.Is(err, context.DeadlineExceeded) {
        ctx := context.Background()
        pool, _ := dockertest.NewPool(ctx, "")
        code := m.Run()
-       defer pool.Cleanup(ctx)
+       // Clean up before os.Exit — deferred functions do not run after os.Exit.
+       pool.Cleanup(ctx)
+       pool.Close()
        os.Exit(code)
    }
    ```
@@ -216,12 +234,21 @@ cache.Cleanup(t)
 
 ### Automatic Container Reuse
 
-v4 automatically reuses containers with the same `repo:tag` across tests:
+> [!WARNING]
+>
+> Do not use `resource.Cleanup(t)` on reused containers. Because reused
+> containers are shared across tests, cleaning up one reference will remove the
+> container for all other tests that depend on it. Only use `pool.Cleanup(ctx)`
+> in `TestMain` to clean up reused containers after all tests have finished.
+
+v4 automatically reuses containers with the same `repo:tag` across tests. Each
+`NewPoolT` call creates a separate pool, but containers are still shared because
+default pools use a common reuse scope:
 
 ```go
 func TestUser(t *testing.T) {
     pool := dockertest.NewPoolT(t, "")
-    db := pool.RunT(t, "postgres", dockertest.WithTag("14")) // First call
+    db := pool.RunT(t, "postgres", dockertest.WithTag("14")) // Creates container
 }
 
 func TestPost(t *testing.T) {

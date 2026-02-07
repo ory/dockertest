@@ -90,16 +90,13 @@ func NewPool(ctx context.Context, endpoint string, opts ...PoolOption) (*Pool, e
 		p.ownedClient = true
 	}
 
-	p.reuseScope = clientScope(p.client)
+	if p.ownedClient {
+		p.reuseScope = defaultRegistryScope
+	} else {
+		p.reuseScope = fmt.Sprintf("%p", p.client)
+	}
 
 	return p, nil
-}
-
-func clientScope(c client.DockerClient) string {
-	if c == nil {
-		return "nil-client"
-	}
-	return fmt.Sprintf("%p", c)
 }
 
 func (p *Pool) trackResource(resource *Resource) {
@@ -164,8 +161,12 @@ func NewPoolT(t *testing.T, endpoint string, opts ...PoolOption) *Pool {
 	}
 
 	t.Cleanup(func() {
+		ctx := context.WithoutCancel(t.Context())
+		if err := pool.Cleanup(ctx); err != nil {
+			t.Logf("pool.Cleanup() error: %v", err)
+		}
 		if err := pool.Close(); err != nil {
-			t.Errorf("pool.Close() error = %v", err)
+			t.Logf("pool.Close() error: %v", err)
 		}
 	})
 
@@ -347,11 +348,18 @@ func (p *Pool) createAndStartContainer(ctx context.Context, ref string, cfg *run
 		cfg.configModifier(containerConfig)
 	}
 
+	hostConfig := &container.HostConfig{
+		PublishAllPorts: true,
+	}
+
+	// Apply host config modifier last to allow overriding anything
+	if cfg.hostConfigModifier != nil {
+		cfg.hostConfigModifier(hostConfig)
+	}
+
 	createOpts := mobyclient.ContainerCreateOptions{
-		Config: containerConfig,
-		HostConfig: &container.HostConfig{
-			PublishAllPorts: true,
-		},
+		Config:     containerConfig,
+		HostConfig: hostConfig,
 	}
 
 	createResp, err := p.client.ContainerCreate(ctx, createOpts)

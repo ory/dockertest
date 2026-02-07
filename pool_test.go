@@ -196,6 +196,54 @@ func TestCheckForExistingUsesPoolScope(t *testing.T) {
 	}
 }
 
+func TestDefaultPoolsShareReuseScope(t *testing.T) {
+	ctx := t.Context()
+	poolA, err := NewPool(ctx, "")
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	t.Cleanup(func() { poolA.Close() })
+
+	poolB, err := NewPool(ctx, "")
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	t.Cleanup(func() { poolB.Close() })
+
+	if poolA.reuseScope != poolB.reuseScope {
+		t.Fatalf("default pools have different reuse scopes: %q vs %q", poolA.reuseScope, poolB.reuseScope)
+	}
+
+	if poolA.reuseScope != defaultRegistryScope {
+		t.Fatalf("default pool reuse scope = %q, want %q", poolA.reuseScope, defaultRegistryScope)
+	}
+}
+
+func TestCustomClientPoolHasIsolatedScope(t *testing.T) {
+	ctx := t.Context()
+	customClient, err := client.NewMobyClient(ctx)
+	if err != nil {
+		t.Fatalf("NewMobyClient() error = %v", err)
+	}
+	t.Cleanup(func() { customClient.Close() })
+
+	poolCustom, err := NewPool(ctx, "", WithMobyClient(customClient))
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	t.Cleanup(func() { poolCustom.Close() })
+
+	poolDefault, err := NewPool(ctx, "")
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	t.Cleanup(func() { poolDefault.Close() })
+
+	if poolCustom.reuseScope == poolDefault.reuseScope {
+		t.Fatal("custom client pool should have isolated reuse scope from default pool")
+	}
+}
+
 func TestPoolCleanupRemovesWithoutReuse(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
