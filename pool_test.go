@@ -24,7 +24,7 @@ func TestNewPool(t *testing.T) {
 			t.Fatal("NewPool() pool = nil, want non-nil")
 		}
 		t.Cleanup(func() {
-			pool.Close()
+			pool.Close(t.Context())
 		})
 
 		if pool.MaxWait != 60*time.Second {
@@ -42,7 +42,7 @@ func TestNewPool(t *testing.T) {
 			t.Fatalf("NewPool() error = %v, want nil", err)
 		}
 		t.Cleanup(func() {
-			pool.Close()
+			pool.Close(t.Context())
 		})
 
 		if pool.MaxWait != 30*time.Second {
@@ -65,7 +65,7 @@ func TestNewPool(t *testing.T) {
 			t.Fatalf("NewPool() error = %v, want nil", err)
 		}
 		t.Cleanup(func() {
-			pool.Close()
+			pool.Close(t.Context())
 		})
 
 		if pool.client != customClient {
@@ -89,7 +89,7 @@ func TestNewPool(t *testing.T) {
 			t.Fatalf("NewPool() error = %v, want nil (custom client should bypass endpoint)", err)
 		}
 		t.Cleanup(func() {
-			pool.Close()
+			pool.Close(t.Context())
 		})
 	})
 }
@@ -124,7 +124,7 @@ func TestPoolClose(t *testing.T) {
 			t.Fatalf("NewPool() error = %v, want nil", err)
 		}
 
-		err = pool.Close()
+		err = pool.Close(ctx)
 		if err != nil {
 			t.Errorf("Close() error = %v, want nil", err)
 		}
@@ -146,14 +146,13 @@ func TestPoolClose(t *testing.T) {
 		}
 
 		// Close pool - should not close custom client
-		err = pool.Close()
+		err = pool.Close(ctx)
 		if err != nil {
 			t.Errorf("Close() error = %v, want nil", err)
 		}
 
 		// Verify custom client is still usable by pinging
-		ctx2 := t.Context()
-		_, pingErr := customClient.Ping(ctx2, mobyclient.PingOptions{})
+		_, pingErr := customClient.Ping(ctx, mobyclient.PingOptions{})
 		if pingErr != nil {
 			t.Error("custom client was closed by pool.Close(), want it to remain open")
 		}
@@ -169,12 +168,12 @@ func TestPoolCleanup(t *testing.T) {
 			t.Fatalf("NewPool() error = %v, want nil", err)
 		}
 		t.Cleanup(func() {
-			pool.Close()
+			pool.Close(t.Context())
 		})
 
-		err = pool.Cleanup(ctx)
+		err = pool.cleanup(ctx)
 		if err != nil {
-			t.Errorf("Cleanup() error = %v, want nil", err)
+			t.Errorf("cleanup() error = %v, want nil", err)
 		}
 	})
 }
@@ -202,13 +201,13 @@ func TestDefaultPoolsShareReuseScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPool() error = %v", err)
 	}
-	t.Cleanup(func() { poolA.Close() })
+	t.Cleanup(func() { poolA.Close(t.Context()) })
 
 	poolB, err := NewPool(ctx, "")
 	if err != nil {
 		t.Fatalf("NewPool() error = %v", err)
 	}
-	t.Cleanup(func() { poolB.Close() })
+	t.Cleanup(func() { poolB.Close(t.Context()) })
 
 	if poolA.reuseScope != poolB.reuseScope {
 		t.Fatalf("default pools have different reuse scopes: %q vs %q", poolA.reuseScope, poolB.reuseScope)
@@ -231,13 +230,13 @@ func TestCustomClientPoolHasIsolatedScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPool() error = %v", err)
 	}
-	t.Cleanup(func() { poolCustom.Close() })
+	t.Cleanup(func() { poolCustom.Close(t.Context()) })
 
 	poolDefault, err := NewPool(ctx, "")
 	if err != nil {
 		t.Fatalf("NewPool() error = %v", err)
 	}
-	t.Cleanup(func() { poolDefault.Close() })
+	t.Cleanup(func() { poolDefault.Close(t.Context()) })
 
 	if poolCustom.reuseScope == poolDefault.reuseScope {
 		t.Fatal("custom client pool should have isolated reuse scope from default pool")
@@ -261,8 +260,8 @@ func TestPoolCleanupRemovesWithoutReuse(t *testing.T) {
 		WithoutReuse(),
 	)
 
-	if err := pool.Cleanup(t.Context()); err != nil {
-		t.Fatalf("Cleanup() error = %v", err)
+	if err := pool.cleanup(t.Context()); err != nil {
+		t.Fatalf("cleanup() error = %v", err)
 	}
 
 	_, err := pool.client.ContainerInspect(t.Context(), resource.ID(), mobyclient.ContainerInspectOptions{})

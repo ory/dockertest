@@ -163,7 +163,7 @@ func TestPoolRetry(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewPool() error = %v", err)
 		}
-		t.Cleanup(func() { pool.Close() })
+		t.Cleanup(func() { pool.Close(t.Context()) })
 
 		attempts := 0
 		expectedAttempts := 3
@@ -192,7 +192,7 @@ func TestPoolRetry(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewPool() error = %v", err)
 		}
-		t.Cleanup(func() { pool.Close() })
+		t.Cleanup(func() { pool.Close(t.Context()) })
 
 		attempts := 0
 		fn := func() error {

@@ -63,7 +63,7 @@ type Pool struct {
 //	if err != nil {
 //		panic(err)
 //	}
-//	defer pool.Close()
+//	defer pool.Close(ctx)
 func NewPool(ctx context.Context, endpoint string, opts ...PoolOption) (*Pool, error) {
 	p := &Pool{
 		MaxWait:     60 * time.Second,
@@ -161,11 +161,7 @@ func NewPoolT(t *testing.T, endpoint string, opts ...PoolOption) *Pool {
 	}
 
 	t.Cleanup(func() {
-		ctx := context.WithoutCancel(t.Context())
-		if err := pool.Cleanup(ctx); err != nil {
-			t.Logf("pool.Cleanup() error: %v", err)
-		}
-		if err := pool.Close(); err != nil {
+		if err := pool.Close(context.WithoutCancel(t.Context())); err != nil {
 			t.Logf("pool.Close() error: %v", err)
 		}
 	})
@@ -173,24 +169,28 @@ func NewPoolT(t *testing.T, endpoint string, opts ...PoolOption) *Pool {
 	return pool
 }
 
-// Close closes the Pool's Docker client if it was created by the Pool.
-// If a custom client was provided via WithMobyClient, it is not closed
-// (the caller remains responsible for closing it).
+// Close cleans up all tracked containers and networks, then closes the Pool's
+// Docker client if it was created by the Pool. If a custom client was provided
+// via WithMobyClient, it is not closed (the caller remains responsible for
+// closing it).
 //
 // It is safe to call Close multiple times.
-func (p *Pool) Close() error {
+func (p *Pool) Close(ctx context.Context) error {
+	cleanupErr := p.cleanup(ctx)
 	if p.ownedClient && p.client != nil {
 		err := p.client.Close()
 		p.client = nil
-		return err
+		if err != nil {
+			return err
+		}
 	}
-	return nil
+	return cleanupErr
 }
 
-// Cleanup removes all containers and networks tracked by this pool.
+// cleanup removes all containers and networks tracked by this pool.
 // Containers are removed first, then networks. Errors during cleanup
 // do not stop the cleanup process. The first error encountered is returned.
-func (p *Pool) Cleanup(ctx context.Context) error {
+func (p *Pool) cleanup(ctx context.Context) error {
 	cleanupCtx := context.WithoutCancel(ctx)
 
 	var firstErr error
