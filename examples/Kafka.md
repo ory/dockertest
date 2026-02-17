@@ -75,7 +75,7 @@ func main() {
 			"KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1",
 		},
 		PortBindings: map[docker.Port][]docker.PortBinding{
-			"9093/tcp": {{HostIP: "localhost", HostPort: "9093/tcp"}},
+			"9093/tcp": {{HostIP: "127.0.0.1", HostPort: "9093/tcp"}},
 		},
 		ExposedPorts: []string{"9093/tcp"},
 	})
