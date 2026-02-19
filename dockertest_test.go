@@ -495,7 +495,7 @@ func TestNetworkRaceCondition(t *testing.T) {
 			resource, containerErr := pool.RunWithOptions(
 				&dockertest.RunOptions{
 					Repository: "postgres",
-					Tag:        "13.4",
+					Tag:        "9.5",
 					Networks:   []*dockertest.Network{network},
 				},
 			)
