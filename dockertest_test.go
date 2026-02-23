@@ -480,7 +480,9 @@ func TestClientRaceCondition(t *testing.T) {
 func TestNetworkRaceCondition(t *testing.T) {
 	network, err := pool.CreateNetwork(fmt.Sprintf("test-network-race-condition-%d", time.Now().Unix()))
 	require.NoError(t, err)
-	defer network.Close()
+	t.Cleanup(func() {
+		require.NoError(t, pool.RemoveNetwork(network))
+	})
 
 	var numContainers = 10
 
@@ -501,18 +503,13 @@ func TestNetworkRaceCondition(t *testing.T) {
 			)
 			require.NoError(t, containerErr)
 
-			resources[i] = resource
+			t.Cleanup(func() {
+				require.NoError(t, pool.Purge(resource))
+			})
 		}(index)
 	}
 
 	wg.Wait()
-
-	// Clean up resources
-	for resourceIndex := range resources {
-		require.NoError(t, pool.Purge(resources[resourceIndex]))
-	}
-
-	require.NoError(t, pool.RemoveNetwork(network))
 }
 
 func TestExecStatus(t *testing.T) {

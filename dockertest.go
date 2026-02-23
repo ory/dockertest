@@ -164,7 +164,9 @@ func (r *Resource) GetIPInNetwork(network *Network) string {
 		return ""
 	}
 
+	network.mu.RLock()
 	netCfg, ok := r.Container.NetworkSettings.Networks[network.Network.Name]
+	network.mu.RUnlock()
 	if !ok {
 		return ""
 	}
@@ -174,10 +176,12 @@ func (r *Resource) GetIPInNetwork(network *Network) string {
 
 // ConnectToNetwork connects container to network.
 func (r *Resource) ConnectToNetwork(network *Network) error {
+	network.mu.RLock()
 	err := r.pool.Client.ConnectNetwork(
 		network.Network.ID,
 		dc.NetworkConnectionOptions{Container: r.Container.ID},
 	)
+	network.mu.RUnlock()
 	if err != nil {
 		return fmt.Errorf("Failed to connect container to network: %w", err)
 	}
@@ -188,7 +192,9 @@ func (r *Resource) ConnectToNetwork(network *Network) error {
 		return fmt.Errorf("Failed to refresh container information: %w", err)
 	}
 
+	network.mu.Lock()
 	network.Network, err = r.pool.Client.NetworkInfo(network.Network.ID)
+	network.mu.Unlock()
 	if err != nil {
 		return fmt.Errorf("Failed to refresh network information: %w", err)
 	}
@@ -198,10 +204,12 @@ func (r *Resource) ConnectToNetwork(network *Network) error {
 
 // DisconnectFromNetwork disconnects container from network.
 func (r *Resource) DisconnectFromNetwork(network *Network) error {
+	network.mu.RLock()
 	err := r.pool.Client.DisconnectNetwork(
 		network.Network.ID,
 		dc.NetworkConnectionOptions{Container: r.Container.ID},
 	)
+	network.mu.RUnlock()
 	if err != nil {
 		return fmt.Errorf("Failed to connect container to network: %w", err)
 	}
@@ -212,7 +220,9 @@ func (r *Resource) DisconnectFromNetwork(network *Network) error {
 		return fmt.Errorf("Failed to refresh container information: %w", err)
 	}
 
+	network.mu.Lock()
 	network.Network, err = r.pool.Client.NetworkInfo(network.Network.ID)
+	network.mu.Unlock()
 	if err != nil {
 		return fmt.Errorf("Failed to refresh network information: %w", err)
 	}
@@ -700,6 +710,9 @@ func (d *Pool) NetworksByName(name string) ([]Network, error) {
 
 // RemoveNetwork disconnects containers and removes provided network.
 func (d *Pool) RemoveNetwork(network *Network) error {
+	network.mu.RLock()
+	defer network.mu.RUnlock()
+
 	for container := range network.Network.Containers {
 		_ = d.Client.DisconnectNetwork(
 			network.Network.ID,
