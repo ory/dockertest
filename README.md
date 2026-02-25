@@ -1,38 +1,41 @@
 <h1 align="center"><img src="./docs/images/banner_dockertest.png" alt="ORY Dockertest"></h1>
 
-[![Build Status](https://travis-ci.org/ory/dockertest.svg)](https://travis-ci.org/ory/dockertest?branch=master)
-[![Coverage Status](https://coveralls.io/repos/github/ory/dockertest/badge.svg?branch=v4)](https://coveralls.io/github/ory/dockertest?branch=v4)
+[![CI](https://github.com/ory/dockertest/actions/workflows/test.yml/badge.svg)](https://github.com/ory/dockertest/actions/workflows/test.yml)
 
-Use Docker to run your Go language integration tests against third party
-services on **Microsoft Windows, Mac OSX and Linux**! Dockertest uses
-[Docker](https://www.docker.com/toolbox) to spin up images on Windows and Mac
-OSX.
+Use Docker to run your Go integration tests against third party services on
+**Windows, macOS, and Linux**!
 
-Dockertest supports running any Docker Image from Docker Hub and Dockerfile.
+Dockertest supports running any Docker image from Docker Hub or from a
+Dockerfile.
 
 <!-- START doctoc generated TOC please keep comment here to allow auto update -->
 <!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
 
-**Table of Contents**
-
 - [Why should I use Dockertest?](#why-should-i-use-dockertest)
-- [Installing and using Dockertest v4](#installing-and-using-dockertest-v4)
-  - [Installation](#installation)
-  - [Quick Start](#quick-start)
-  - [Key Features](#key-features)
-  - [Examples](#examples)
-- [Upgrading from v3 to v4](#upgrading-from-v3-to-v4)
-  - [Breaking Changes](#breaking-changes)
-  - [Migration Examples](#migration-examples)
-  - [Common Patterns](#common-patterns)
-- [Using Dockertest v3 (Legacy)](#using-dockertest-v3-legacy)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Migration from v3](#migration-from-v3)
+- [API overview](#api-overview)
+  - [Pool creation](#pool-creation)
+  - [Running containers](#running-containers)
+  - [Container configuration](#container-configuration)
+  - [Container reuse](#container-reuse)
+  - [Getting connection info](#getting-connection-info)
+  - [Waiting for readiness](#waiting-for-readiness)
+  - [Executing commands](#executing-commands)
+  - [Container logs](#container-logs)
+  - [Building from Dockerfile](#building-from-dockerfile)
+  - [Networks](#networks)
+  - [Cleanup](#cleanup)
+  - [Error handling](#error-handling)
+- [Examples](#examples)
 - [Troubleshoot & FAQ](#troubleshoot--faq)
   - [Out of disk space](#out-of-disk-space)
-  - [Removing old containers](#removing-old-containers)
 - [Running in CI](#running-in-ci)
   - [GitHub Actions](#github-actions)
   - [GitLab CI](#gitlab-ci)
-  - [Remote Docker](#remote-docker)
+    - [Shared runners](#shared-runners)
+    - [Custom (group) runners](#custom-group-runners)
 
 <!-- END doctoc generated TOC please keep comment here to allow auto update -->
 
@@ -40,8 +43,9 @@ Dockertest supports running any Docker Image from Docker Hub and Dockerfile.
 
 When developing applications, it is often necessary to use services that talk to
 a database system. Unit testing these services can be cumbersome because mocking
+database/DBAL is strenuous. Making slight changes to the schema implies
 rewriting at least some, if not all mocks. The same goes for API changes in the
-database/DBAL is strenuous. Making slight changes to the schema implies DBAL.
+DBAL.
 
 To avoid this, it is smarter to test these specific services against a real
 database that is destroyed after testing. Docker is the perfect system for
@@ -68,9 +72,8 @@ go get github.com/ory/dockertest/v4
 package myapp_test
 
 import (
-    "context"
-    "os"
     "testing"
+    "time"
 
     dockertest "github.com/ory/dockertest/v4"
 )
@@ -78,30 +81,26 @@ import (
 func TestPostgres(t *testing.T) {
     pool := dockertest.NewPoolT(t, "")
 
-    db := pool.RunT(t, "postgres",
+    // Container is automatically reused across test runs based on "postgres:14".
+    postgres := pool.RunT(t, "postgres",
         dockertest.WithTag("14"),
         dockertest.WithEnv([]string{
             "POSTGRES_PASSWORD=secret",
             "POSTGRES_DB=testdb",
         }),
     )
-    db.Cleanup(t)
 
-    // Use db.GetHostPort("5432/tcp") to connect
-    hostPort := db.GetHostPort("5432/tcp")
+    hostPort := postgres.GetHostPort("5432/tcp")
     // Connect to postgres://postgres:secret@hostPort/testdb
-}
 
-func TestMain(m *testing.M) {
-    // Note: TestMain doesn't have testing.T, so we create a context here
-    // In regular tests, always use t.Context() instead
-    ctx := context.Background()
-    pool, _ := dockertest.NewPool(ctx, "")
-    code := m.Run()
-    // Clean up before os.Exit — deferred functions do not run after os.Exit.
-    pool.Cleanup(ctx)
-    pool.Close()
-    os.Exit(code)
+    // Wait for PostgreSQL to be ready
+    err := pool.Retry(t.Context(), 30*time.Second, func() error {
+        // try connecting...
+        return nil
+    })
+    if err != nil {
+        t.Fatalf("Could not connect: %v", err)
+    }
 }
 ```
 
@@ -129,13 +128,18 @@ pool := dockertest.NewPoolT(t, "",
     dockertest.WithMaxWait(2*time.Minute),
 )
 
+// With a custom Docker client
+pool := dockertest.NewPoolT(t, "",
+    dockertest.WithMobyClient(myClient),
+)
+
 // For non-test code - requires manual Close()
 ctx := context.Background()
 pool, err := dockertest.NewPool(ctx, "")
 if err != nil {
     panic(err)
 }
-defer pool.Close()
+defer pool.Close(ctx)
 ```
 
 ### Running containers
@@ -158,6 +162,8 @@ if err != nil {
 }
 ```
 
+> See [Cleanup](#cleanup) for container lifecycle management.
+
 ### Container configuration
 
 Customize container settings with configuration options:
@@ -178,14 +184,24 @@ resource := pool.RunT(t, "postgres",
 
 Available configuration options:
 
+- `WithTag(tag string)` - Set the image tag (default: `"latest"`)
+- `WithEnv(env []string)` - Set environment variables
+- `WithCmd(cmd []string)` - Override the default command
+- `WithEntrypoint(entrypoint []string)` - Override the default entrypoint
 - `WithUser(user string)` - Set the user to run commands as (supports "user" or
   "user:group")
 - `WithWorkingDir(dir string)` - Set the working directory
 - `WithLabels(labels map[string]string)` - Add labels to the container
 - `WithHostname(hostname string)` - Set the container hostname
-- `WithEnv(env []string)` - Set environment variables
-- `WithCmd(cmd []string)` - Override the default command
-- `WithEntrypoint(entrypoint []string)` - Override the default entrypoint
+- `WithName(name string)` - Set the container name
+- `WithMounts(binds []string)` - Set bind mounts ("host:container" or
+  "host:container:mode")
+- `WithPortBindings(bindings network.PortMap)` - Set explicit port bindings
+- `WithReuseID(id string)` - Set a custom reuse key (default:
+  `"repository:tag"`)
+- `WithoutReuse()` - Disable container reuse for this run
+- `WithContainerConfig(modifier func(*container.Config))` - Modify the
+  container config directly
 - `WithHostConfig(modifier func(*container.HostConfig))` - Modify the host
   config (port bindings, volumes, restart policy, memory/CPU limits)
 
@@ -227,7 +243,7 @@ resource := pool.RunT(t, "postgres",
 >
 > Do not use `resource.Cleanup(t)` on reused containers. Because reused
 > containers are shared across tests, cleaning up one reference will remove the
-> container for all other tests that depend on it. Only use `pool.Cleanup(ctx)`
+> container for all other tests that depend on it. Only use `pool.Close(ctx)`
 > in `TestMain` to clean up reused containers after all tests have finished.
 
 Containers are automatically reused based on `repository:tag`:
@@ -236,7 +252,7 @@ Containers are automatically reused based on `repository:tag`:
 // First test creates container
 r1 := pool.RunT(t, "postgres", dockertest.WithTag("14"))
 
-// Second test reuses the same container (2-3x faster)
+// Second test reuses the same container
 r2 := pool.RunT(t, "postgres", dockertest.WithTag("14"))
 
 // r1 and r2 point to the same container
@@ -256,7 +272,7 @@ resource := pool.RunT(t, "postgres",
 ```go
 resource := pool.RunT(t, "postgres", dockertest.WithTag("14"))
 
-// Get host port (e.g., "127.0.0.1:54320")
+// Get host:port (e.g., "127.0.0.1:54320")
 hostPort := resource.GetHostPort("5432/tcp")
 
 // Get just the port (e.g., "54320")
@@ -267,6 +283,41 @@ ip := resource.GetBoundIP("5432/tcp")
 
 // Get container ID
 id := resource.ID()
+```
+
+### Waiting for readiness
+
+Use `pool.Retry` to wait for a container to become ready:
+
+```go
+err := pool.Retry(t.Context(), 30*time.Second, func() error {
+    return db.Ping()
+})
+if err != nil {
+    t.Fatalf("Container not ready: %v", err)
+}
+```
+
+If timeout is 0, `pool.MaxWait` (default 60s) is used. The retry interval is
+fixed at 1 second.
+
+For more control, use the package-level functions:
+
+```go
+// Fixed interval retry
+err := dockertest.Retry(ctx, 30*time.Second, 500*time.Millisecond, func() error {
+    return db.Ping()
+})
+
+// Exponential backoff retry
+err := dockertest.RetryWithBackoff(ctx,
+    30*time.Second,       // timeout
+    100*time.Millisecond, // initial interval
+    5*time.Second,        // max interval
+    func() error {
+        return db.Ping()
+    },
+)
 ```
 
 ### Executing commands
@@ -284,23 +335,118 @@ if result.ExitCode != 0 {
 t.Log(result.StdOut)
 ```
 
-### Cleanup
+### Container logs
 
 ```go
-// In tests - cleanup when test finishes
-resource.Cleanup(t)
-
-// Manual cleanup
-err := resource.Close(ctx)
-
-// Test helper - fails test on error
-resource.CloseT(t)
-
-// Cleanup all containers (in TestMain)
-pool.Cleanup(ctx)
+logs, err := resource.Logs(ctx)
+if err != nil {
+    t.Fatal(err)
+}
+t.Log(logs)
 ```
 
-### Error Handling
+### Building from Dockerfile
+
+Build a Docker image from a Dockerfile and run it:
+
+```go
+version := "1.0.0"
+resource, err := pool.BuildAndRun(ctx, "myapp:test",
+    &dockertest.BuildOptions{
+        ContextDir: "./testdata",
+        Dockerfile: "Dockerfile.test",
+        BuildArgs:  map[string]*string{"VERSION": &version},
+    },
+    dockertest.WithEnv([]string{"APP_ENV=test"}),
+)
+if err != nil {
+    t.Fatal(err)
+}
+```
+
+`BuildAndRunT` is the test helper variant:
+
+```go
+resource := pool.BuildAndRunT(t, "myapp:test",
+    &dockertest.BuildOptions{
+        ContextDir: "./testdata",
+    },
+)
+```
+
+### Networks
+
+Create Docker networks for container-to-container communication:
+
+```go
+net := pool.CreateNetworkT(t, "my-network", nil)
+
+// Connect a container
+err := resource.ConnectToNetwork(ctx, net)
+
+// Get the container's IP in the network
+ip := resource.GetIPInNetwork(net)
+
+// Disconnect
+err := resource.DisconnectFromNetwork(ctx, net)
+```
+
+With custom options:
+
+```go
+net, err := pool.CreateNetwork(ctx, "my-network", &dockertest.NetworkCreateOptions{
+    Driver:   "bridge",
+    Internal: true,
+})
+```
+
+### Cleanup
+
+> [!WARNING]
+>
+> Do not use `resource.Cleanup(t)` or `resource.CloseT(t)` on **reused**
+> containers. Because reused containers are shared across tests, cleaning up one
+> reference removes the container for all other tests. Use `pool.Close(ctx)` in
+> `TestMain` to clean up reused containers after all tests finish.
+
+Use `Cleanup(t)` for **non-reused** containers — it registers `t.Cleanup` and
+logs errors without failing the test:
+
+```go
+resource := pool.RunT(t, "postgres",
+    dockertest.WithTag("14"),
+    dockertest.WithoutReuse(),
+)
+resource.Cleanup(t) // removed when t finishes
+```
+
+Use `CloseT(t)` when you need **immediate** cleanup and want a hard failure on
+error (calls `t.Fatalf`):
+
+```go
+resource.CloseT(t) // removes now, fails test on error
+```
+
+Use `Close(ctx)` in non-test code for manual cleanup:
+
+```go
+err := resource.Close(ctx)
+```
+
+Use `pool.Close(ctx)` to clean up **all** resources (reused and non-reused),
+typically in `TestMain`:
+
+```go
+func TestMain(m *testing.M) {
+    ctx := context.Background()
+    pool, _ := dockertest.NewPool(ctx, "")
+    code := m.Run()
+    pool.Close(ctx)
+    os.Exit(code)
+}
+```
+
+### Error handling
 
 ```go
 resource, err := pool.Run(ctx, "postgres", dockertest.WithTag("14"))
@@ -313,6 +459,9 @@ if errors.Is(err, dockertest.ErrContainerCreateFailed) {
 if errors.Is(err, dockertest.ErrContainerStartFailed) {
     // Container start failed
 }
+if errors.Is(err, dockertest.ErrClientClosed) {
+    // Pool or client has been closed
+}
 ```
 
 ## Examples
@@ -323,59 +472,18 @@ See the [examples directory](./examples) for complete examples.
 
 ### Out of disk space
 
-Try cleaning up the images with
-[docker-cleanup-volumes](https://github.com/chadoe/docker-cleanup-volumes).
+Try cleaning up unused containers, images, and volumes:
 
-## Running dockertest in Gitlab CI
-
-### How to run dockertest on shared gitlab runners?
-
-You should add docker dind service to your job which starts in sibling
-container. That means database will be available on host `docker`.  
-You app should be able to change db host through environment variable.
-
-Here is the simple example of `gitlab-ci.yml`:
-
-```yaml
-stages:
-  - test
-go-test:
-  stage: test
-  image: golang:1.15
-  services:
-    - docker:dind
-  variables:
-    DOCKER_HOST: tcp://docker:2375
-    DOCKER_DRIVER: overlay2
-    YOUR_APP_DB_HOST: docker
-  script:
-    - go test ./...
+```bash
+docker system prune -f
 ```
 
-Plus in the `pool.Retry` method that checks for connection readiness, you need
-to use `$YOUR_APP_DB_HOST` instead of localhost.
+## Running in CI
 
-### How to run dockertest on group(custom) gitlab runners?
+### GitHub Actions
 
-Gitlab runner can be run in docker executor mode to save compatibility with
-shared runners.  
-Here is the simple register command:
-
-```shell script
-gitlab-runner register -n \
- --url https://gitlab.com/ \
- --registration-token $YOUR_TOKEN \
- --executor docker \
- --description "My Docker Runner" \
- --docker-image "docker:19.03.12" \
- --docker-privileged
-```
-
-You only need to instruct docker dind to start with disabled tls.  
-Add variable `DOCKER_TLS_CERTDIR: ""` to `gitlab-ci.yml` above. It will tell
-docker daemon to start on 2375 port over http.
-
-## Running Dockertest using GitHub actions
+Docker is available by default on GitHub Actions `ubuntu-latest` runners, so no
+extra services are needed:
 
 ```yaml
 name: Test with Docker
@@ -385,20 +493,58 @@ on: [push]
 jobs:
   test:
     runs-on: ubuntu-latest
-    services:
-      dind:
-        image: docker:23.0-rc-dind-rootless
-        ports:
-          - 2375:2375
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - name: Set up Go
-        uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
-          go-version: "1.21"
+          go-version: "1.24"
 
-      - name: Test with Docker
-        run: go test -v ./...
+      - run: go test -v ./...
 ```
+
+### GitLab CI
+
+#### Shared runners
+
+Add the Docker dind service to your job which starts in a sibling container.
+The database will be available on host `docker`. Your app should be able to
+change the database host through an environment variable.
+
+```yaml
+stages:
+  - test
+go-test:
+  stage: test
+  image: golang:1.24
+  services:
+    - docker:dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_DRIVER: overlay2
+    DOCKER_TLS_CERTDIR: ""
+    YOUR_APP_DB_HOST: docker
+  script:
+    - go test ./...
+```
+
+In your `pool.Retry` callback, use `$YOUR_APP_DB_HOST` instead of localhost
+when connecting to the database.
+
+#### Custom (group) runners
+
+GitLab runner can be run in docker executor mode to save compatibility with
+shared runners:
+
+```shell
+gitlab-runner register -n \
+ --url https://gitlab.com/ \
+ --registration-token $YOUR_TOKEN \
+ --executor docker \
+ --description "My Docker Runner" \
+ --docker-image "docker:27" \
+ --docker-privileged
+```
+
+The `DOCKER_TLS_CERTDIR: ""` variable in the example above tells the Docker
+daemon to start on port 2375 over HTTP (TLS disabled).

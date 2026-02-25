@@ -52,7 +52,7 @@ func (r *Resource) GetBoundIP(portID string) string {
 
 	ip := bindings[0].HostIP.String()
 	if ip == "" || ip == "0.0.0.0" || ip == "::" {
-		return "localhost"
+		return "127.0.0.1"
 	}
 
 	return ip

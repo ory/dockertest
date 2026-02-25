@@ -91,8 +91,8 @@ func TestResourceGetBoundIPLocalhostFallback(t *testing.T) {
 	}
 
 	ip := r.GetBoundIP("5432/tcp")
-	if ip != "localhost" {
-		t.Errorf("GetBoundIP() = %q, want %q", ip, "localhost")
+	if ip != "127.0.0.1" {
+		t.Errorf("GetBoundIP() = %q, want %q", ip, "127.0.0.1")
 	}
 }
 
