@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"strings"
 
+	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/network"
 	mobyclient "github.com/moby/moby/client"
 )
@@ -161,7 +162,7 @@ func (n *Network) Close(ctx context.Context) error {
 	}
 
 	_, err := n.pool.client.NetworkRemove(ctx, n.Network.ID, mobyclient.NetworkRemoveOptions{})
-	if err != nil {
+	if err != nil && !errdefs.IsNotFound(err) {
 		return err
 	}
 

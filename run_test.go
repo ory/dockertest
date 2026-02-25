@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
 	dockertest "github.com/ory/dockertest/v4"
 )
 
@@ -432,5 +433,108 @@ func TestResourceExecNonZeroExit(t *testing.T) {
 	}
 	if result.StdErr != "err\n" {
 		t.Errorf("Exec() stderr = %q, want %q", result.StdErr, "err\n")
+	}
+}
+
+func TestRunWithName(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
+
+	pool := dockertest.NewPoolT(t, "")
+
+	containerName := "dockertest-test-named-" + t.Name()
+	resource := pool.RunT(t, "alpine",
+		dockertest.WithTag("latest"),
+		dockertest.WithName(containerName),
+		dockertest.WithCmd([]string{"sleep", "10"}),
+		dockertest.WithoutReuse(),
+	)
+	t.Cleanup(func() {
+		resource.CloseT(t)
+	})
+
+	if resource.Container.Name != "/"+containerName && resource.Container.Name != containerName {
+		t.Errorf("expected container name containing %q, got %q", containerName, resource.Container.Name)
+	}
+}
+
+func TestRunWithPortBindings(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
+
+	pool := dockertest.NewPoolT(t, "")
+
+	port, err := network.ParsePort("80/tcp")
+	if err != nil {
+		t.Fatalf("ParsePort() error = %v", err)
+	}
+
+	bindings := network.PortMap{
+		port: []network.PortBinding{
+			{HostPort: "18080"},
+		},
+	}
+
+	resource := pool.RunT(t, "alpine",
+		dockertest.WithTag("latest"),
+		dockertest.WithPortBindings(bindings),
+		dockertest.WithCmd([]string{"sleep", "10"}),
+		dockertest.WithoutReuse(),
+	)
+	t.Cleanup(func() {
+		resource.CloseT(t)
+	})
+
+	if len(resource.Container.HostConfig.PortBindings[port]) == 0 {
+		t.Fatalf("expected port binding for %s, got none", port)
+	}
+	if resource.Container.HostConfig.PortBindings[port][0].HostPort != "18080" {
+		t.Errorf("expected host port 18080, got %q", resource.Container.HostConfig.PortBindings[port][0].HostPort)
+	}
+}
+
+func TestRunWithMounts(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
+
+	pool := dockertest.NewPoolT(t, "")
+
+	resource := pool.RunT(t, "alpine",
+		dockertest.WithTag("latest"),
+		dockertest.WithMounts([]string{"/tmp:/mnt/test:ro"}),
+		dockertest.WithCmd([]string{"sleep", "10"}),
+		dockertest.WithoutReuse(),
+	)
+	t.Cleanup(func() {
+		resource.CloseT(t)
+	})
+
+	found := false
+	for _, bind := range resource.Container.HostConfig.Binds {
+		if bind == "/tmp:/mnt/test:ro" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected bind mount /tmp:/mnt/test:ro in %v", resource.Container.HostConfig.Binds)
 	}
 }

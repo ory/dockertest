@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"testing"
 	"time"
 
 	"github.com/containerd/errdefs"
@@ -152,7 +151,7 @@ func (p *Pool) trackedResources() []*Resource {
 }
 
 // NewPoolT creates a new Pool using t.Context() and registers cleanup with t.Cleanup().
-func NewPoolT(t *testing.T, endpoint string, opts ...PoolOption) *Pool {
+func NewPoolT(t TestingTB, endpoint string, opts ...PoolOption) *Pool {
 	t.Helper()
 
 	pool, err := NewPool(t.Context(), endpoint, opts...)
@@ -220,7 +219,12 @@ func (p *Pool) cleanup(ctx context.Context) error {
 }
 
 // Run starts a container with the given repository and options.
-// Containers are reused by default based on repository:tag to speed up tests.
+//
+// By default, containers are reused based on repository:tag to speed up tests.
+// This means that two calls with the same repository and tag will return the
+// same container, even if other options (env, cmd, etc.) differ. To ensure
+// a fresh container, use WithoutReuse(). To control reuse with a custom key
+// that accounts for your configuration, use WithReuseID().
 //
 // Example:
 //
@@ -232,6 +236,21 @@ func (p *Pool) cleanup(ctx context.Context) error {
 //		panic(err)
 //	}
 //	defer resource.Close(ctx)
+//
+// To disable reuse:
+//
+//	resource, err := pool.Run(ctx, "postgres",
+//		dockertest.WithTag("14"),
+//		dockertest.WithoutReuse(),
+//	)
+//
+// To use a custom reuse key:
+//
+//	resource, err := pool.Run(ctx, "postgres",
+//		dockertest.WithTag("14"),
+//		dockertest.WithEnv([]string{"POSTGRES_PASSWORD=secret"}),
+//		dockertest.WithReuseID("postgres-14-secret"),
+//	)
 func (p *Pool) Run(ctx context.Context, repository string, opts ...RunOption) (*Resource, error) {
 	cfg, err := buildRunConfig(opts)
 	if err != nil {
@@ -353,12 +372,21 @@ func (p *Pool) createAndStartContainer(ctx context.Context, ref string, cfg *run
 		PublishAllPorts: true,
 	}
 
+	if len(cfg.portBindings) > 0 {
+		hostConfig.PortBindings = cfg.portBindings
+	}
+
+	if len(cfg.binds) > 0 {
+		hostConfig.Binds = cfg.binds
+	}
+
 	// Apply host config modifier last to allow overriding anything
 	if cfg.hostConfigModifier != nil {
 		cfg.hostConfigModifier(hostConfig)
 	}
 
 	createOpts := mobyclient.ContainerCreateOptions{
+		Name:       cfg.name,
 		Config:     containerConfig,
 		HostConfig: hostConfig,
 	}
@@ -379,7 +407,7 @@ func (p *Pool) createAndStartContainer(ctx context.Context, ref string, cfg *run
 
 // inspectAndRegister inspects the container and registers it in the global registry.
 func (p *Pool) inspectAndRegister(ctx context.Context, containerID, reuseID string) (*Resource, error) {
-	inspectResp, err := p.client.ContainerInspect(ctx, containerID, mobyclient.ContainerInspectOptions{})
+	inspectResp, err := p.inspectWithPortRetry(ctx, containerID)
 	if err != nil {
 		_, _ = p.client.ContainerRemove(ctx, containerID, mobyclient.ContainerRemoveOptions{Force: true}) //nolint:errcheck // Best effort cleanup
 		return nil, fmt.Errorf("container inspect failed: %w", err)
@@ -411,6 +439,41 @@ func (p *Pool) inspectAndRegister(ctx context.Context, containerID, reuseID stri
 	p.trackResource(resource)
 
 	return resource, nil
+}
+
+// inspectWithPortRetry inspects a container, retrying briefly if exposed ports
+// have not yet been bound. Docker may report empty port bindings immediately
+// after ContainerStart; this mirrors v3's inspectContainerWithRetries behavior.
+func (p *Pool) inspectWithPortRetry(ctx context.Context, containerID string) (mobyclient.ContainerInspectResult, error) {
+	const maxRetries = 5
+	const retryDelay = 100 * time.Millisecond
+
+	for range maxRetries {
+		resp, err := p.client.ContainerInspect(ctx, containerID, mobyclient.ContainerInspectOptions{})
+		if err != nil {
+			return resp, err
+		}
+
+		// If the container has no exposed ports, no need to wait for bindings.
+		if resp.Container.Config == nil || len(resp.Container.Config.ExposedPorts) == 0 {
+			return resp, nil
+		}
+
+		// If port bindings are populated, we're good.
+		if resp.Container.NetworkSettings != nil && len(resp.Container.NetworkSettings.Ports) > 0 {
+			return resp, nil
+		}
+
+		// Wait and retry.
+		select {
+		case <-ctx.Done():
+			return resp, ctx.Err()
+		case <-time.After(retryDelay):
+		}
+	}
+
+	// Return the last result even if ports aren't populated.
+	return p.client.ContainerInspect(ctx, containerID, mobyclient.ContainerInspectOptions{})
 }
 
 // RunT is a test helper that uses t.Context() and calls t.Fatalf on error.

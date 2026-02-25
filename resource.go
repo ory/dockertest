@@ -6,10 +6,7 @@ package dockertest
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
-	"errors"
 	"fmt"
-	"io"
 	"net"
 
 	"github.com/containerd/errdefs"
@@ -136,50 +133,12 @@ func (r *Resource) Logs(ctx context.Context) (string, error) {
 	}
 	defer reader.Close()
 
-	// Read and demultiplex Docker log format
-	var result bytes.Buffer
-	header := make([]byte, 8)
-
-	for {
-		// Read header: [stream_type (1 byte), padding (3 bytes), size (4 bytes)]
-		n, err := io.ReadFull(reader, header)
-		if errors.Is(err, io.EOF) {
-			break
-		}
-		if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) {
-			return "", fmt.Errorf("failed to read log header: %w", err)
-		}
-		if n < 8 {
-			// Partial header at end of stream, ignore
-			break
-		}
-
-		// Extract size from header (big-endian uint32 at bytes 4-7)
-		size := binary.BigEndian.Uint32(header[4:8])
-		if size == 0 {
-			continue
-		}
-
-		const maxLogMessageSize = 64 * 1024 * 1024 // 64 MiB per message
-		const maxTotalLogSize = 256 * 1024 * 1024  // 256 MiB total
-		if size > maxLogMessageSize {
-			return "", fmt.Errorf("log message size %d exceeds maximum %d", size, maxLogMessageSize)
-		}
-
-		if uint64(result.Len())+uint64(size) > maxTotalLogSize {
-			return "", fmt.Errorf("total log size exceeds maximum %d bytes", maxTotalLogSize)
-		}
-
-		// Read the log message
-		message := make([]byte, size)
-		if _, err := io.ReadFull(reader, message); err != nil {
-			return "", fmt.Errorf("failed to read log message: %w", err)
-		}
-
-		result.Write(message)
+	var buf bytes.Buffer
+	if _, err := stdcopy.StdCopy(&buf, &buf, reader); err != nil {
+		return "", fmt.Errorf("failed to read container logs: %w", err)
 	}
 
-	return result.String(), nil
+	return buf.String(), nil
 }
 
 // ExecResult holds the output of a command executed inside a container.

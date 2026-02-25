@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
 	"github.com/ory/dockertest/v4/internal/client"
 )
 
@@ -42,12 +43,15 @@ type runConfig struct {
 	env                []string
 	cmd                []string
 	entrypoint         []string
+	binds              []string
 	tag                string
+	name               string
 	reuseID            string
 	user               string
 	workingDir         string
 	hostname           string
 	labels             map[string]string
+	portBindings       network.PortMap
 	configModifier     func(*container.Config)
 	hostConfigModifier func(*container.HostConfig)
 	noReuse            bool
@@ -156,6 +160,32 @@ func WithContainerConfig(modifier func(*container.Config)) RunOption {
 func WithHostConfig(modifier func(*container.HostConfig)) RunOption {
 	return func(rc *runConfig) error {
 		rc.hostConfigModifier = modifier
+		return nil
+	}
+}
+
+// WithName sets the container name.
+func WithName(name string) RunOption {
+	return func(rc *runConfig) error {
+		rc.name = name
+		return nil
+	}
+}
+
+// WithPortBindings sets explicit port bindings for the container.
+// Use network.PortMap to specify the bindings.
+func WithPortBindings(bindings network.PortMap) RunOption {
+	return func(rc *runConfig) error {
+		rc.portBindings = bindings
+		return nil
+	}
+}
+
+// WithMounts sets bind mounts for the container.
+// Each string should be in "host:container" or "host:container:mode" format.
+func WithMounts(binds []string) RunOption {
+	return func(rc *runConfig) error {
+		rc.binds = binds
 		return nil
 	}
 }

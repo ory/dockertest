@@ -120,6 +120,23 @@ func TestNetworkClose(t *testing.T) {
 	})
 }
 
+func TestNetworkCloseIdempotent(t *testing.T) {
+	pool := dockertest.NewPoolT(t, "")
+	network := pool.CreateNetworkT(t, t.Name(), nil)
+
+	// First close should succeed
+	err := network.Close(t.Context())
+	if err != nil {
+		t.Fatalf("first Close() error = %v, want nil", err)
+	}
+
+	// Second close should also succeed (network already removed)
+	err = network.Close(t.Context())
+	if err != nil {
+		t.Fatalf("second Close() error = %v, want nil (should tolerate already-removed)", err)
+	}
+}
+
 func TestNetworkCloseT(t *testing.T) {
 	t.Run("removes network using t.Context", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
