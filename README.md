@@ -200,8 +200,8 @@ Available configuration options:
 - `WithReuseID(id string)` - Set a custom reuse key (default:
   `"repository:tag"`)
 - `WithoutReuse()` - Disable container reuse for this run
-- `WithContainerConfig(modifier func(*container.Config))` - Modify the
-  container config directly
+- `WithContainerConfig(modifier func(*container.Config))` - Modify the container
+  config directly
 - `WithHostConfig(modifier func(*container.HostConfig))` - Modify the host
   config (port bindings, volumes, restart policy, memory/CPU limits)
 
@@ -243,8 +243,8 @@ resource := pool.RunT(t, "postgres",
 >
 > Do not use `resource.Cleanup(t)` on reused containers. Because reused
 > containers are shared across tests, cleaning up one reference will remove the
-> container for all other tests that depend on it. Only use `pool.Close(ctx)`
-> in `TestMain` to clean up reused containers after all tests have finished.
+> container for all other tests that depend on it. Only use `pool.Close(ctx)` in
+> `TestMain` to clean up reused containers after all tests have finished.
 
 Containers are automatically reused based on `repository:tag`:
 
@@ -507,9 +507,9 @@ jobs:
 
 #### Shared runners
 
-Add the Docker dind service to your job which starts in a sibling container.
-The database will be available on host `docker`. Your app should be able to
-change the database host through an environment variable.
+Add the Docker dind service to your job which starts in a sibling container. The
+database will be available on host `docker`. Your app should be able to change
+the database host through an environment variable.
 
 ```yaml
 stages:
@@ -528,8 +528,8 @@ go-test:
     - go test ./...
 ```
 
-In your `pool.Retry` callback, use `$YOUR_APP_DB_HOST` instead of localhost
-when connecting to the database.
+In your `pool.Retry` callback, use `$YOUR_APP_DB_HOST` instead of localhost when
+connecting to the database.
 
 #### Custom (group) runners
 

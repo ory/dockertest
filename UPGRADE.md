@@ -17,7 +17,7 @@ This guide helps you migrate from dockertest v3 to v4.
 | `pool, err := dockertest.NewPool("")`                                               | `pool := dockertest.NewPoolT(t, "")`                                                                           |
 | `pool.MaxWait = time.Minute`                                                        | `dockertest.WithMaxWait(time.Minute)`                                                                          |
 | `resource, err := pool.Run("postgres", "14", []string{"POSTGRES_PASSWORD=secret"})` | `pool.RunT(t, "postgres", dockertest.WithTag("14"), dockertest.WithEnv([]string{"POSTGRES_PASSWORD=secret"}))` |
-| `defer pool.Purge(resource)`                                                        | Automatic via `NewPoolT` cleanup, or `pool.Close(ctx)` in `TestMain`                                          |
+| `defer pool.Purge(resource)`                                                        | Automatic via `NewPoolT` cleanup, or `pool.Close(ctx)` in `TestMain`                                           |
 | `pool.Retry(func() error { ... })`                                                  | `pool.Retry(ctx, timeout, func() error { ... })`                                                               |
 | No context support                                                                  | Context throughout                                                                                             |
 | No container reuse                                                                  | Automatic container reuse by default                                                                           |
@@ -72,8 +72,8 @@ pool := dockertest.NewPoolT(t, "",
 
 **Option B: `NewPool` + `TestMain` (for shared pools across tests)**
 
-Use this when you want a single pool shared across all tests in a package.
-You must call `pool.Close(ctx)` explicitly.
+Use this when you want a single pool shared across all tests in a package. You
+must call `pool.Close(ctx)` explicitly.
 
 ```go
 // v4 — shared pool, manual cleanup
@@ -113,9 +113,9 @@ defer pool.Close(ctx)
 > directly; v4 reads the Docker host from environment variables (`DOCKER_HOST`,
 > `DOCKER_TLS_VERIFY`, `DOCKER_CERT_PATH`). If you passed a custom endpoint in
 > v3, set `DOCKER_HOST` before calling `NewPool`, or provide a pre-configured
-> `*client.Client` from `github.com/moby/moby/client` via `WithMobyClient`.
-> When using `WithMobyClient`, the `endpoint` parameter is ignored and the pool
-> will not close the client on `pool.Close`.
+> `*client.Client` from `github.com/moby/moby/client` via `WithMobyClient`. When
+> using `WithMobyClient`, the `endpoint` parameter is ignored and the pool will
+> not close the client on `pool.Close`.
 
 ### Running Containers
 
@@ -197,10 +197,10 @@ pool.RunT(t, "postgres",
 )
 ```
 
-Available options: `WithTag`, `WithEnv`, `WithCmd`, `WithEntrypoint`, `WithUser`,
-`WithWorkingDir`, `WithLabels`, `WithHostname`, `WithName`, `WithMounts`,
-`WithPortBindings`, `WithoutReuse`, `WithReuseID`, `WithContainerConfig`,
-`WithHostConfig`.
+Available options: `WithTag`, `WithEnv`, `WithCmd`, `WithEntrypoint`,
+`WithUser`, `WithWorkingDir`, `WithLabels`, `WithHostname`, `WithName`,
+`WithMounts`, `WithPortBindings`, `WithoutReuse`, `WithReuseID`,
+`WithContainerConfig`, `WithHostConfig`.
 
 > [!NOTE]
 >
@@ -248,11 +248,14 @@ Available sentinel errors: `ErrImagePullFailed`, `ErrContainerCreateFailed`,
    ```
 
 3. **Convert API calls:**
+
    - `NewPool("")` → `NewPoolT(t, "")` (or `NewPool(ctx, "")` in `TestMain`)
    - `Run()`/`RunWithOptions()` → `RunT(t, ...)` with functional options
-   - `pool.Purge(resource)` → automatic via `NewPoolT`, or `pool.Close(ctx)` in `TestMain`
+   - `pool.Purge(resource)` → automatic via `NewPoolT`, or `pool.Close(ctx)` in
+     `TestMain`
    - `pool.Retry(fn)` → `pool.Retry(ctx, timeout, fn)`
-   - For non-reused containers needing per-test cleanup: `WithoutReuse()` + `resource.Cleanup(t)`
+   - For non-reused containers needing per-test cleanup: `WithoutReuse()` +
+     `resource.Cleanup(t)`
    - See [Breaking Changes](#breaking-changes) for full patterns.
 
 4. **Test:** Run `go test ./...` to verify the migration.
@@ -317,8 +320,8 @@ cache := pool.RunT(t, "redis", dockertest.WithTag("7"))
 > Do not use `resource.Cleanup(t)` on reused containers. Because reused
 > containers are shared across tests, cleaning up one reference will remove the
 > container for all other tests that depend on it. Only use `pool.Close(ctx)`
-> (automatic with `NewPoolT`) to clean up reused containers after all tests
-> have finished.
+> (automatic with `NewPoolT`) to clean up reused containers after all tests have
+> finished.
 
 v4 automatically reuses containers with the same `repo:tag` across tests. Each
 `NewPoolT` call creates a separate pool, but containers are still shared because
@@ -388,9 +391,9 @@ resource := pool.BuildAndRunT(t, "myapp:test",
 )
 ```
 
-Available `BuildOptions` fields: `ContextDir` (required), `Dockerfile` (defaults to
-`"Dockerfile"`), `Tags`, `BuildArgs` (`map[string]*string`), `Labels`, `NoCache`,
-`ForceRemove`.
+Available `BuildOptions` fields: `ContextDir` (required), `Dockerfile` (defaults
+to `"Dockerfile"`), `Tags`, `BuildArgs` (`map[string]*string`), `Labels`,
+`NoCache`, `ForceRemove`.
 
 ### Container Networks
 
@@ -415,9 +418,9 @@ if err != nil {
 defer net.Close(ctx)
 ```
 
-Available `NetworkCreateOptions` fields: `Driver` (e.g., `"bridge"`, `"overlay"`),
-`Labels`, `Options` (driver-specific), `Internal`, `Attachable`, `Ingress` (swarm
-mode), `EnableIPv6`.
+Available `NetworkCreateOptions` fields: `Driver` (e.g., `"bridge"`,
+`"overlay"`), `Labels`, `Options` (driver-specific), `Internal`, `Attachable`,
+`Ingress` (swarm mode), `EnableIPv6`.
 
 ### Exec and Logs
 
@@ -453,10 +456,10 @@ resource.CloseT(t) // immediate removal
 
 > [!NOTE]
 >
-> `CloseT(t)` removes the container **immediately** and calls `t.Fatalf` on error.
-> `Cleanup(t)` registers removal via `t.Cleanup` so it runs when the test ends.
-> Use `Cleanup(t)` for non-reused containers that should live for the test's
-> duration; use `CloseT(t)` when you need teardown at a specific point.
+> `CloseT(t)` removes the container **immediately** and calls `t.Fatalf` on
+> error. `Cleanup(t)` registers removal via `t.Cleanup` so it runs when the test
+> ends. Use `Cleanup(t)` for non-reused containers that should live for the
+> test's duration; use `CloseT(t)` when you need teardown at a specific point.
 
 ## Troubleshooting
 
