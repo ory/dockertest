@@ -1,12 +1,22 @@
-.bin/
+# Binaries
+*.exe
+*.test
+*.out
+
+# Coverage files
+coverage.out
+cover.out
+.cover/
+
+# Editor and IDE
 .idea/
 node_modules/
 *.iml
-*.exe
-.cover/
-vendor/
-go.list
-cover.out
-coverage.out
-.vscode
+
+# Build artifacts
 .bin/
+vendor/
+
+# Temporary files
+go.list
+.vscode
