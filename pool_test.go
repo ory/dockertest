@@ -243,6 +243,112 @@ func TestCustomClientPoolHasIsolatedScope(t *testing.T) {
 	}
 }
 
+func TestPoolCloseT(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	ResetRegistry()
+	t.Cleanup(func() {
+		ResetRegistry()
+	})
+
+	pool := NewPoolT(t, "")
+	resource := pool.RunT(t, "alpine",
+		WithTag("latest"),
+		WithCmd([]string{"sleep", "300"}),
+		WithoutReuse(),
+	)
+	containerID := resource.ID()
+
+	pool.CloseT(t)
+
+	// After CloseT, the container should be removed
+	newPool, err := NewPool(t.Context(), "")
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	t.Cleanup(func() { newPool.Close(t.Context()) })
+
+	_, inspectErr := newPool.client.ContainerInspect(t.Context(), containerID, mobyclient.ContainerInspectOptions{})
+	if !errdefs.IsNotFound(inspectErr) {
+		t.Fatalf("ContainerInspect() error = %v, want not found", inspectErr)
+	}
+}
+
+func TestCheckForExistingIncrementsRefCount(t *testing.T) {
+	ResetRegistry()
+
+	resource := &Resource{Container: container.InspectResponse{ID: "ref-count-check"}}
+	// Register: refs=1
+	registerWithScope("scope", "id", resource)
+
+	pool := &Pool{reuseScope: "scope"}
+	// checkForExisting calls acquireWithScope: refs=2
+	got := checkForExisting(pool, "id")
+	if got == nil || got.ID() != resource.ID() {
+		t.Fatalf("checkForExisting returned %v, want resource %q", got, resource.ID())
+	}
+
+	// First release: refs=1, not last
+	if releaseWithScope("scope", "id") {
+		t.Fatal("first releaseWithScope was last, want false")
+	}
+
+	// Second release: refs=0, last
+	if !releaseWithScope("scope", "id") {
+		t.Fatal("second releaseWithScope was not last, want true")
+	}
+}
+
+func TestPoolCleanupForceRemovesReusedContainers(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	ResetRegistry()
+	t.Cleanup(func() {
+		ResetRegistry()
+	})
+
+	pool := NewPoolT(t, "")
+
+	// Run first reused container: refs=1
+	r1 := pool.RunT(t, "alpine",
+		WithTag("latest"),
+		WithCmd([]string{"sleep", "300"}),
+	)
+
+	// Run second reused container (same repo:tag): refs=2
+	r2 := pool.RunT(t, "alpine",
+		WithTag("latest"),
+		WithCmd([]string{"sleep", "300"}),
+	)
+
+	if r1.ID() != r2.ID() {
+		t.Fatalf("expected same container ID, got %s and %s", r1.ID(), r2.ID())
+	}
+
+	containerID := r1.ID()
+	reuseScope := pool.reuseScope
+
+	// cleanup() should force-remove everything regardless of ref count
+	if err := pool.cleanup(t.Context()); err != nil {
+		t.Fatalf("cleanup() error = %v", err)
+	}
+
+	// Container should be gone from Docker
+	_, err := pool.client.ContainerInspect(t.Context(), containerID, mobyclient.ContainerInspectOptions{})
+	if !errdefs.IsNotFound(err) {
+		t.Fatalf("ContainerInspect() error = %v, want not found", err)
+	}
+
+	// Registry entry should be cleared
+	if _, ok := getWithScope(reuseScope, "alpine:latest"); ok {
+		t.Fatal("registry entry still present after cleanup, want it removed")
+	}
+}
+
 func TestPoolCleanupRemovesWithoutReuse(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")

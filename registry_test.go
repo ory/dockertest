@@ -219,3 +219,116 @@ func TestRegisterWithScopeLoadOrStore(t *testing.T) {
 		t.Fatalf("second stored resource = %q, want %q", stored.ID(), first.ID())
 	}
 }
+
+func TestRegistryRefCounting(t *testing.T) {
+	ResetRegistry()
+
+	r := &Resource{Container: container.InspectResponse{ID: "refcount-container"}}
+
+	// Register: refs=1
+	_, loaded := registerWithScope("scope", "rc-id", r)
+	if loaded {
+		t.Fatal("first register loaded = true, want false")
+	}
+
+	// Acquire: refs=2
+	got, ok := acquireWithScope("scope", "rc-id")
+	if !ok {
+		t.Fatal("acquireWithScope returned false, want true")
+	}
+	if got.ID() != r.ID() {
+		t.Fatalf("acquireWithScope returned %q, want %q", got.ID(), r.ID())
+	}
+
+	// Release once: refs=1, should NOT be last
+	if releaseWithScope("scope", "rc-id") {
+		t.Fatal("first releaseWithScope returned true (last ref), want false")
+	}
+	// Entry should still exist
+	if _, ok := getWithScope("scope", "rc-id"); !ok {
+		t.Fatal("entry removed after first release, want it to remain")
+	}
+
+	// Release again: refs=0, should be last
+	if !releaseWithScope("scope", "rc-id") {
+		t.Fatal("second releaseWithScope returned false, want true (last ref)")
+	}
+	// Entry should be gone
+	if _, ok := getWithScope("scope", "rc-id"); ok {
+		t.Fatal("entry still present after last release, want it removed")
+	}
+}
+
+func TestRegistryRefCountingRegisterIncrementsOnDuplicate(t *testing.T) {
+	ResetRegistry()
+
+	r1 := &Resource{Container: container.InspectResponse{ID: "dup-1"}}
+	r2 := &Resource{Container: container.InspectResponse{ID: "dup-2"}}
+
+	// Register r1: refs=1
+	registerWithScope("scope", "dup-id", r1)
+	// Register r2 with same key: refs=2 (r1 is canonical)
+	stored, loaded := registerWithScope("scope", "dup-id", r2)
+	if !loaded {
+		t.Fatal("second register loaded = false, want true")
+	}
+	if stored.ID() != r1.ID() {
+		t.Fatalf("canonical resource = %q, want %q", stored.ID(), r1.ID())
+	}
+
+	// Need 2 releases to remove
+	if releaseWithScope("scope", "dup-id") {
+		t.Fatal("first release was last, want false")
+	}
+	if !releaseWithScope("scope", "dup-id") {
+		t.Fatal("second release was not last, want true")
+	}
+}
+
+func TestAcquireWithScopeNonExistent(t *testing.T) {
+	ResetRegistry()
+
+	_, ok := acquireWithScope("scope", "nonexistent")
+	if ok {
+		t.Fatal("acquireWithScope returned true for nonexistent entry, want false")
+	}
+}
+
+func TestReleaseWithScopeNonExistent(t *testing.T) {
+	ResetRegistry()
+
+	// Releasing a nonexistent entry should return true (treat as last reference)
+	if !releaseWithScope("scope", "nonexistent") {
+		t.Fatal("releaseWithScope returned false for nonexistent entry, want true")
+	}
+}
+
+func TestGetWithScopeDoesNotIncrementRefs(t *testing.T) {
+	ResetRegistry()
+
+	r := &Resource{Container: container.InspectResponse{ID: "get-no-inc"}}
+
+	// Register: refs=1
+	registerWithScope("s", "id", r)
+
+	// getWithScope five times — should NOT increment refs
+	for range 5 {
+		got, ok := getWithScope("s", "id")
+		if !ok {
+			t.Fatal("getWithScope returned false, want true")
+		}
+		if got.ID() != r.ID() {
+			t.Fatalf("getWithScope returned %q, want %q", got.ID(), r.ID())
+		}
+	}
+
+	// Single release should be the last ref (still 1)
+	if !releaseWithScope("s", "id") {
+		t.Fatal("releaseWithScope returned false, want true (last ref)")
+	}
+
+	// Entry should be gone
+	if _, ok := getWithScope("s", "id"); ok {
+		t.Fatal("entry still present after last release, want it removed")
+	}
+}
