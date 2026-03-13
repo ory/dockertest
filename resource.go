@@ -73,9 +73,21 @@ func (r *Resource) GetHostPort(portID string) string {
 
 // Close stops and removes the container.
 // Anonymous volumes created by the container are also removed.
+//
+// For reused containers (those with a reuseID), Close only removes the Docker
+// container when the last reference is released. If other callers still hold
+// references, Close simply untracks the resource from this pool.
 func (r *Resource) Close(ctx context.Context) error {
 	if r.pool == nil || r.pool.client == nil {
 		return ErrClientClosed
+	}
+
+	if r.reuseID != "" {
+		if !releaseWithScope(r.pool.reuseScope, r.reuseID) {
+			// Other callers still hold references; just untrack from this pool.
+			r.pool.untrackResource(r.Container.ID)
+			return nil
+		}
 	}
 
 	// Stop container (ignore errors if already stopped)
@@ -90,9 +102,6 @@ func (r *Resource) Close(ctx context.Context) error {
 		return err
 	}
 
-	if r.reuseID != "" {
-		unregisterWithScope(r.pool.reuseScope, r.reuseID)
-	}
 	r.pool.untrackResource(r.Container.ID)
 
 	return nil

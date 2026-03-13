@@ -6,6 +6,7 @@ package dockertest
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/moby/moby/api/types/container"
 )
@@ -27,6 +28,15 @@ func (r *Resource) ID() string {
 type registryKey struct {
 	scope   string
 	reuseID string
+}
+
+// registryEntry wraps a Resource with an atomic reference count.
+// When multiple callers share a reused container, the ref count tracks
+// how many are still using it. The container is only removed from Docker
+// when the last reference is released.
+type registryEntry struct {
+	resource *Resource
+	refs     atomic.Int32
 }
 
 const defaultRegistryScope = "default"
@@ -87,16 +97,59 @@ func GetAll() []*Resource {
 
 func registerWithScope(scope, reuseID string, r *Resource) (*Resource, bool) {
 	key := registryKey{scope: scope, reuseID: reuseID}
-	actual, loaded := globalRegistry.LoadOrStore(key, r)
-	resource, ok := actual.(*Resource)
+	entry := &registryEntry{resource: r}
+	entry.refs.Store(1)
+	actual, loaded := globalRegistry.LoadOrStore(key, entry)
+	existing, ok := actual.(*registryEntry)
 	if !ok {
 		return r, loaded
 	}
-	return resource, loaded
+	if loaded {
+		existing.refs.Add(1)
+		return existing.resource, true
+	}
+	return existing.resource, false
 }
 
-func unregisterWithScope(scope, reuseID string) {
-	globalRegistry.Delete(registryKey{scope: scope, reuseID: reuseID})
+// acquireWithScope looks up an existing entry and increments its ref count.
+// Returns the resource and true if found, nil and false otherwise.
+func acquireWithScope(scope, reuseID string) (*Resource, bool) {
+	key := registryKey{scope: scope, reuseID: reuseID}
+	val, ok := globalRegistry.Load(key)
+	if !ok {
+		return nil, false
+	}
+	entry, ok := val.(*registryEntry)
+	if !ok {
+		return nil, false
+	}
+	entry.refs.Add(1)
+	// Verify the entry is still in the map (not deleted and replaced between Load and Add).
+	if current, ok := globalRegistry.Load(key); !ok || current != val {
+		entry.refs.Add(-1)
+		return nil, false
+	}
+	return entry.resource, true
+}
+
+// releaseWithScope decrements the reference count for the given reuseID.
+// Returns true if this was the last reference (caller should remove the container).
+func releaseWithScope(scope, reuseID string) bool {
+	key := registryKey{scope: scope, reuseID: reuseID}
+	val, ok := globalRegistry.Load(key)
+	if !ok {
+		return true // Not found, treat as last reference
+	}
+	entry, ok := val.(*registryEntry)
+	if !ok {
+		globalRegistry.Delete(key)
+		return true
+	}
+	if entry.refs.Add(-1) <= 0 {
+		globalRegistry.Delete(key)
+		return true
+	}
+	return false
 }
 
 func getWithScope(scope, reuseID string) (*Resource, bool) {
@@ -104,11 +157,11 @@ func getWithScope(scope, reuseID string) (*Resource, bool) {
 	if !ok {
 		return nil, false
 	}
-	resource, ok := val.(*Resource)
+	entry, ok := val.(*registryEntry)
 	if !ok {
 		return nil, false
 	}
-	return resource, true
+	return entry.resource, true
 }
 
 func getAllWithScope(scope string) []*Resource {
@@ -119,8 +172,8 @@ func getAllWithScope(scope string) []*Resource {
 		if !ok || regKey.scope != scope {
 			return true
 		}
-		if resource, ok := value.(*Resource); ok {
-			resources = append(resources, resource)
+		if entry, ok := value.(*registryEntry); ok {
+			resources = append(resources, entry.resource)
 		}
 		return true
 	})

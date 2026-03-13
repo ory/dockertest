@@ -160,7 +160,7 @@ func NewPoolT(t TestingTB, endpoint string, opts ...PoolOption) *Pool {
 	}
 
 	t.Cleanup(func() {
-		if err := pool.Close(t.Context()); err != nil {
+		if err := pool.Close(context.WithoutCancel(t.Context())); err != nil {
 			t.Logf("pool.Close() error: %v", err)
 		}
 	})
@@ -186,18 +186,31 @@ func (p *Pool) Close(ctx context.Context) error {
 	return cleanupErr
 }
 
+// CloseT cleans up all tracked containers and networks, then closes the Pool's
+// Docker client. It calls t.Fatalf on error.
+func (p *Pool) CloseT(t TestingTB) {
+	t.Helper()
+	if err := p.Close(context.WithoutCancel(t.Context())); err != nil {
+		t.Fatalf("Pool.CloseT failed: %v", err)
+	}
+}
+
 // cleanup removes all containers and networks tracked by this pool.
 // Containers are removed first, then networks. Errors during cleanup
 // do not stop the cleanup process. The first error encountered is returned.
+//
+// Unlike Resource.Close, cleanup force-removes containers regardless of
+// reference count. This ensures that Pool.Close fully cleans up even when
+// reused containers still have outstanding references.
 func (p *Pool) cleanup(ctx context.Context) error {
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
 	defer cancel()
 
 	var firstErr error
 
-	// Remove containers first (they may be connected to tracked networks)
+	// Force-remove containers (bypass ref counting — the pool is shutting down).
 	for _, resource := range p.trackedResources() {
-		if err := resource.Close(cleanupCtx); err != nil && firstErr == nil {
+		if err := p.forceRemoveContainer(cleanupCtx, resource.Container.ID); err != nil && firstErr == nil {
 			firstErr = err
 		}
 		p.untrackResource(resource.Container.ID)
@@ -218,13 +231,26 @@ func (p *Pool) cleanup(ctx context.Context) error {
 	return firstErr
 }
 
+// forceRemoveContainer stops and removes a container, ignoring not-found errors.
+func (p *Pool) forceRemoveContainer(ctx context.Context, containerID string) error {
+	_, _ = p.client.ContainerStop(ctx, containerID, mobyclient.ContainerStopOptions{})
+	_, err := p.client.ContainerRemove(ctx, containerID, mobyclient.ContainerRemoveOptions{
+		RemoveVolumes: true,
+		Force:         true,
+	})
+	if err != nil && !errdefs.IsNotFound(err) {
+		return err
+	}
+	return nil
+}
+
 // Run starts a container with the given repository and options.
 //
 // By default, containers are reused based on repository:tag to speed up tests.
-// This means that two calls with the same repository and tag will return the
-// same container, even if other options (env, cmd, etc.) differ. To ensure
-// a fresh container, use WithoutReuse(). To control reuse with a custom key
-// that accounts for your configuration, use WithReuseID().
+// Reused containers are reference-counted: the Docker container is only removed
+// when the last caller closes its reference. To ensure a fresh container, use
+// WithoutReuse(). To control reuse with a custom key that accounts for your
+// configuration, use WithReuseID().
 //
 // Example:
 //
@@ -302,15 +328,16 @@ func computeReuseID(repository string, cfg *runConfig) string {
 	return fmt.Sprintf("%s:%s", repository, cfg.tag)
 }
 
-// checkForExisting looks up an existing container in the registry.
-// The returned Resource is a shallow clone of the canonical registry entry
-// with the pool pointer updated to the caller's pool. This is safe because
-// Container (a value type) is copied, and reuseID is an immutable string.
+// checkForExisting looks up an existing container in the registry and
+// increments its reference count. The returned Resource is a shallow clone
+// of the canonical registry entry with the pool pointer updated to the
+// caller's pool. This is safe because Container (a value type) is copied,
+// and reuseID is an immutable string.
 func checkForExisting(p *Pool, reuseID string) *Resource {
 	if reuseID == "" {
 		return nil
 	}
-	if existing, ok := getWithScope(p.reuseScope, reuseID); ok {
+	if existing, ok := acquireWithScope(p.reuseScope, reuseID); ok {
 		cloned := *existing
 		cloned.pool = p
 		return &cloned

@@ -6,8 +6,10 @@ package dockertest_test
 import (
 	"testing"
 
+	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
+	mobyclient "github.com/moby/moby/client"
 	dockertest "github.com/ory/dockertest/v4"
 )
 
@@ -502,6 +504,65 @@ func TestRunWithPortBindings(t *testing.T) {
 	}
 	if resource.Container.HostConfig.PortBindings[port][0].HostPort != "18080" {
 		t.Errorf("expected host port 18080, got %q", resource.Container.HostConfig.PortBindings[port][0].HostPort)
+	}
+}
+
+func TestResourceCloseRefCounting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
+
+	pool := dockertest.NewPoolT(t, "")
+
+	// First run creates the container: refs=1
+	r1 := pool.RunT(t, "alpine",
+		dockertest.WithTag("latest"),
+		dockertest.WithCmd([]string{"sleep", "300"}),
+	)
+
+	// Second run reuses the same container: refs=2
+	r2 := pool.RunT(t, "alpine",
+		dockertest.WithTag("latest"),
+		dockertest.WithCmd([]string{"sleep", "300"}),
+	)
+
+	if r1.ID() != r2.ID() {
+		t.Fatalf("expected same container ID for reused container, got %s and %s", r1.ID(), r2.ID())
+	}
+
+	containerID := r1.ID()
+
+	// Create a standalone Docker client for container inspection
+	// (pool.client is unexported from this external test package)
+	dc, err := mobyclient.New(mobyclient.FromEnv)
+	if err != nil {
+		t.Fatalf("mobyclient.New() error = %v", err)
+	}
+	t.Cleanup(func() { dc.Close() })
+
+	// Close first reference: refs=1, container should still exist
+	r1.CloseT(t)
+
+	// Container must still be alive (one reference remains)
+	resp, err := dc.ContainerInspect(t.Context(), containerID, mobyclient.ContainerInspectOptions{})
+	if err != nil {
+		t.Fatalf("ContainerInspect() after first close: error = %v, want container still alive", err)
+	}
+	if resp.Container.ID != containerID {
+		t.Fatalf("ContainerInspect() returned ID %s, want %s", resp.Container.ID, containerID)
+	}
+
+	// Close second reference: refs=0, container should be removed
+	r2.CloseT(t)
+
+	_, err = dc.ContainerInspect(t.Context(), containerID, mobyclient.ContainerInspectOptions{})
+	if !errdefs.IsNotFound(err) {
+		t.Fatalf("ContainerInspect() after last close: error = %v, want not found", err)
 	}
 }
 
