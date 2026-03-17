@@ -429,8 +429,10 @@ v4 maintains a global in-memory registry for container reuse. You typically do
 not need these functions directly — `Pool.Run` and `Pool.RunT` use them
 automatically. They are useful for custom cleanup or inspection:
 
-- `Register(reuseID string, r ClosableResource) error` — stores a resource (idempotent; keeps existing)
-- `Get(reuseID string) (ClosableResource, bool)` — retrieves a resource by reuse ID
+- `Register(reuseID string, r ClosableResource) error` — stores a resource
+  (idempotent; keeps existing)
+- `Get(reuseID string) (ClosableResource, bool)` — retrieves a resource by reuse
+  ID
 - `GetAll() []ClosableResource` — returns all registered resources
 - `ResetRegistry()` — clears the registry (does **not** stop containers)
 
