@@ -77,7 +77,7 @@ must call `pool.Close(ctx)` explicitly.
 
 ```go
 // v4 — shared pool, manual cleanup
-var pool *dockertest.Pool
+var pool dockertest.ClosablePool
 
 func TestMain(m *testing.M) {
     ctx := context.Background()
@@ -429,9 +429,9 @@ v4 maintains a global in-memory registry for container reuse. You typically do
 not need these functions directly — `Pool.Run` and `Pool.RunT` use them
 automatically. They are useful for custom cleanup or inspection:
 
-- `Register(reuseID, resource)` — stores a resource (idempotent; keeps existing)
-- `Get(reuseID)` — retrieves a resource by reuse ID
-- `GetAll()` — returns all registered resources
+- `Register(reuseID string, r ClosableResource) error` — stores a resource (idempotent; keeps existing)
+- `Get(reuseID string) (ClosableResource, bool)` — retrieves a resource by reuse ID
+- `GetAll() []ClosableResource` — returns all registered resources
 - `ResetRegistry()` — clears the registry (does **not** stop containers)
 
 ### Immediate Cleanup with `CloseT`
@@ -441,7 +441,10 @@ and calls `t.Fatalf` on error. Use this when you need teardown at a specific
 point rather than relying on pool-scoped cleanup:
 
 ```go
-resource := pool.RunT(t, "postgres", dockertest.WithTag("14"), dockertest.WithoutReuse())
+resource, err := pool.Run(t.Context(), "postgres", dockertest.WithTag("14"), dockertest.WithoutReuse())
+if err != nil {
+    t.Fatal(err)
+}
 // ... use resource ...
 resource.CloseT(t) // immediate removal
 ```
