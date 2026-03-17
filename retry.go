@@ -57,10 +57,10 @@ func RetryWithBackoff(ctx context.Context, timeout, initialInterval, maxInterval
 }
 
 // Retry is a convenience method that wraps the package-level Retry function.
-// If timeout is 0, Pool.MaxWait is used as the default. The interval is fixed at 1 second.
-func (p *Pool) Retry(ctx context.Context, timeout time.Duration, fn func() error) error {
+// If timeout is 0, pool.maxWait is used as the default. The interval is fixed at 1 second.
+func (p *pool) Retry(ctx context.Context, timeout time.Duration, fn func() error) error {
 	if timeout == 0 {
-		timeout = p.MaxWait
+		timeout = p.maxWait
 	}
 	return Retry(ctx, timeout, 1*time.Second, fn)
 }

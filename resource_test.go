@@ -13,16 +13,14 @@ import (
 )
 
 func TestResourceGetPort(t *testing.T) {
-	r := &dockertest.Resource{
-		Container: container.InspectResponse{
-			ID: "test123",
-			NetworkSettings: &container.NetworkSettings{
-				Ports: network.PortMap{
-					network.MustParsePort("5432/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: "54320"}},
-				},
+	r := dockertest.NewResource(container.InspectResponse{
+		ID: "test123",
+		NetworkSettings: &container.NetworkSettings{
+			Ports: network.PortMap{
+				network.MustParsePort("5432/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: "54320"}},
 			},
 		},
-	}
+	})
 
 	port := r.GetPort("5432/tcp")
 	if port != "54320" {
@@ -36,11 +34,9 @@ func TestResourceGetPort(t *testing.T) {
 	}
 
 	// Test nil NetworkSettings
-	rNil := &dockertest.Resource{
-		Container: container.InspectResponse{
-			ID: "test456",
-		},
-	}
+	rNil := dockertest.NewResource(container.InspectResponse{
+		ID: "test456",
+	})
 	port = rNil.GetPort("5432/tcp")
 	if port != "" {
 		t.Errorf("GetPort(nil NetworkSettings) = %q, want empty string", port)
@@ -48,15 +44,13 @@ func TestResourceGetPort(t *testing.T) {
 }
 
 func TestResourceGetBoundIP(t *testing.T) {
-	r := &dockertest.Resource{
-		Container: container.InspectResponse{
-			NetworkSettings: &container.NetworkSettings{
-				Ports: network.PortMap{
-					network.MustParsePort("5432/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("192.168.1.100"), HostPort: "54320"}},
-				},
+	r := dockertest.NewResource(container.InspectResponse{
+		NetworkSettings: &container.NetworkSettings{
+			Ports: network.PortMap{
+				network.MustParsePort("5432/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("192.168.1.100"), HostPort: "54320"}},
 			},
 		},
-	}
+	})
 
 	ip := r.GetBoundIP("5432/tcp")
 	if ip != "192.168.1.100" {
@@ -70,9 +64,7 @@ func TestResourceGetBoundIP(t *testing.T) {
 	}
 
 	// Test nil NetworkSettings
-	rNil := &dockertest.Resource{
-		Container: container.InspectResponse{},
-	}
+	rNil := dockertest.NewResource(container.InspectResponse{})
 	ip = rNil.GetBoundIP("5432/tcp")
 	if ip != "" {
 		t.Errorf("GetBoundIP(nil NetworkSettings) = %q, want empty string", ip)
@@ -80,15 +72,13 @@ func TestResourceGetBoundIP(t *testing.T) {
 }
 
 func TestResourceGetBoundIPLocalhostFallback(t *testing.T) {
-	r := &dockertest.Resource{
-		Container: container.InspectResponse{
-			NetworkSettings: &container.NetworkSettings{
-				Ports: network.PortMap{
-					network.MustParsePort("5432/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("0.0.0.0"), HostPort: "54320"}},
-				},
+	r := dockertest.NewResource(container.InspectResponse{
+		NetworkSettings: &container.NetworkSettings{
+			Ports: network.PortMap{
+				network.MustParsePort("5432/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("0.0.0.0"), HostPort: "54320"}},
 			},
 		},
-	}
+	})
 
 	ip := r.GetBoundIP("5432/tcp")
 	if ip != "127.0.0.1" {
@@ -97,15 +87,13 @@ func TestResourceGetBoundIPLocalhostFallback(t *testing.T) {
 }
 
 func TestResourceGetHostPort(t *testing.T) {
-	r := &dockertest.Resource{
-		Container: container.InspectResponse{
-			NetworkSettings: &container.NetworkSettings{
-				Ports: network.PortMap{
-					network.MustParsePort("5432/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: "54320"}},
-				},
+	r := dockertest.NewResource(container.InspectResponse{
+		NetworkSettings: &container.NetworkSettings{
+			Ports: network.PortMap{
+				network.MustParsePort("5432/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1"), HostPort: "54320"}},
 			},
 		},
-	}
+	})
 
 	hostPort := r.GetHostPort("5432/tcp")
 	if hostPort != "127.0.0.1:54320" {
@@ -119,9 +107,7 @@ func TestResourceGetHostPort(t *testing.T) {
 	}
 
 	// Test nil NetworkSettings
-	rNil := &dockertest.Resource{
-		Container: container.InspectResponse{},
-	}
+	rNil := dockertest.NewResource(container.InspectResponse{})
 	hostPort = rNil.GetHostPort("5432/tcp")
 	if hostPort != "" {
 		t.Errorf("GetHostPort(nil NetworkSettings) = %q, want empty string", hostPort)
@@ -129,15 +115,13 @@ func TestResourceGetHostPort(t *testing.T) {
 }
 
 func TestResourceGetHostPortIPv6(t *testing.T) {
-	r := &dockertest.Resource{
-		Container: container.InspectResponse{
-			NetworkSettings: &container.NetworkSettings{
-				Ports: network.PortMap{
-					network.MustParsePort("5432/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("::1"), HostPort: "54320"}},
-				},
+	r := dockertest.NewResource(container.InspectResponse{
+		NetworkSettings: &container.NetworkSettings{
+			Ports: network.PortMap{
+				network.MustParsePort("5432/tcp"): []network.PortBinding{{HostIP: netip.MustParseAddr("::1"), HostPort: "54320"}},
 			},
 		},
-	}
+	})
 
 	hostPort := r.GetHostPort("5432/tcp")
 	if hostPort != "[::1]:54320" {

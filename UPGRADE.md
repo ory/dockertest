@@ -57,11 +57,11 @@ intended due to Docker API limitations.
 v4 offers two pool creation patterns for tests. **Choose A or B per package, do
 not mix them** — mixing causes double-close or resource leaks.
 
-**Option A: `NewPoolT` (recommended for most tests)**
+**Option A: `NewPoolT` (recommended for most tests — no `TestMain` needed)**
 
 `NewPoolT` registers cleanup automatically via `t.Cleanup`. All tracked
-containers and networks are removed when the test finishes. No `TestMain`
-needed.
+containers and networks are removed when the test finishes. Self-contained: no
+`TestMain` needed.
 
 ```go
 // v4 — cleanup is automatic
@@ -70,14 +70,14 @@ pool := dockertest.NewPoolT(t, "",
 )
 ```
 
-**Option B: `NewPool` + `TestMain` (for shared pools across tests)**
+**Option B: `NewPool` + `TestMain` (for shared pools — advanced)**
 
 Use this when you want a single pool shared across all tests in a package. You
 must call `pool.Close(ctx)` explicitly.
 
 ```go
 // v4 — shared pool, manual cleanup
-var pool *dockertest.Pool
+var pool dockertest.ClosablePool
 
 func TestMain(m *testing.M) {
     ctx := context.Background()
@@ -254,8 +254,8 @@ Available sentinel errors: `ErrImagePullFailed`, `ErrContainerCreateFailed`,
    - `pool.Purge(resource)` → automatic via `NewPoolT`, or `pool.Close(ctx)` in
      `TestMain`
    - `pool.Retry(fn)` → `pool.Retry(ctx, timeout, fn)`
-   - For non-reused containers needing per-test cleanup: `WithoutReuse()` +
-     `resource.Cleanup(t)`
+   - For non-reused containers: use `WithoutReuse()` (cleanup is automatic with
+     `RunT`, or call `resource.Close(ctx)` with `Run`)
    - See [Breaking Changes](#breaking-changes) for full patterns.
 
 4. **Test:** Run `go test ./...` to verify the migration.
@@ -315,14 +315,6 @@ cache := pool.RunT(t, "redis", dockertest.WithTag("7"))
 > containers that share an image but differ in configuration (see
 > [Custom Reuse ID](#custom-reuse-id-different-configs) below).
 
-> [!WARNING]
->
-> Do not use `resource.Cleanup(t)` on reused containers. Because reused
-> containers are shared across tests, cleaning up one reference will remove the
-> container for all other tests that depend on it. Only use `pool.Close(ctx)`
-> (automatic with `NewPoolT`) to clean up reused containers after all tests have
-> finished.
-
 v4 automatically reuses containers with the same `repo:tag` across tests. Each
 `NewPoolT` call creates a separate pool, but containers are still shared because
 default pools use a common reuse scope:
@@ -346,7 +338,7 @@ resource := pool.RunT(t, "postgres",
     dockertest.WithTag("14"),
     dockertest.WithoutReuse(),
 )
-resource.Cleanup(t) // Safe — this container is not shared
+// Cleanup is automatic via RunT
 ```
 
 ### Custom Reuse ID (Different Configs)
@@ -437,9 +429,11 @@ v4 maintains a global in-memory registry for container reuse. You typically do
 not need these functions directly — `Pool.Run` and `Pool.RunT` use them
 automatically. They are useful for custom cleanup or inspection:
 
-- `Register(reuseID, resource)` — stores a resource (idempotent; keeps existing)
-- `Get(reuseID)` — retrieves a resource by reuse ID
-- `GetAll()` — returns all registered resources
+- `Register(reuseID string, r ClosableResource) error` — stores a resource
+  (idempotent; keeps existing)
+- `Get(reuseID string) (ClosableResource, bool)` — retrieves a resource by reuse
+  ID
+- `GetAll() []ClosableResource` — returns all registered resources
 - `ResetRegistry()` — clears the registry (does **not** stop containers)
 
 ### Immediate Cleanup with `CloseT`
@@ -449,7 +443,10 @@ and calls `t.Fatalf` on error. Use this when you need teardown at a specific
 point rather than relying on pool-scoped cleanup:
 
 ```go
-resource := pool.RunT(t, "postgres", dockertest.WithTag("14"), dockertest.WithoutReuse())
+resource, err := pool.Run(t.Context(), "postgres", dockertest.WithTag("14"), dockertest.WithoutReuse())
+if err != nil {
+    t.Fatal(err)
+}
 // ... use resource ...
 resource.CloseT(t) // immediate removal
 ```

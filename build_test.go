@@ -54,8 +54,6 @@ CMD ["sleep", "300"]
 		t.Fatal("Resource has empty container ID")
 	}
 
-	// Cleanup
-	r.CloseT(t)
 }
 
 func TestBuildAndRunWithBuildArgs(t *testing.T) {
@@ -93,7 +91,6 @@ CMD ["sh", "-c", "echo TEST_ENV=$TEST_ENV && sleep 300"]
 	}
 
 	r := pool.BuildAndRunT(t, "test-build-args", buildOpts)
-	t.Cleanup(func() { r.Close(t.Context()) })
 
 	// Verify build arg was applied by checking container env via logs
 	var logs string
@@ -146,7 +143,6 @@ CMD ["sh", "-c", "echo $TEST_VAR && sleep 300"]
 	r := pool.BuildAndRunT(t, "test-build-env", buildOpts,
 		dockertest.WithEnv([]string{"TEST_VAR=hello"}),
 	)
-	t.Cleanup(func() { r.Close(t.Context()) })
 
 	// Verify env var took effect via logs
 	var logs string
@@ -213,8 +209,6 @@ func TestBuildAndRunWithBuildContext(t *testing.T) {
 		t.Fatalf("Expected logs to contain 'Hello, World!', got: %s (error: %v)", logs, err)
 	}
 
-	// Cleanup
-	r.CloseT(t)
 }
 
 func TestBuildAndRunWithTaggedName(t *testing.T) {
@@ -244,11 +238,9 @@ CMD ["sleep", "300"]
 		ContextDir: tmpDir,
 	})
 
-	if r.Container.Config.Image != imageRef {
-		t.Fatalf("container image = %q, want %q", r.Container.Config.Image, imageRef)
+	if r.Container().Config.Image != imageRef {
+		t.Fatalf("container image = %q, want %q", r.Container().Config.Image, imageRef)
 	}
-
-	r.CloseT(t)
 }
 
 func TestRunUsesLocalImageWithoutPull(t *testing.T) {
@@ -275,15 +267,13 @@ CMD ["sleep", "300"]
 	// If Run attempts a pull, this registry will fail DNS resolution.
 	repository := "example.invalid/dockertest-local-skip-pull"
 
-	first := pool.BuildAndRunT(t, repository, &dockertest.BuildOptions{
+	pool.BuildAndRunT(t, repository, &dockertest.BuildOptions{
 		Dockerfile: "Dockerfile",
 		ContextDir: tmpDir,
 	}, dockertest.WithoutReuse())
-	first.CloseT(t)
 
-	second := pool.RunT(t, repository,
+	pool.RunT(t, repository,
 		dockertest.WithTag("latest"),
 		dockertest.WithoutReuse(),
 	)
-	second.CloseT(t)
 }

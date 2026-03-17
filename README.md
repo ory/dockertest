@@ -239,14 +239,10 @@ resource := pool.RunT(t, "postgres",
 
 ### Container reuse
 
-> [!WARNING]
->
-> Do not use `resource.Cleanup(t)` on reused containers. Because reused
-> containers are shared across tests, cleaning up one reference will remove the
-> container for all other tests that depend on it. Only use `pool.Close(ctx)` in
-> `TestMain` to clean up reused containers after all tests have finished.
-
-Containers are automatically reused based on `repository:tag`:
+Containers are automatically reused based on `repository:tag`. Reuse is
+reference-counted: each `Run`/`RunT` call increments the ref count, and each
+`Close`/cleanup decrements it. The container is only removed from Docker when
+the last reference is released.
 
 ```go
 // First test creates container
@@ -402,39 +398,38 @@ net, err := pool.CreateNetwork(ctx, "my-network", &dockertest.NetworkCreateOptio
 
 ### Cleanup
 
-> [!WARNING]
->
-> Do not use `resource.Cleanup(t)` or `resource.CloseT(t)` on **reused**
-> containers. Because reused containers are shared across tests, cleaning up one
-> reference removes the container for all other tests. Use `pool.Close(ctx)` in
-> `TestMain` to clean up reused containers after all tests finish.
-
-Use `Cleanup(t)` for **non-reused** containers — it registers `t.Cleanup` and
-logs errors without failing the test:
+**`NewPoolT` + `RunT` (recommended):** Cleanup is fully automatic. `RunT`
+registers cleanup via `t.Cleanup`, and the pool is closed when the test
+finishes. Nothing to do.
 
 ```go
-resource := pool.RunT(t, "postgres",
-    dockertest.WithTag("14"),
-    dockertest.WithoutReuse(),
-)
-resource.Cleanup(t) // removed when t finishes
+func TestDB(t *testing.T) {
+    pool := dockertest.NewPoolT(t, "")
+    resource := pool.RunT(t, "postgres", dockertest.WithTag("14"))
+    // Use resource... cleanup happens automatically when t finishes.
+}
 ```
 
-Use `CloseT(t)` when you need **immediate** cleanup and want a hard failure on
-error (calls `t.Fatalf`):
+**`NewPool` + `Run`:** Call `resource.Close(ctx)` to release individual
+containers, or `pool.Close(ctx)` to release everything:
 
 ```go
-resource.CloseT(t) // removes now, fails test on error
+ctx := context.Background()
+pool, err := dockertest.NewPool(ctx, "")
+if err != nil {
+    panic(err)
+}
+defer pool.Close(ctx) // releases all tracked containers and networks
+
+resource, err := pool.Run(ctx, "postgres", dockertest.WithTag("14"))
+if err != nil {
+    panic(err)
+}
+defer resource.Close(ctx) // or let pool.Close handle it
 ```
 
-Use `Close(ctx)` in non-test code for manual cleanup:
-
-```go
-err := resource.Close(ctx)
-```
-
-Use `pool.Close(ctx)` to clean up **all** resources (reused and non-reused),
-typically in `TestMain`:
+**Advanced: shared pool in `TestMain`:** Use this when you need a single pool
+shared across all tests in a package:
 
 ```go
 func TestMain(m *testing.M) {

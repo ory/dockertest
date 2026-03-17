@@ -24,8 +24,6 @@ func TestMountebank(t *testing.T) {
 		dockertest.WithCmd([]string{"--allowInjection"}),
 		dockertest.WithoutReuse(),
 	)
-	mb.Cleanup(t)
-
 	adminURL := fmt.Sprintf("http://%s", mb.GetHostPort("2525/tcp"))
 
 	err := pool.Retry(t.Context(), 30*time.Second, func() error {

@@ -11,22 +11,47 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/pkg/stdcopy"
-	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/api/types/container"
+	mobynetwork "github.com/moby/moby/api/types/network"
 	mobyclient "github.com/moby/moby/client"
 )
 
+// Resource provides access to a Docker container.
+// Returned by *T variants; does not expose Close, CloseT, or Cleanup.
+type Resource interface {
+	ID() string
+	Container() container.InspectResponse
+	GetPort(portID string) string
+	GetBoundIP(portID string) string
+	GetHostPort(portID string) string
+	Logs(ctx context.Context) (string, error)
+	Exec(ctx context.Context, cmd []string) (ExecResult, error)
+	ConnectToNetwork(ctx context.Context, net Network) error
+	DisconnectFromNetwork(ctx context.Context, net Network) error
+	GetIPInNetwork(net Network) string
+}
+
+// ClosableResource extends Resource with explicit lifecycle management.
+// Returned by Run and BuildAndRun; the caller is responsible for calling Close.
+type ClosableResource interface {
+	Resource
+	Close(ctx context.Context) error
+	CloseT(t TestingTB)
+	Cleanup(t TestingTB)
+}
+
 // GetPort returns the host port bound to the given container port.
 // The portID parameter should include the protocol (e.g., "5432/tcp").
-func (r *Resource) GetPort(portID string) string {
-	if r.Container.NetworkSettings == nil {
+func (r *resource) GetPort(portID string) string {
+	if r.container.NetworkSettings == nil {
 		return ""
 	}
 
-	port, err := network.ParsePort(portID)
+	port, err := mobynetwork.ParsePort(portID)
 	if err != nil {
 		return ""
 	}
-	bindings := r.Container.NetworkSettings.Ports[port]
+	bindings := r.container.NetworkSettings.Ports[port]
 	if len(bindings) == 0 {
 		return ""
 	}
@@ -36,16 +61,16 @@ func (r *Resource) GetPort(portID string) string {
 
 // GetBoundIP returns the host IP bound to the given container port.
 // The portID parameter should include the protocol (e.g., "5432/tcp").
-func (r *Resource) GetBoundIP(portID string) string {
-	if r.Container.NetworkSettings == nil {
+func (r *resource) GetBoundIP(portID string) string {
+	if r.container.NetworkSettings == nil {
 		return ""
 	}
 
-	port, err := network.ParsePort(portID)
+	port, err := mobynetwork.ParsePort(portID)
 	if err != nil {
 		return ""
 	}
-	bindings := r.Container.NetworkSettings.Ports[port]
+	bindings := r.container.NetworkSettings.Ports[port]
 	if len(bindings) == 0 {
 		return ""
 	}
@@ -60,7 +85,7 @@ func (r *Resource) GetBoundIP(portID string) string {
 
 // GetHostPort returns the host:port combination for the given container port.
 // The portID parameter should include the protocol (e.g., "5432/tcp").
-func (r *Resource) GetHostPort(portID string) string {
+func (r *resource) GetHostPort(portID string) string {
 	ip := r.GetBoundIP(portID)
 	port := r.GetPort(portID)
 
@@ -77,24 +102,26 @@ func (r *Resource) GetHostPort(portID string) string {
 // For reused containers (those with a reuseID), Close only removes the Docker
 // container when the last reference is released. If other callers still hold
 // references, Close simply untracks the resource from this pool.
-func (r *Resource) Close(ctx context.Context) error {
+func (r *resource) Close(ctx context.Context) error {
 	if r.pool == nil || r.pool.client == nil {
 		return ErrClientClosed
 	}
 
 	if r.reuseID != "" {
-		if !releaseWithScope(r.pool.reuseScope, r.reuseID) {
+		registryKey := r.pool.registryKey(r.reuseID)
+		r.reuseID = "" // prevent double-release on repeated Close calls
+		if !release(registryKey) {
 			// Other callers still hold references; just untrack from this pool.
-			r.pool.untrackResource(r.Container.ID)
+			r.pool.untrackResource(r.container.ID)
 			return nil
 		}
 	}
 
 	// Stop container (ignore errors if already stopped)
-	_, _ = r.pool.client.ContainerStop(ctx, r.Container.ID, mobyclient.ContainerStopOptions{}) //nolint:errcheck // Best effort stop
+	_, _ = r.pool.client.ContainerStop(ctx, r.container.ID, mobyclient.ContainerStopOptions{}) //nolint:errcheck // Best effort stop
 
 	// Remove container (tolerate already-removed containers)
-	_, err := r.pool.client.ContainerRemove(ctx, r.Container.ID, mobyclient.ContainerRemoveOptions{
+	_, err := r.pool.client.ContainerRemove(ctx, r.container.ID, mobyclient.ContainerRemoveOptions{
 		RemoveVolumes: true,
 		Force:         true,
 	})
@@ -102,13 +129,13 @@ func (r *Resource) Close(ctx context.Context) error {
 		return err
 	}
 
-	r.pool.untrackResource(r.Container.ID)
+	r.pool.untrackResource(r.container.ID)
 
 	return nil
 }
 
 // CloseT stops and removes the container and calls t.Fatalf on error.
-func (r *Resource) CloseT(t TestingTB) {
+func (r *resource) CloseT(t TestingTB) {
 	t.Helper()
 	if err := r.Close(context.WithoutCancel(t.Context())); err != nil {
 		t.Fatalf("CloseT failed: %v", err)
@@ -117,7 +144,7 @@ func (r *Resource) CloseT(t TestingTB) {
 
 // Cleanup registers container cleanup with t.Cleanup.
 // The container will be removed when the test finishes.
-func (r *Resource) Cleanup(t TestingTB) {
+func (r *resource) Cleanup(t TestingTB) {
 	t.Helper()
 	t.Cleanup(func() {
 		if err := r.Close(context.WithoutCancel(t.Context())); err != nil {
@@ -128,12 +155,12 @@ func (r *Resource) Cleanup(t TestingTB) {
 
 // Logs returns the container logs, demultiplexing stdout and stderr streams.
 // Both stdout and stderr are combined in the returned string.
-func (r *Resource) Logs(ctx context.Context) (string, error) {
+func (r *resource) Logs(ctx context.Context) (string, error) {
 	if r.pool == nil || r.pool.client == nil {
 		return "", ErrClientClosed
 	}
 
-	reader, err := r.pool.client.ContainerLogs(ctx, r.Container.ID, mobyclient.ContainerLogsOptions{
+	reader, err := r.pool.client.ContainerLogs(ctx, r.container.ID, mobyclient.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 	})
@@ -158,12 +185,12 @@ type ExecResult struct {
 }
 
 // Exec runs a command inside the container and returns the result.
-func (r *Resource) Exec(ctx context.Context, cmd []string) (ExecResult, error) {
+func (r *resource) Exec(ctx context.Context, cmd []string) (ExecResult, error) {
 	if r.pool == nil || r.pool.client == nil {
 		return ExecResult{}, ErrClientClosed
 	}
 
-	createResp, err := r.pool.client.ExecCreate(ctx, r.Container.ID, mobyclient.ExecCreateOptions{
+	createResp, err := r.pool.client.ExecCreate(ctx, r.container.ID, mobyclient.ExecCreateOptions{
 		Cmd:          cmd,
 		AttachStdout: true,
 		AttachStderr: true,
@@ -193,4 +220,78 @@ func (r *Resource) Exec(ctx context.Context, cmd []string) (ExecResult, error) {
 		StdErr:   stderr.String(),
 		ExitCode: inspectResp.ExitCode,
 	}, nil
+}
+
+// ConnectToNetwork connects the container to the given network.
+// The resource's container field is automatically updated with the latest
+// network settings after connection.
+func (r *resource) ConnectToNetwork(ctx context.Context, net Network) error {
+	if r.pool == nil || r.pool.client == nil {
+		return ErrClientClosed
+	}
+
+	connectOpts := mobyclient.NetworkConnectOptions{
+		Container: r.container.ID,
+	}
+
+	_, err := r.pool.client.NetworkConnect(ctx, net.ID(), connectOpts)
+	if err != nil {
+		return err
+	}
+
+	// Refresh container inspection to get updated network settings
+	inspectResp, err := r.pool.client.ContainerInspect(ctx, r.container.ID, mobyclient.ContainerInspectOptions{})
+	if err != nil {
+		return err
+	}
+
+	r.container = inspectResp.Container
+	return nil
+}
+
+// DisconnectFromNetwork disconnects the container from the given network.
+// The resource's container field is automatically updated with the latest
+// network settings after disconnection.
+func (r *resource) DisconnectFromNetwork(ctx context.Context, net Network) error {
+	if r.pool == nil || r.pool.client == nil {
+		return ErrClientClosed
+	}
+
+	disconnectOpts := mobyclient.NetworkDisconnectOptions{
+		Container: r.container.ID,
+		Force:     false,
+	}
+
+	_, err := r.pool.client.NetworkDisconnect(ctx, net.ID(), disconnectOpts)
+	if err != nil {
+		return err
+	}
+
+	// Refresh container inspection to get updated network settings
+	inspectResp, err := r.pool.client.ContainerInspect(ctx, r.container.ID, mobyclient.ContainerInspectOptions{})
+	if err != nil {
+		return err
+	}
+
+	r.container = inspectResp.Container
+	return nil
+}
+
+// GetIPInNetwork returns the container's IP address in the given network.
+// Returns empty string if the container is not connected to the network.
+func (r *resource) GetIPInNetwork(net Network) string {
+	if r.container.NetworkSettings == nil {
+		return ""
+	}
+
+	if r.container.NetworkSettings.Networks == nil {
+		return ""
+	}
+
+	endpoint, ok := r.container.NetworkSettings.Networks[net.Inspect().Name]
+	if !ok {
+		return ""
+	}
+
+	return endpoint.IPAddress.String()
 }

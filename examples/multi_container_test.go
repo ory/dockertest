@@ -21,9 +21,6 @@ func TestMultipleContainers(t *testing.T) {
 	pool := dockertest.NewPoolT(t, "")
 
 	net := pool.CreateNetworkT(t, "dockertest-multi-example", nil)
-	t.Cleanup(func() {
-		net.CloseT(t)
-	})
 
 	// Start two PostgreSQL containers on the same network
 	pg1 := pool.RunT(t, "postgres",
@@ -34,7 +31,6 @@ func TestMultipleContainers(t *testing.T) {
 		}),
 		dockertest.WithoutReuse(),
 	)
-	pg1.Cleanup(t)
 
 	pg2 := pool.RunT(t, "postgres",
 		dockertest.WithTag("14-alpine"),
@@ -44,7 +40,6 @@ func TestMultipleContainers(t *testing.T) {
 		}),
 		dockertest.WithoutReuse(),
 	)
-	pg2.Cleanup(t)
 
 	// Connect both containers to the shared network
 	if err := pg1.ConnectToNetwork(t.Context(), net); err != nil {
@@ -68,7 +63,7 @@ func TestMultipleContainers(t *testing.T) {
 	// Wait for both databases via host ports
 	for _, tc := range []struct {
 		name     string
-		resource *dockertest.Resource
+		resource dockertest.Resource
 		dbName   string
 	}{
 		{"pg1", pg1, "db1"},

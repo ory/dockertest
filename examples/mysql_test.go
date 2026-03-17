@@ -26,8 +26,6 @@ func TestMySQL(t *testing.T) {
 			"MYSQL_DATABASE=testdb",
 		}),
 	)
-	mysql.Cleanup(t)
-
 	// Open connection outside retry loop to avoid leaking connection pools
 	dsn := fmt.Sprintf("root:secret@tcp(%s)/testdb",
 		mysql.GetHostPort("3306/tcp"))

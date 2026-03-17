@@ -22,8 +22,6 @@ func TestMongoDB(t *testing.T) {
 	mongodb := pool.RunT(t, "mongo",
 		dockertest.WithTag("7"),
 	)
-	mongodb.Cleanup(t)
-
 	// Create MongoDB client outside retry loop to avoid leaking connections
 	ctx := t.Context()
 	uri := "mongodb://" + mongodb.GetHostPort("27017/tcp")

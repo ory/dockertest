@@ -74,7 +74,7 @@ type BuildOptions struct {
 //		panic(err)
 //	}
 //	defer resource.Close(ctx)
-func (p *Pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOptions, runOpts ...RunOption) (*Resource, error) {
+func (p *pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOptions, runOpts ...RunOption) (ClosableResource, error) {
 	if buildOpts == nil {
 		return nil, fmt.Errorf("buildOpts cannot be nil")
 	}
@@ -160,13 +160,17 @@ func (p *Pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 }
 
 // BuildAndRunT is a test helper that uses t.Context() and calls t.Fatalf on error.
-func (p *Pool) BuildAndRunT(t TestingTB, name string, buildOpts *BuildOptions, runOpts ...RunOption) *Resource {
+// The returned ManagedResource does not expose Close, CloseT, or Cleanup;
+// the resource is automatically cleaned up when the test finishes.
+func (p *pool) BuildAndRunT(t TestingTB, name string, buildOpts *BuildOptions, runOpts ...RunOption) Resource {
 	t.Helper()
 
 	r, err := p.BuildAndRun(t.Context(), name, buildOpts, runOpts...)
 	if err != nil {
 		t.Fatalf("BuildAndRunT failed: %v", err)
 	}
+
+	r.Cleanup(t)
 
 	return r
 }
