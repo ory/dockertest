@@ -33,9 +33,6 @@ func TestPoolRun(t *testing.T) {
 	if r.ID() == "" {
 		t.Fatal("Resource has empty container ID")
 	}
-
-	// Cleanup
-	r.CloseT(t)
 }
 
 func TestPoolRunWithReuse(t *testing.T) {
@@ -65,8 +62,6 @@ func TestPoolRunWithReuse(t *testing.T) {
 	if r1.ID() != r2.ID() {
 		t.Errorf("Reuse failed: got different containers %s != %s", r1.ID(), r2.ID())
 	}
-
-	r1.CloseT(t)
 }
 
 func TestPoolRunWithoutReuse(t *testing.T) {
@@ -98,9 +93,6 @@ func TestPoolRunWithoutReuse(t *testing.T) {
 	if r1.ID() == r2.ID() {
 		t.Errorf("WithoutReuse failed: got same container %s", r1.ID())
 	}
-
-	r1.CloseT(t)
-	r2.CloseT(t)
 }
 
 func TestPoolRunWithReuseID(t *testing.T) {
@@ -132,8 +124,6 @@ func TestPoolRunWithReuseID(t *testing.T) {
 	if r1.ID() != r2.ID() {
 		t.Errorf("WithReuseID failed to reuse: got different containers %s != %s", r1.ID(), r2.ID())
 	}
-
-	r1.CloseT(t)
 }
 
 func TestPoolRunWithDifferentReuseIDs(t *testing.T) {
@@ -165,9 +155,6 @@ func TestPoolRunWithDifferentReuseIDs(t *testing.T) {
 	if r1.ID() == r2.ID() {
 		t.Errorf("Different WithReuseID should create different containers, got same: %s", r1.ID())
 	}
-
-	r1.CloseT(t)
-	r2.CloseT(t)
 }
 
 func TestPoolRunWithReuseIDIgnoresTag(t *testing.T) {
@@ -199,8 +186,6 @@ func TestPoolRunWithReuseIDIgnoresTag(t *testing.T) {
 	if r1.ID() != r2.ID() {
 		t.Errorf("WithReuseID should override tag-based reuse: got different containers %s != %s", r1.ID(), r2.ID())
 	}
-
-	r1.CloseT(t)
 }
 
 func TestRunWithUser(t *testing.T) {
@@ -221,13 +206,10 @@ func TestRunWithUser(t *testing.T) {
 		dockertest.WithCmd([]string{"sleep", "10"}),
 		dockertest.WithoutReuse(),
 	)
-	t.Cleanup(func() {
-		resource.CloseT(t)
-	})
 
 	// Verify the user was set in container config
-	if resource.Container.Config.User != "nobody" {
-		t.Errorf("expected user 'nobody', got %q", resource.Container.Config.User)
+	if resource.Container().Config.User != "nobody" {
+		t.Errorf("expected user 'nobody', got %q", resource.Container().Config.User)
 	}
 }
 
@@ -249,12 +231,9 @@ func TestRunWithWorkingDir(t *testing.T) {
 		dockertest.WithCmd([]string{"sleep", "10"}),
 		dockertest.WithoutReuse(),
 	)
-	t.Cleanup(func() {
-		resource.CloseT(t)
-	})
 
-	if resource.Container.Config.WorkingDir != "/tmp" {
-		t.Errorf("expected working dir '/tmp', got %q", resource.Container.Config.WorkingDir)
+	if resource.Container().Config.WorkingDir != "/tmp" {
+		t.Errorf("expected working dir '/tmp', got %q", resource.Container().Config.WorkingDir)
 	}
 }
 
@@ -282,20 +261,17 @@ func TestRunWithLabelsAndHostname(t *testing.T) {
 		dockertest.WithCmd([]string{"sleep", "10"}),
 		dockertest.WithoutReuse(),
 	)
-	t.Cleanup(func() {
-		resource.CloseT(t)
-	})
 
 	// Verify labels
 	for k, v := range labels {
-		if resource.Container.Config.Labels[k] != v {
-			t.Errorf("expected label %s=%s, got %s", k, v, resource.Container.Config.Labels[k])
+		if resource.Container().Config.Labels[k] != v {
+			t.Errorf("expected label %s=%s, got %s", k, v, resource.Container().Config.Labels[k])
 		}
 	}
 
 	// Verify hostname
-	if resource.Container.Config.Hostname != "test-host" {
-		t.Errorf("expected hostname 'test-host', got %q", resource.Container.Config.Hostname)
+	if resource.Container().Config.Hostname != "test-host" {
+		t.Errorf("expected hostname 'test-host', got %q", resource.Container().Config.Hostname)
 	}
 }
 
@@ -322,16 +298,13 @@ func TestRunWithContainerConfig(t *testing.T) {
 		dockertest.WithCmd([]string{"sleep", "10"}),
 		dockertest.WithoutReuse(),
 	)
-	t.Cleanup(func() {
-		resource.CloseT(t)
-	})
 
-	if resource.Container.Config.StopTimeout == nil || *resource.Container.Config.StopTimeout != 5 {
-		t.Errorf("expected stop timeout 5, got %v", resource.Container.Config.StopTimeout)
+	if resource.Container().Config.StopTimeout == nil || *resource.Container().Config.StopTimeout != 5 {
+		t.Errorf("expected stop timeout 5, got %v", resource.Container().Config.StopTimeout)
 	}
 
-	if resource.Container.Config.StopSignal != "SIGTERM" {
-		t.Errorf("expected stop signal 'SIGTERM', got %q", resource.Container.Config.StopSignal)
+	if resource.Container().Config.StopSignal != "SIGTERM" {
+		t.Errorf("expected stop signal 'SIGTERM', got %q", resource.Container().Config.StopSignal)
 	}
 }
 
@@ -355,15 +328,12 @@ func TestRunWithHostConfig(t *testing.T) {
 		dockertest.WithCmd([]string{"sleep", "10"}),
 		dockertest.WithoutReuse(),
 	)
-	t.Cleanup(func() {
-		resource.CloseT(t)
-	})
 
-	if resource.Container.HostConfig.RestartPolicy.Name != container.RestartPolicyOnFailure {
-		t.Errorf("expected restart policy %q, got %q", container.RestartPolicyOnFailure, resource.Container.HostConfig.RestartPolicy.Name)
+	if resource.Container().HostConfig.RestartPolicy.Name != container.RestartPolicyOnFailure {
+		t.Errorf("expected restart policy %q, got %q", container.RestartPolicyOnFailure, resource.Container().HostConfig.RestartPolicy.Name)
 	}
-	if resource.Container.HostConfig.RestartPolicy.MaximumRetryCount != 3 {
-		t.Errorf("expected max retry count 3, got %d", resource.Container.HostConfig.RestartPolicy.MaximumRetryCount)
+	if resource.Container().HostConfig.RestartPolicy.MaximumRetryCount != 3 {
+		t.Errorf("expected max retry count 3, got %d", resource.Container().HostConfig.RestartPolicy.MaximumRetryCount)
 	}
 }
 
@@ -384,9 +354,6 @@ func TestResourceExec(t *testing.T) {
 		dockertest.WithCmd([]string{"sleep", "300"}),
 		dockertest.WithoutReuse(),
 	)
-	t.Cleanup(func() {
-		resource.CloseT(t)
-	})
 
 	result, err := resource.Exec(t.Context(), []string{"echo", "hello world"})
 	if err != nil {
@@ -421,9 +388,6 @@ func TestResourceExecNonZeroExit(t *testing.T) {
 		dockertest.WithCmd([]string{"sleep", "300"}),
 		dockertest.WithoutReuse(),
 	)
-	t.Cleanup(func() {
-		resource.CloseT(t)
-	})
 
 	result, err := resource.Exec(t.Context(), []string{"sh", "-c", "echo err >&2; exit 1"})
 	if err != nil {
@@ -457,12 +421,9 @@ func TestRunWithName(t *testing.T) {
 		dockertest.WithCmd([]string{"sleep", "10"}),
 		dockertest.WithoutReuse(),
 	)
-	t.Cleanup(func() {
-		resource.CloseT(t)
-	})
 
-	if resource.Container.Name != "/"+containerName && resource.Container.Name != containerName {
-		t.Errorf("expected container name containing %q, got %q", containerName, resource.Container.Name)
+	if resource.Container().Name != "/"+containerName && resource.Container().Name != containerName {
+		t.Errorf("expected container name containing %q, got %q", containerName, resource.Container().Name)
 	}
 }
 
@@ -495,15 +456,12 @@ func TestRunWithPortBindings(t *testing.T) {
 		dockertest.WithCmd([]string{"sleep", "10"}),
 		dockertest.WithoutReuse(),
 	)
-	t.Cleanup(func() {
-		resource.CloseT(t)
-	})
 
-	if len(resource.Container.HostConfig.PortBindings[port]) == 0 {
+	if len(resource.Container().HostConfig.PortBindings[port]) == 0 {
 		t.Fatalf("expected port binding for %s, got none", port)
 	}
-	if resource.Container.HostConfig.PortBindings[port][0].HostPort != "18080" {
-		t.Errorf("expected host port 18080, got %q", resource.Container.HostConfig.PortBindings[port][0].HostPort)
+	if resource.Container().HostConfig.PortBindings[port][0].HostPort != "18080" {
+		t.Errorf("expected host port 18080, got %q", resource.Container().HostConfig.PortBindings[port][0].HostPort)
 	}
 }
 
@@ -519,17 +477,24 @@ func TestResourceCloseRefCounting(t *testing.T) {
 
 	pool := dockertest.NewPoolT(t, "")
 
+	// Use Run (not RunT) to get raw *Resource for manual lifecycle management
 	// First run creates the container: refs=1
-	r1 := pool.RunT(t, "alpine",
+	r1, err := pool.Run(t.Context(), "alpine",
 		dockertest.WithTag("latest"),
 		dockertest.WithCmd([]string{"sleep", "300"}),
 	)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
 
 	// Second run reuses the same container: refs=2
-	r2 := pool.RunT(t, "alpine",
+	r2, err := pool.Run(t.Context(), "alpine",
 		dockertest.WithTag("latest"),
 		dockertest.WithCmd([]string{"sleep", "300"}),
 	)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
 
 	if r1.ID() != r2.ID() {
 		t.Fatalf("expected same container ID for reused container, got %s and %s", r1.ID(), r2.ID())
@@ -584,18 +549,52 @@ func TestRunWithMounts(t *testing.T) {
 		dockertest.WithCmd([]string{"sleep", "10"}),
 		dockertest.WithoutReuse(),
 	)
-	t.Cleanup(func() {
-		resource.CloseT(t)
-	})
 
 	found := false
-	for _, bind := range resource.Container.HostConfig.Binds {
+	for _, bind := range resource.Container().HostConfig.Binds {
 		if bind == "/tmp:/mnt/test:ro" {
 			found = true
 			break
 		}
 	}
 	if !found {
-		t.Errorf("expected bind mount /tmp:/mnt/test:ro in %v", resource.Container.HostConfig.Binds)
+		t.Errorf("expected bind mount /tmp:/mnt/test:ro in %v", resource.Container().HostConfig.Binds)
+	}
+}
+
+func TestRunTAutoCleanup(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
+
+	dc, err := mobyclient.New(mobyclient.FromEnv)
+	if err != nil {
+		t.Fatalf("mobyclient.New() error = %v", err)
+	}
+	t.Cleanup(func() { dc.Close() })
+
+	var containerID string
+
+	t.Run("sub-test", func(t *testing.T) {
+		pool := dockertest.NewPoolT(t, "")
+
+		r := pool.RunT(t, "alpine",
+			dockertest.WithTag("latest"),
+			dockertest.WithCmd([]string{"sleep", "300"}),
+			dockertest.WithoutReuse(),
+		)
+
+		containerID = r.ID()
+	})
+
+	// After sub-test completes, t.Cleanup should have removed the container
+	_, err = dc.ContainerInspect(t.Context(), containerID, mobyclient.ContainerInspectOptions{})
+	if !errdefs.IsNotFound(err) {
+		t.Fatalf("ContainerInspect() after sub-test: error = %v, want not found (auto-cleanup should have removed it)", err)
 	}
 }

@@ -26,34 +26,46 @@ type TestingTB interface {
 	Fatalf(format string, args ...any)
 }
 
-// Pool manages Docker resources and operations.
-// It provides methods for running containers, building images, creating networks,
-// and managing the lifecycle of Docker resources in tests.
-//
-// A Pool instance owns a Docker client connection and manages resources through
-// that connection. Use NewPool or NewPoolT to create a Pool, and Close to clean up.
-type Pool struct {
-	client      client.DockerClient
-	ownedClient bool          // true if Pool created the client and should close it
-	MaxWait     time.Duration // maximum wait time for operations
-	reuseScope  string
-	resources   sync.Map
-	networks    sync.Map
+// Pool is the interface for managing Docker resources in tests.
+// Returned by NewPoolT; does not expose Close or CloseT.
+type Pool interface {
+	Run(ctx context.Context, repository string, opts ...RunOption) (ClosableResource, error)
+	RunT(t TestingTB, repository string, opts ...RunOption) Resource
+	BuildAndRun(ctx context.Context, name string, buildOpts *BuildOptions, runOpts ...RunOption) (ClosableResource, error)
+	BuildAndRunT(t TestingTB, name string, buildOpts *BuildOptions, runOpts ...RunOption) Resource
+	CreateNetwork(ctx context.Context, name string, opts *NetworkCreateOptions) (ClosableNetwork, error)
+	CreateNetworkT(t TestingTB, name string, opts *NetworkCreateOptions) Network
+	Retry(ctx context.Context, timeout time.Duration, fn func() error) error
+	Client() client.DockerClient
 }
 
-// NewPool creates a new Pool with the given endpoint and options.
+// ClosablePool extends Pool with explicit lifecycle management.
+// Returned by NewPool; the caller is responsible for calling Close.
+type ClosablePool interface {
+	Pool
+	Close(ctx context.Context) error
+	CloseT(t TestingTB)
+}
+
+// pool manages Docker resources and operations.
+type pool struct {
+	client      client.DockerClient
+	ownedClient bool   // true if pool created the client and should close it
+	daemonHost  string // Docker daemon endpoint; scopes the reuse registry
+	maxWait     time.Duration
+
+	mu        sync.Mutex
+	resources []*resource // each entry is one reference; reused containers appear once per acquisition
+	networks  sync.Map
+}
+
+// NewPool creates a new pool with the given endpoint and options.
 //
 // The endpoint parameter must be empty. The Docker client is created from
 // environment variables (DOCKER_HOST, DOCKER_TLS_VERIFY, DOCKER_CERT_PATH) or
 // provided via WithMobyClient option.
 //
-// To specify a custom Docker endpoint, set the DOCKER_HOST environment variable
-// before calling NewPool, or provide a custom client with WithMobyClient.
-//
-// The default MaxWait is 60 seconds. This can be customized with WithMaxWait.
-//
-// The Pool creates and owns a Docker client by default. Call Close when done
-// to release resources. If you need to provide your own client, use WithMobyClient.
+// The default maxWait is 60 seconds. This can be customized with WithMaxWait.
 //
 // Example:
 //
@@ -63,23 +75,20 @@ type Pool struct {
 //		panic(err)
 //	}
 //	defer pool.Close(ctx)
-func NewPool(ctx context.Context, endpoint string, opts ...PoolOption) (*Pool, error) {
-	p := &Pool{
-		MaxWait:     60 * time.Second,
+func NewPool(ctx context.Context, endpoint string, opts ...PoolOption) (ClosablePool, error) {
+	p := &pool{
+		maxWait:     60 * time.Second,
 		ownedClient: true,
 	}
 
-	// Apply options
 	for _, opt := range opts {
 		opt(p)
 	}
 
-	// Validate endpoint only if we need to create a client
 	if p.client == nil && endpoint != "" {
 		return nil, fmt.Errorf("endpoint parameter is not supported; use DOCKER_HOST environment variable or WithMobyClient option")
 	}
 
-	// Create client if not provided via options
 	if p.client == nil {
 		c, err := client.NewMobyClient(ctx)
 		if err != nil {
@@ -89,47 +98,58 @@ func NewPool(ctx context.Context, endpoint string, opts ...PoolOption) (*Pool, e
 		p.ownedClient = true
 	}
 
-	if p.ownedClient {
-		p.reuseScope = defaultRegistryScope
-	} else {
-		p.reuseScope = fmt.Sprintf("%p", p.client)
-	}
+	p.daemonHost = p.client.DaemonHost()
 
 	return p, nil
 }
 
-func (p *Pool) trackResource(resource *Resource) {
-	if resource == nil || resource.Container.ID == "" {
-		return
-	}
-	p.resources.Store(resource.Container.ID, resource)
+// Client returns the underlying Docker client.
+func (p *pool) Client() client.DockerClient {
+	return p.client
 }
 
-func (p *Pool) untrackResource(containerID string) {
+func (p *pool) trackResource(r *resource) {
+	if r == nil || r.container.ID == "" {
+		return
+	}
+	p.mu.Lock()
+	p.resources = append(p.resources, r)
+	p.mu.Unlock()
+}
+
+func (p *pool) untrackResource(containerID string) {
 	if containerID == "" {
 		return
 	}
-	p.resources.Delete(containerID)
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	// Remove the first matching entry (preserves other refs to the same container).
+	for i, r := range p.resources {
+		if r.container.ID == containerID {
+			p.resources = append(p.resources[:i], p.resources[i+1:]...)
+			return
+		}
+	}
 }
 
-func (p *Pool) trackNetwork(net *Network) {
-	if net == nil || net.Network.ID == "" {
+func (p *pool) trackNetwork(net *dockerNetwork) {
+	if net == nil || net.inspect.ID == "" {
 		return
 	}
-	p.networks.Store(net.Network.ID, net)
+	p.networks.Store(net.inspect.ID, net)
 }
 
-func (p *Pool) untrackNetwork(networkID string) {
+func (p *pool) untrackNetwork(networkID string) {
 	if networkID == "" {
 		return
 	}
 	p.networks.Delete(networkID)
 }
 
-func (p *Pool) trackedNetworks() []*Network {
-	var networks []*Network
+func (p *pool) trackedNetworks() []*dockerNetwork {
+	var networks []*dockerNetwork
 	p.networks.Range(func(_, value any) bool {
-		net, ok := value.(*Network)
+		net, ok := value.(*dockerNetwork)
 		if ok {
 			networks = append(networks, net)
 		}
@@ -138,43 +158,41 @@ func (p *Pool) trackedNetworks() []*Network {
 	return networks
 }
 
-func (p *Pool) trackedResources() []*Resource {
-	var resources []*Resource
-	p.resources.Range(func(_, value any) bool {
-		resource, ok := value.(*Resource)
-		if ok {
-			resources = append(resources, resource)
-		}
-		return true
-	})
-	return resources
+func (p *pool) trackedResources() []*resource {
+	p.mu.Lock()
+	snapshot := make([]*resource, len(p.resources))
+	copy(snapshot, p.resources)
+	p.mu.Unlock()
+	return snapshot
 }
 
-// NewPoolT creates a new Pool using t.Context() and registers cleanup with t.Cleanup().
-func NewPoolT(t TestingTB, endpoint string, opts ...PoolOption) *Pool {
+// NewPoolT creates a new pool using t.Context() and registers cleanup with t.Cleanup().
+// The returned Pool does not expose Close or CloseT; the pool is automatically
+// cleaned up when the test finishes.
+func NewPoolT(t TestingTB, endpoint string, opts ...PoolOption) Pool {
 	t.Helper()
 
-	pool, err := NewPool(t.Context(), endpoint, opts...)
+	p, err := NewPool(t.Context(), endpoint, opts...)
 	if err != nil {
 		t.Fatalf("NewPool() error = %v", err)
 	}
 
 	t.Cleanup(func() {
-		if err := pool.Close(context.WithoutCancel(t.Context())); err != nil {
+		if err := p.Close(context.WithoutCancel(t.Context())); err != nil {
 			t.Logf("pool.Close() error: %v", err)
 		}
 	})
 
-	return pool
+	return p
 }
 
-// Close cleans up all tracked containers and networks, then closes the Pool's
-// Docker client if it was created by the Pool. If a custom client was provided
+// Close cleans up all tracked containers and networks, then closes the pool's
+// Docker client if it was created by the pool. If a custom client was provided
 // via WithMobyClient, it is not closed (the caller remains responsible for
 // closing it).
 //
 // It is safe to call Close multiple times.
-func (p *Pool) Close(ctx context.Context) error {
+func (p *pool) Close(ctx context.Context) error {
 	cleanupErr := p.cleanup(ctx)
 	if p.ownedClient && p.client != nil {
 		err := p.client.Close()
@@ -186,62 +204,38 @@ func (p *Pool) Close(ctx context.Context) error {
 	return cleanupErr
 }
 
-// CloseT cleans up all tracked containers and networks, then closes the Pool's
+// CloseT cleans up all tracked containers and networks, then closes the pool's
 // Docker client. It calls t.Fatalf on error.
-func (p *Pool) CloseT(t TestingTB) {
+func (p *pool) CloseT(t TestingTB) {
 	t.Helper()
 	if err := p.Close(context.WithoutCancel(t.Context())); err != nil {
 		t.Fatalf("Pool.CloseT failed: %v", err)
 	}
 }
 
-// cleanup removes all containers and networks tracked by this pool.
-// Containers are removed first, then networks. Errors during cleanup
-// do not stop the cleanup process. The first error encountered is returned.
-//
-// Unlike Resource.Close, cleanup force-removes containers regardless of
-// reference count. This ensures that Pool.Close fully cleans up even when
-// reused containers still have outstanding references.
-func (p *Pool) cleanup(ctx context.Context) error {
+// cleanup closes all tracked resources and networks.
+// Resources are closed first (respecting ref counts), then networks.
+// Errors during cleanup do not stop the process. The first error is returned.
+func (p *pool) cleanup(ctx context.Context) error {
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
 	defer cancel()
 
 	var firstErr error
 
-	// Force-remove containers (bypass ref counting — the pool is shutting down).
-	for _, resource := range p.trackedResources() {
-		if err := p.forceRemoveContainer(cleanupCtx, resource.Container.ID); err != nil && firstErr == nil {
+	for _, r := range p.trackedResources() {
+		if err := r.Close(cleanupCtx); err != nil && firstErr == nil {
 			firstErr = err
 		}
-		p.untrackResource(resource.Container.ID)
 	}
 
-	// Remove networks after containers are gone
 	for _, net := range p.trackedNetworks() {
 		if err := net.Close(cleanupCtx); err != nil && firstErr == nil {
 			firstErr = err
 		}
-		p.untrackNetwork(net.Network.ID)
-	}
-
-	if p.reuseScope != "" {
-		resetRegistryWithScope(p.reuseScope)
+		p.untrackNetwork(net.inspect.ID)
 	}
 
 	return firstErr
-}
-
-// forceRemoveContainer stops and removes a container, ignoring not-found errors.
-func (p *Pool) forceRemoveContainer(ctx context.Context, containerID string) error {
-	_, _ = p.client.ContainerStop(ctx, containerID, mobyclient.ContainerStopOptions{})
-	_, err := p.client.ContainerRemove(ctx, containerID, mobyclient.ContainerRemoveOptions{
-		RemoveVolumes: true,
-		Force:         true,
-	})
-	if err != nil && !errdefs.IsNotFound(err) {
-		return err
-	}
-	return nil
 }
 
 // Run starts a container with the given repository and options.
@@ -262,22 +256,7 @@ func (p *Pool) forceRemoveContainer(ctx context.Context, containerID string) err
 //		panic(err)
 //	}
 //	defer resource.Close(ctx)
-//
-// To disable reuse:
-//
-//	resource, err := pool.Run(ctx, "postgres",
-//		dockertest.WithTag("14"),
-//		dockertest.WithoutReuse(),
-//	)
-//
-// To use a custom reuse key:
-//
-//	resource, err := pool.Run(ctx, "postgres",
-//		dockertest.WithTag("14"),
-//		dockertest.WithEnv([]string{"POSTGRES_PASSWORD=secret"}),
-//		dockertest.WithReuseID("postgres-14-secret"),
-//	)
-func (p *Pool) Run(ctx context.Context, repository string, opts ...RunOption) (*Resource, error) {
+func (p *pool) Run(ctx context.Context, repository string, opts ...RunOption) (ClosableResource, error) {
 	cfg, err := buildRunConfig(opts)
 	if err != nil {
 		return nil, err
@@ -328,16 +307,22 @@ func computeReuseID(repository string, cfg *runConfig) string {
 	return fmt.Sprintf("%s:%s", repository, cfg.tag)
 }
 
+// registryKey returns a registry key scoped to this pool's daemon host.
+// This ensures that pools connected to different Docker daemons never
+// share containers through the global registry.
+func (p *pool) registryKey(reuseID string) string {
+	return p.daemonHost + "\x00" + reuseID
+}
+
 // checkForExisting looks up an existing container in the registry and
-// increments its reference count. The returned Resource is a shallow clone
+// increments its reference count. The returned resource is a shallow clone
 // of the canonical registry entry with the pool pointer updated to the
-// caller's pool. This is safe because Container (a value type) is copied,
-// and reuseID is an immutable string.
-func checkForExisting(p *Pool, reuseID string) *Resource {
+// caller's pool.
+func checkForExisting(p *pool, reuseID string) *resource {
 	if reuseID == "" {
 		return nil
 	}
-	if existing, ok := acquireWithScope(p.reuseScope, reuseID); ok {
+	if existing, ok := acquire(p.registryKey(reuseID)); ok {
 		cloned := *existing
 		cloned.pool = p
 		return &cloned
@@ -346,7 +331,7 @@ func checkForExisting(p *Pool, reuseID string) *Resource {
 }
 
 // pullImage pulls a Docker image unless noPull is set.
-func (p *Pool) pullImage(ctx context.Context, ref string, noPull bool) error {
+func (p *pool) pullImage(ctx context.Context, ref string, noPull bool) error {
 	if noPull {
 		return nil
 	}
@@ -365,8 +350,7 @@ func (p *Pool) pullImage(ctx context.Context, ref string, noPull bool) error {
 		_ = pullResp.Close() //nolint:errcheck // Best effort close in defer
 	}()
 
-	// Wait consumes the JSON stream and surfaces any errors embedded in it
-	// (e.g. "manifest not found", authentication failures).
+	// Wait consumes the JSON stream and surfaces any errors embedded in it.
 	if err := pullResp.Wait(ctx); err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrImagePullFailed, ref, err)
 	}
@@ -375,7 +359,7 @@ func (p *Pool) pullImage(ctx context.Context, ref string, noPull bool) error {
 }
 
 // createAndStartContainer creates and starts a container with the given configuration.
-func (p *Pool) createAndStartContainer(ctx context.Context, ref string, cfg *runConfig) (string, error) {
+func (p *pool) createAndStartContainer(ctx context.Context, ref string, cfg *runConfig) (string, error) {
 	containerConfig := &container.Config{
 		Image:      ref,
 		Env:        cfg.env,
@@ -433,21 +417,21 @@ func (p *Pool) createAndStartContainer(ctx context.Context, ref string, cfg *run
 }
 
 // inspectAndRegister inspects the container and registers it in the global registry.
-func (p *Pool) inspectAndRegister(ctx context.Context, containerID, reuseID string) (*Resource, error) {
+func (p *pool) inspectAndRegister(ctx context.Context, containerID, reuseID string) (*resource, error) {
 	inspectResp, err := p.inspectWithPortRetry(ctx, containerID)
 	if err != nil {
 		_, _ = p.client.ContainerRemove(ctx, containerID, mobyclient.ContainerRemoveOptions{Force: true}) //nolint:errcheck // Best effort cleanup
 		return nil, fmt.Errorf("container inspect failed: %w", err)
 	}
 
-	resource := &Resource{
+	r := &resource{
 		pool:      p,
-		Container: inspectResp.Container,
+		container: inspectResp.Container,
 		reuseID:   reuseID,
 	}
 
 	if reuseID != "" {
-		canonical, loaded := registerWithScope(p.reuseScope, reuseID, resource)
+		canonical, loaded := register(p.registryKey(reuseID), r)
 		if loaded {
 			cleanupCtx := context.WithoutCancel(ctx)
 			_, _ = p.client.ContainerRemove(cleanupCtx, containerID, mobyclient.ContainerRemoveOptions{
@@ -457,21 +441,21 @@ func (p *Pool) inspectAndRegister(ctx context.Context, containerID, reuseID stri
 
 			cloned := *canonical
 			cloned.pool = p
-			resource = &cloned
+			r = &cloned
 		} else {
-			resource = canonical
+			r = canonical
 		}
 	}
 
-	p.trackResource(resource)
+	p.trackResource(r)
 
-	return resource, nil
+	return r, nil
 }
 
 // inspectWithPortRetry inspects a container, retrying briefly if exposed ports
 // have not yet been bound. Docker may report empty port bindings immediately
 // after ContainerStart; this mirrors v3's inspectContainerWithRetries behavior.
-func (p *Pool) inspectWithPortRetry(ctx context.Context, containerID string) (mobyclient.ContainerInspectResult, error) {
+func (p *pool) inspectWithPortRetry(ctx context.Context, containerID string) (mobyclient.ContainerInspectResult, error) {
 	const maxRetries = 5
 	const retryDelay = 100 * time.Millisecond
 
@@ -504,13 +488,17 @@ func (p *Pool) inspectWithPortRetry(ctx context.Context, containerID string) (mo
 }
 
 // RunT is a test helper that uses t.Context() and calls t.Fatalf on error.
-func (p *Pool) RunT(t TestingTB, repository string, opts ...RunOption) *Resource {
+// The returned Resource does not expose Close, CloseT, or Cleanup;
+// the resource is automatically cleaned up when the test finishes.
+func (p *pool) RunT(t TestingTB, repository string, opts ...RunOption) Resource {
 	t.Helper()
 
 	r, err := p.Run(t.Context(), repository, opts...)
 	if err != nil {
 		t.Fatalf("RunT failed: %v", err)
 	}
+
+	r.Cleanup(t)
 
 	return r
 }

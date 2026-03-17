@@ -26,8 +26,6 @@ func TestBuildDockerfile(t *testing.T) {
 			Dockerfile: "Dockerfile",
 		},
 	)
-	resource.Cleanup(t)
-
 	dsn := fmt.Sprintf("postgres://postgres:secret@%s/testdb?sslmode=disable",
 		resource.GetHostPort("5432/tcp"))
 	db, err := sql.Open("postgres", dsn)

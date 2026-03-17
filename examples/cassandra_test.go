@@ -25,8 +25,6 @@ func TestCassandra(t *testing.T) {
 			"CASSANDRA_AUTHENTICATOR=PasswordAuthenticator",
 		}),
 	)
-	cassandra.Cleanup(t)
-
 	host := cassandra.GetBoundIP("9042/tcp")
 	port, err := strconv.Atoi(cassandra.GetPort("9042/tcp"))
 	if err != nil {

@@ -23,8 +23,6 @@ func TestCockroachDB(t *testing.T) {
 		dockertest.WithTag("v24.3.2"),
 		dockertest.WithCmd([]string{"start-single-node", "--insecure"}),
 	)
-	cockroach.Cleanup(t)
-
 	// Open connection outside retry loop to avoid leaking connection pools
 	dsn := fmt.Sprintf("postgres://root@%s/defaultdb?sslmode=disable",
 		cockroach.GetHostPort("26257/tcp"))

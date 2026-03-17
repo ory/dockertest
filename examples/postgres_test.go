@@ -26,8 +26,6 @@ func TestPostgreSQL(t *testing.T) {
 			"POSTGRES_DB=testdb",
 		}),
 	)
-	postgres.Cleanup(t)
-
 	// Open connection outside retry loop to avoid leaking connection pools
 	dsn := fmt.Sprintf("postgres://postgres:secret@%s/testdb?sslmode=disable",
 		postgres.GetHostPort("5432/tcp"))

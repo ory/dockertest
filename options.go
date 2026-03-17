@@ -11,22 +11,22 @@ import (
 	"github.com/ory/dockertest/v4/internal/client"
 )
 
-// PoolOption is a functional option for configuring a Pool.
-// Use with NewPool or NewPoolT to customize Pool behavior.
-type PoolOption func(*Pool)
+// PoolOption is a functional option for configuring a pool.
+// Use with NewPool or NewPoolT to customize pool behavior.
+type PoolOption func(*pool)
 
 // WithMaxWait sets the maximum wait time for operations.
-// The default MaxWait is 60 seconds.
+// The default maxWait is 60 seconds.
 func WithMaxWait(d time.Duration) PoolOption {
-	return func(p *Pool) {
-		p.MaxWait = d
+	return func(p *pool) {
+		p.maxWait = d
 	}
 }
 
 // WithMobyClient sets a custom Docker client.
-// When a custom client is provided, the Pool will not close it on Pool.Close().
+// When a custom client is provided, the pool will not close it on Close().
 func WithMobyClient(c client.DockerClient) PoolOption {
-	return func(p *Pool) {
+	return func(p *pool) {
 		p.client = c
 		p.ownedClient = false
 	}

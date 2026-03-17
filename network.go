@@ -11,19 +11,39 @@ import (
 	"strings"
 
 	"github.com/containerd/errdefs"
-	"github.com/moby/moby/api/types/network"
+	mobynetwork "github.com/moby/moby/api/types/network"
 	mobyclient "github.com/moby/moby/client"
 )
 
-// Network represents a Docker network managed by dockertest.
-// Networks allow containers to communicate with each other using container names
-// as hostnames, isolated from other networks.
-//
-// Create networks with Pool.CreateNetwork and connect containers with
-// Resource.ConnectToNetwork.
-type Network struct {
-	pool    *Pool
-	Network network.Inspect
+// Network provides access to a Docker network.
+// Returned by CreateNetworkT; does not expose Close or CloseT.
+type Network interface {
+	ID() string
+	Inspect() mobynetwork.Inspect
+}
+
+// ClosableNetwork extends Network with explicit lifecycle management.
+// Returned by CreateNetwork; the caller is responsible for calling Close.
+type ClosableNetwork interface {
+	Network
+	Close(ctx context.Context) error
+	CloseT(t TestingTB)
+}
+
+// dockerNetwork represents a Docker network managed by dockertest.
+type dockerNetwork struct {
+	pool    *pool
+	inspect mobynetwork.Inspect
+}
+
+// ID returns the network ID.
+func (n *dockerNetwork) ID() string {
+	return n.inspect.ID
+}
+
+// Inspect returns the network inspection response.
+func (n *dockerNetwork) Inspect() mobynetwork.Inspect {
+	return n.inspect
 }
 
 // NetworkCreateOptions holds options for creating a network.
@@ -49,11 +69,9 @@ type NetworkCreateOptions struct {
 
 // CreateNetwork creates a new Docker network with the given name and options.
 // If opts is nil, default network options are used (bridge driver, external access allowed).
-func (p *Pool) CreateNetwork(ctx context.Context, name string, opts *NetworkCreateOptions) (*Network, error) {
-	// Build network create options
+func (p *pool) CreateNetwork(ctx context.Context, name string, opts *NetworkCreateOptions) (ClosableNetwork, error) {
 	createOpts := mobyclient.NetworkCreateOptions{}
 
-	// Apply custom options if provided
 	if opts != nil {
 		createOpts.Driver = opts.Driver
 		createOpts.Internal = opts.Internal
@@ -67,7 +85,6 @@ func (p *Pool) CreateNetwork(ctx context.Context, name string, opts *NetworkCrea
 		createOpts.Options = opts.Options
 	}
 
-	// Create the network
 	createResp, err := p.client.NetworkCreate(ctx, name, createOpts)
 	if err != nil {
 		createResp, err = p.retryNetworkCreateWithCustomSubnet(ctx, name, createOpts, err)
@@ -76,24 +93,22 @@ func (p *Pool) CreateNetwork(ctx context.Context, name string, opts *NetworkCrea
 		}
 	}
 
-	// Inspect the network to get full details
 	inspectResp, err := p.client.NetworkInspect(ctx, createResp.ID, mobyclient.NetworkInspectOptions{})
 	if err != nil {
-		// Clean up network on inspect failure
 		_, _ = p.client.NetworkRemove(ctx, createResp.ID, mobyclient.NetworkRemoveOptions{}) //nolint:errcheck // Best effort cleanup
 		return nil, err
 	}
 
-	net := &Network{
+	net := &dockerNetwork{
 		pool:    p,
-		Network: inspectResp.Network,
+		inspect: inspectResp.Network,
 	}
 	p.trackNetwork(net)
 
 	return net, nil
 }
 
-func (p *Pool) retryNetworkCreateWithCustomSubnet(
+func (p *pool) retryNetworkCreateWithCustomSubnet(
 	ctx context.Context,
 	name string,
 	createOpts mobyclient.NetworkCreateOptions,
@@ -118,9 +133,9 @@ func (p *Pool) retryNetworkCreateWithCustomSubnet(
 		}
 
 		retryOpts := createOpts
-		retryOpts.IPAM = &network.IPAM{
+		retryOpts.IPAM = &mobynetwork.IPAM{
 			Driver: "default",
-			Config: []network.IPAMConfig{
+			Config: []mobynetwork.IPAMConfig{
 				{Subnet: prefix},
 			},
 		}
@@ -142,7 +157,9 @@ func (p *Pool) retryNetworkCreateWithCustomSubnet(
 }
 
 // CreateNetworkT creates a network using t.Context() and calls t.Fatalf on error.
-func (p *Pool) CreateNetworkT(t TestingTB, name string, opts *NetworkCreateOptions) *Network {
+// The returned Network does not expose Close or CloseT; the network is
+// cleaned up automatically when the pool is closed.
+func (p *pool) CreateNetworkT(t TestingTB, name string, opts *NetworkCreateOptions) Network {
 	t.Helper()
 
 	net, err := p.CreateNetwork(t.Context(), name, opts)
@@ -156,99 +173,24 @@ func (p *Pool) CreateNetworkT(t TestingTB, name string, opts *NetworkCreateOptio
 // Close removes the network.
 // Any containers still connected to the network should be disconnected first,
 // or the network removal will fail.
-func (n *Network) Close(ctx context.Context) error {
+func (n *dockerNetwork) Close(ctx context.Context) error {
 	if n.pool == nil || n.pool.client == nil {
 		return ErrClientClosed
 	}
 
-	_, err := n.pool.client.NetworkRemove(ctx, n.Network.ID, mobyclient.NetworkRemoveOptions{})
+	_, err := n.pool.client.NetworkRemove(ctx, n.inspect.ID, mobyclient.NetworkRemoveOptions{})
 	if err != nil && !errdefs.IsNotFound(err) {
 		return err
 	}
 
-	n.pool.untrackNetwork(n.Network.ID)
+	n.pool.untrackNetwork(n.inspect.ID)
 	return nil
 }
 
 // CloseT removes the network and calls t.Fatalf on error.
-func (n *Network) CloseT(t TestingTB) {
+func (n *dockerNetwork) CloseT(t TestingTB) {
 	t.Helper()
 	if err := n.Close(context.WithoutCancel(t.Context())); err != nil {
 		t.Fatalf("CloseT failed: %v", err)
 	}
-}
-
-// ConnectToNetwork connects the container to the given network.
-// The resource's Container field is automatically updated with the latest
-// network settings after connection.
-func (r *Resource) ConnectToNetwork(ctx context.Context, net *Network) error {
-	if r.pool == nil || r.pool.client == nil {
-		return ErrClientClosed
-	}
-
-	connectOpts := mobyclient.NetworkConnectOptions{
-		Container: r.Container.ID,
-	}
-
-	_, err := r.pool.client.NetworkConnect(ctx, net.Network.ID, connectOpts)
-	if err != nil {
-		return err
-	}
-
-	// Refresh container inspection to get updated network settings
-	inspectResp, err := r.pool.client.ContainerInspect(ctx, r.Container.ID, mobyclient.ContainerInspectOptions{})
-	if err != nil {
-		return err
-	}
-
-	r.Container = inspectResp.Container
-	return nil
-}
-
-// DisconnectFromNetwork disconnects the container from the given network.
-// The resource's Container field is automatically updated with the latest
-// network settings after disconnection.
-func (r *Resource) DisconnectFromNetwork(ctx context.Context, net *Network) error {
-	if r.pool == nil || r.pool.client == nil {
-		return ErrClientClosed
-	}
-
-	disconnectOpts := mobyclient.NetworkDisconnectOptions{
-		Container: r.Container.ID,
-		Force:     false,
-	}
-
-	_, err := r.pool.client.NetworkDisconnect(ctx, net.Network.ID, disconnectOpts)
-	if err != nil {
-		return err
-	}
-
-	// Refresh container inspection to get updated network settings
-	inspectResp, err := r.pool.client.ContainerInspect(ctx, r.Container.ID, mobyclient.ContainerInspectOptions{})
-	if err != nil {
-		return err
-	}
-
-	r.Container = inspectResp.Container
-	return nil
-}
-
-// GetIPInNetwork returns the container's IP address in the given network.
-// Returns empty string if the container is not connected to the network.
-func (r *Resource) GetIPInNetwork(net *Network) string {
-	if r.Container.NetworkSettings == nil {
-		return ""
-	}
-
-	if r.Container.NetworkSettings.Networks == nil {
-		return ""
-	}
-
-	networkName := net.Network.Name
-	endpoint, ok := r.Container.NetworkSettings.Networks[networkName]
-	if !ok {
-		return ""
-	}
-
-	return endpoint.IPAddress.String()
 }

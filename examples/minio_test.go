@@ -29,8 +29,6 @@ func TestMinio(t *testing.T) {
 			"MINIO_ROOT_PASSWORD=minioadmin",
 		}),
 	)
-	resource.Cleanup(t)
-
 	endpoint := resource.GetHostPort("9000/tcp")
 
 	// Wait for MinIO to be ready via health endpoint

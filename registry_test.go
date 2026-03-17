@@ -17,7 +17,7 @@ func TestRegistry(t *testing.T) {
 	t.Run("Register and Get", func(t *testing.T) {
 		ResetRegistry()
 
-		r1 := &Resource{Container: container.InspectResponse{ID: "container-1"}}
+		r1 := &resource{container: container.InspectResponse{ID: "container-1"}}
 
 		// Register a resource
 		err := Register("reuse-1", r1)
@@ -30,8 +30,8 @@ func TestRegistry(t *testing.T) {
 		if !ok {
 			t.Fatal("Get() ok = false, want true")
 		}
-		if got.Container.ID != r1.Container.ID {
-			t.Errorf("Get() ID = %v, want %v", got.Container.ID, r1.Container.ID)
+		if got.Container().ID != r1.Container().ID {
+			t.Errorf("Get() ID = %v, want %v", got.Container().ID, r1.Container().ID)
 		}
 	})
 
@@ -47,8 +47,8 @@ func TestRegistry(t *testing.T) {
 	t.Run("Register duplicate reuseID", func(t *testing.T) {
 		ResetRegistry()
 
-		r1 := &Resource{Container: container.InspectResponse{ID: "container-1"}}
-		r2 := &Resource{Container: container.InspectResponse{ID: "container-2"}}
+		r1 := &resource{container: container.InspectResponse{ID: "container-1"}}
+		r2 := &resource{container: container.InspectResponse{ID: "container-2"}}
 
 		// Register first resource
 		err := Register("reuse-1", r1)
@@ -75,9 +75,9 @@ func TestRegistry(t *testing.T) {
 	t.Run("GetAll returns all resources", func(t *testing.T) {
 		ResetRegistry()
 
-		r1 := &Resource{Container: container.InspectResponse{ID: "container-1"}}
-		r2 := &Resource{Container: container.InspectResponse{ID: "container-2"}}
-		r3 := &Resource{Container: container.InspectResponse{ID: "container-3"}}
+		r1 := &resource{container: container.InspectResponse{ID: "container-1"}}
+		r2 := &resource{container: container.InspectResponse{ID: "container-2"}}
+		r3 := &resource{container: container.InspectResponse{ID: "container-3"}}
 
 		Register("reuse-1", r1)
 		Register("reuse-2", r2)
@@ -91,7 +91,7 @@ func TestRegistry(t *testing.T) {
 		// Verify all resources are present
 		ids := make(map[string]bool)
 		for _, r := range all {
-			ids[r.Container.ID] = true
+			ids[r.Container().ID] = true
 		}
 
 		if !ids["container-1"] || !ids["container-2"] || !ids["container-3"] {
@@ -102,7 +102,7 @@ func TestRegistry(t *testing.T) {
 	t.Run("ResetRegistry clears all resources", func(t *testing.T) {
 		ResetRegistry()
 
-		r1 := &Resource{Container: container.InspectResponse{ID: "container-1"}}
+		r1 := &resource{container: container.InspectResponse{ID: "container-1"}}
 		Register("reuse-1", r1)
 
 		// Verify resource exists
@@ -140,7 +140,7 @@ func TestRegistryConcurrency(t *testing.T) {
 	for i := 0; i < numGoroutines; i++ {
 		go func(id int) {
 			defer wg.Done()
-			r := &Resource{Container: container.InspectResponse{ID: "container-" + string(rune(id))}}
+			r := &resource{container: container.InspectResponse{ID: "container-" + string(rune(id))}}
 			Register(reuseID, r)
 		}(i)
 	}
@@ -163,57 +163,23 @@ func TestRegistryConcurrency(t *testing.T) {
 	}
 }
 
-func TestRegistryScopes(t *testing.T) {
+func TestRegisterLoadOrStore(t *testing.T) {
 	ResetRegistry()
 
-	r1 := &Resource{Container: container.InspectResponse{ID: "scope-a-container"}}
-	r2 := &Resource{Container: container.InspectResponse{ID: "scope-b-container"}}
+	first := &resource{container: container.InspectResponse{ID: "first"}}
+	second := &resource{container: container.InspectResponse{ID: "second"}}
 
-	_, loadedA := registerWithScope("scope-a", "same-reuse-id", r1)
-	if loadedA {
-		t.Fatal("registerWithScope(scope-a) loaded = true, want false")
-	}
-	_, loadedB := registerWithScope("scope-b", "same-reuse-id", r2)
-	if loadedB {
-		t.Fatal("registerWithScope(scope-b) loaded = true, want false")
-	}
-
-	gotA, okA := getWithScope("scope-a", "same-reuse-id")
-	if !okA || gotA.ID() != "scope-a-container" {
-		t.Fatalf("scope-a lookup failed: ok=%v id=%v", okA, gotA)
-	}
-
-	gotB, okB := getWithScope("scope-b", "same-reuse-id")
-	if !okB || gotB.ID() != "scope-b-container" {
-		t.Fatalf("scope-b lookup failed: ok=%v id=%v", okB, gotB)
-	}
-
-	resetRegistryWithScope("scope-a")
-	if _, ok := getWithScope("scope-a", "same-reuse-id"); ok {
-		t.Fatal("scope-a entry still present after resetRegistryWithScope")
-	}
-	if _, ok := getWithScope("scope-b", "same-reuse-id"); !ok {
-		t.Fatal("scope-b entry unexpectedly removed by scope-a reset")
-	}
-}
-
-func TestRegisterWithScopeLoadOrStore(t *testing.T) {
-	ResetRegistry()
-
-	first := &Resource{Container: container.InspectResponse{ID: "first"}}
-	second := &Resource{Container: container.InspectResponse{ID: "second"}}
-
-	stored, loaded := registerWithScope("scope", "reuse", first)
+	stored, loaded := register("reuse", first)
 	if loaded {
-		t.Fatal("first registerWithScope call loaded = true, want false")
+		t.Fatal("first register call loaded = true, want false")
 	}
 	if stored.ID() != first.ID() {
 		t.Fatalf("first stored resource = %q, want %q", stored.ID(), first.ID())
 	}
 
-	stored, loaded = registerWithScope("scope", "reuse", second)
+	stored, loaded = register("reuse", second)
 	if !loaded {
-		t.Fatal("second registerWithScope call loaded = false, want true")
+		t.Fatal("second register call loaded = false, want true")
 	}
 	if stored.ID() != first.ID() {
 		t.Fatalf("second stored resource = %q, want %q", stored.ID(), first.ID())
@@ -223,38 +189,38 @@ func TestRegisterWithScopeLoadOrStore(t *testing.T) {
 func TestRegistryRefCounting(t *testing.T) {
 	ResetRegistry()
 
-	r := &Resource{Container: container.InspectResponse{ID: "refcount-container"}}
+	r := &resource{container: container.InspectResponse{ID: "refcount-container"}}
 
 	// Register: refs=1
-	_, loaded := registerWithScope("scope", "rc-id", r)
+	_, loaded := register("rc-id", r)
 	if loaded {
 		t.Fatal("first register loaded = true, want false")
 	}
 
 	// Acquire: refs=2
-	got, ok := acquireWithScope("scope", "rc-id")
+	got, ok := acquire("rc-id")
 	if !ok {
-		t.Fatal("acquireWithScope returned false, want true")
+		t.Fatal("acquire returned false, want true")
 	}
 	if got.ID() != r.ID() {
-		t.Fatalf("acquireWithScope returned %q, want %q", got.ID(), r.ID())
+		t.Fatalf("acquire returned %q, want %q", got.ID(), r.ID())
 	}
 
 	// Release once: refs=1, should NOT be last
-	if releaseWithScope("scope", "rc-id") {
-		t.Fatal("first releaseWithScope returned true (last ref), want false")
+	if release("rc-id") {
+		t.Fatal("first release returned true (last ref), want false")
 	}
 	// Entry should still exist
-	if _, ok := getWithScope("scope", "rc-id"); !ok {
+	if _, ok := get("rc-id"); !ok {
 		t.Fatal("entry removed after first release, want it to remain")
 	}
 
 	// Release again: refs=0, should be last
-	if !releaseWithScope("scope", "rc-id") {
-		t.Fatal("second releaseWithScope returned false, want true (last ref)")
+	if !release("rc-id") {
+		t.Fatal("second release returned false, want true (last ref)")
 	}
 	// Entry should be gone
-	if _, ok := getWithScope("scope", "rc-id"); ok {
+	if _, ok := get("rc-id"); ok {
 		t.Fatal("entry still present after last release, want it removed")
 	}
 }
@@ -262,13 +228,13 @@ func TestRegistryRefCounting(t *testing.T) {
 func TestRegistryRefCountingRegisterIncrementsOnDuplicate(t *testing.T) {
 	ResetRegistry()
 
-	r1 := &Resource{Container: container.InspectResponse{ID: "dup-1"}}
-	r2 := &Resource{Container: container.InspectResponse{ID: "dup-2"}}
+	r1 := &resource{container: container.InspectResponse{ID: "dup-1"}}
+	r2 := &resource{container: container.InspectResponse{ID: "dup-2"}}
 
 	// Register r1: refs=1
-	registerWithScope("scope", "dup-id", r1)
+	register("dup-id", r1)
 	// Register r2 with same key: refs=2 (r1 is canonical)
-	stored, loaded := registerWithScope("scope", "dup-id", r2)
+	stored, loaded := register("dup-id", r2)
 	if !loaded {
 		t.Fatal("second register loaded = false, want true")
 	}
@@ -277,58 +243,58 @@ func TestRegistryRefCountingRegisterIncrementsOnDuplicate(t *testing.T) {
 	}
 
 	// Need 2 releases to remove
-	if releaseWithScope("scope", "dup-id") {
+	if release("dup-id") {
 		t.Fatal("first release was last, want false")
 	}
-	if !releaseWithScope("scope", "dup-id") {
+	if !release("dup-id") {
 		t.Fatal("second release was not last, want true")
 	}
 }
 
-func TestAcquireWithScopeNonExistent(t *testing.T) {
+func TestAcquireNonExistent(t *testing.T) {
 	ResetRegistry()
 
-	_, ok := acquireWithScope("scope", "nonexistent")
+	_, ok := acquire("nonexistent")
 	if ok {
-		t.Fatal("acquireWithScope returned true for nonexistent entry, want false")
+		t.Fatal("acquire returned true for nonexistent entry, want false")
 	}
 }
 
-func TestReleaseWithScopeNonExistent(t *testing.T) {
+func TestReleaseNonExistent(t *testing.T) {
 	ResetRegistry()
 
 	// Releasing a nonexistent entry should return true (treat as last reference)
-	if !releaseWithScope("scope", "nonexistent") {
-		t.Fatal("releaseWithScope returned false for nonexistent entry, want true")
+	if !release("nonexistent") {
+		t.Fatal("release returned false for nonexistent entry, want true")
 	}
 }
 
-func TestGetWithScopeDoesNotIncrementRefs(t *testing.T) {
+func TestGetDoesNotIncrementRefs(t *testing.T) {
 	ResetRegistry()
 
-	r := &Resource{Container: container.InspectResponse{ID: "get-no-inc"}}
+	r := &resource{container: container.InspectResponse{ID: "get-no-inc"}}
 
 	// Register: refs=1
-	registerWithScope("s", "id", r)
+	register("id", r)
 
-	// getWithScope five times — should NOT increment refs
+	// get five times — should NOT increment refs
 	for range 5 {
-		got, ok := getWithScope("s", "id")
+		got, ok := get("id")
 		if !ok {
-			t.Fatal("getWithScope returned false, want true")
+			t.Fatal("get returned false, want true")
 		}
 		if got.ID() != r.ID() {
-			t.Fatalf("getWithScope returned %q, want %q", got.ID(), r.ID())
+			t.Fatalf("get returned %q, want %q", got.ID(), r.ID())
 		}
 	}
 
 	// Single release should be the last ref (still 1)
-	if !releaseWithScope("s", "id") {
-		t.Fatal("releaseWithScope returned false, want true (last ref)")
+	if !release("id") {
+		t.Fatal("release returned false, want true (last ref)")
 	}
 
 	// Entry should be gone
-	if _, ok := getWithScope("s", "id"); ok {
+	if _, ok := get("id"); ok {
 		t.Fatal("entry still present after last release, want it removed")
 	}
 }
