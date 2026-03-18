@@ -4,6 +4,8 @@
 package dockertest_test
 
 import (
+	"bytes"
+	"errors"
 	"testing"
 
 	"github.com/containerd/errdefs"
@@ -528,6 +530,119 @@ func TestResourceCloseRefCounting(t *testing.T) {
 	_, err = dc.ContainerInspect(t.Context(), containerID, mobyclient.ContainerInspectOptions{})
 	if !errdefs.IsNotFound(err) {
 		t.Fatalf("ContainerInspect() after last close: error = %v, want not found", err)
+	}
+}
+
+func TestResourceLogsStdoutStderr(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() { dockertest.ResetRegistry() })
+
+	pool := dockertest.NewPoolT(t, "")
+
+	resource := pool.RunT(t, "alpine",
+		dockertest.WithTag("latest"),
+		dockertest.WithCmd([]string{"sh", "-c", "echo stdout-line; echo stderr-line >&2"}),
+		dockertest.WithoutReuse(),
+	)
+
+	// Wait for the container to finish writing logs
+	_ = pool.Retry(t.Context(), 0, func() error {
+		result, err := resource.Logs(t.Context())
+		if err != nil {
+			return err
+		}
+		if result.StdOut == "" {
+			return errors.New("stdout not ready yet")
+		}
+		return nil
+	})
+
+	result, err := resource.Logs(t.Context())
+	if err != nil {
+		t.Fatalf("Logs() error = %v", err)
+	}
+
+	if result.StdOut != "stdout-line\n" {
+		t.Errorf("Logs().StdOut = %q, want %q", result.StdOut, "stdout-line\n")
+	}
+	if result.StdErr != "stderr-line\n" {
+		t.Errorf("Logs().StdErr = %q, want %q", result.StdErr, "stderr-line\n")
+	}
+	if result.Combined() != "stdout-line\nstderr-line\n" {
+		t.Errorf("Logs().Combined() = %q, want %q", result.Combined(), "stdout-line\nstderr-line\n")
+	}
+}
+
+func TestResourceLogsWithTail(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() { dockertest.ResetRegistry() })
+
+	pool := dockertest.NewPoolT(t, "")
+
+	resource := pool.RunT(t, "alpine",
+		dockertest.WithTag("latest"),
+		dockertest.WithCmd([]string{"sh", "-c", "echo line1; echo line2; echo line3"}),
+		dockertest.WithoutReuse(),
+	)
+
+	// Wait for logs to be available
+	_ = pool.Retry(t.Context(), 0, func() error {
+		result, err := resource.Logs(t.Context())
+		if err != nil {
+			return err
+		}
+		if result.StdOut == "" {
+			return errors.New("logs not ready yet")
+		}
+		return nil
+	})
+
+	result, err := resource.Logs(t.Context(), dockertest.WithTail("1"))
+	if err != nil {
+		t.Fatalf("Logs() error = %v", err)
+	}
+
+	if result.StdOut != "line3\n" {
+		t.Errorf("Logs(WithTail(1)).StdOut = %q, want %q", result.StdOut, "line3\n")
+	}
+}
+
+func TestResourceFollowLogs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() { dockertest.ResetRegistry() })
+
+	pool := dockertest.NewPoolT(t, "")
+
+	// Container prints output then exits — FollowLogs should return after container exit.
+	resource := pool.RunT(t, "alpine",
+		dockertest.WithTag("latest"),
+		dockertest.WithCmd([]string{"sh", "-c", "echo follow-stdout; echo follow-stderr >&2"}),
+		dockertest.WithoutReuse(),
+	)
+
+	var stdout, stderr bytes.Buffer
+	err := resource.FollowLogs(t.Context(), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("FollowLogs() error = %v", err)
+	}
+
+	if stdout.String() != "follow-stdout\n" {
+		t.Errorf("FollowLogs stdout = %q, want %q", stdout.String(), "follow-stdout\n")
+	}
+	if stderr.String() != "follow-stderr\n" {
+		t.Errorf("FollowLogs stderr = %q, want %q", stderr.String(), "follow-stderr\n")
 	}
 }
 
