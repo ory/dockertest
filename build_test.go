@@ -93,20 +93,20 @@ CMD ["sh", "-c", "echo TEST_ENV=$TEST_ENV && sleep 300"]
 	r := pool.BuildAndRunT(t, "test-build-args", buildOpts)
 
 	// Verify build arg was applied by checking container env via logs
-	var logs string
+	var logs dockertest.LogResult
 	err := pool.Retry(t.Context(), 10*time.Second, func() error {
 		var logErr error
 		logs, logErr = r.Logs(t.Context())
 		if logErr != nil {
 			return logErr
 		}
-		if !strings.Contains(logs, "TEST_ENV=test-value") {
+		if !strings.Contains(logs.Combined(), "TEST_ENV=test-value") {
 			return fmt.Errorf("logs do not yet contain expected env")
 		}
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("Expected logs to contain 'TEST_ENV=test-value', got: %s", logs)
+		t.Fatalf("Expected logs to contain 'TEST_ENV=test-value', got: %s", logs.Combined())
 	}
 }
 
@@ -145,20 +145,20 @@ CMD ["sh", "-c", "echo $TEST_VAR && sleep 300"]
 	)
 
 	// Verify env var took effect via logs
-	var logs string
+	var logs dockertest.LogResult
 	err := pool.Retry(t.Context(), 10*time.Second, func() error {
 		var logErr error
 		logs, logErr = r.Logs(t.Context())
 		if logErr != nil {
 			return logErr
 		}
-		if !strings.Contains(logs, "hello") {
+		if !strings.Contains(logs.Combined(), "hello") {
 			return fmt.Errorf("logs do not yet contain expected env value")
 		}
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("Expected logs to contain 'hello', got: %s", logs)
+		t.Fatalf("Expected logs to contain 'hello', got: %s", logs.Combined())
 	}
 }
 
@@ -193,20 +193,20 @@ func TestBuildAndRunWithBuildContext(t *testing.T) {
 	}
 
 	// Poll for expected log output
-	var logs string
+	var logs dockertest.LogResult
 	err := pool.Retry(t.Context(), 10*time.Second, func() error {
 		var logErr error
 		logs, logErr = r.Logs(t.Context())
 		if logErr != nil {
 			return logErr
 		}
-		if !strings.Contains(logs, "Hello, World!") {
+		if !strings.Contains(logs.Combined(), "Hello, World!") {
 			return fmt.Errorf("logs do not yet contain 'Hello, World!'")
 		}
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("Expected logs to contain 'Hello, World!', got: %s (error: %v)", logs, err)
+		t.Fatalf("Expected logs to contain 'Hello, World!', got: %s (error: %v)", logs.Combined(), err)
 	}
 
 }

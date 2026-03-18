@@ -420,7 +420,11 @@ Available `NetworkCreateOptions` fields: `Driver` (e.g., `"bridge"`,
 result, err := resource.Exec(ctx, []string{"pg_isready"})
 // result.StdOut, result.StdErr, result.ExitCode
 
-logs, err := resource.Logs(ctx)
+result, err := resource.Logs(ctx)
+// result.StdOut, result.StdErr, result.Combined()
+
+// With options:
+result, err = resource.Logs(ctx, WithTail("50"), WithTimestamps())
 ```
 
 ### Advanced: Container Registry

@@ -24,7 +24,7 @@ type Resource interface {
 	GetPort(portID string) string
 	GetBoundIP(portID string) string
 	GetHostPort(portID string) string
-	Logs(ctx context.Context) (string, error)
+	Logs(ctx context.Context, opts ...LogOption) (LogResult, error)
 	Exec(ctx context.Context, cmd []string) (ExecResult, error)
 	ConnectToNetwork(ctx context.Context, net Network) error
 	DisconnectFromNetwork(ctx context.Context, net Network) error
@@ -154,27 +154,39 @@ func (r *resource) Cleanup(t TestingTB) {
 }
 
 // Logs returns the container logs, demultiplexing stdout and stderr streams.
-// Both stdout and stderr are combined in the returned string.
-func (r *resource) Logs(ctx context.Context) (string, error) {
+// Use LogOption values to filter by tail, time range, or add timestamps.
+func (r *resource) Logs(ctx context.Context, opts ...LogOption) (LogResult, error) {
 	if r.pool == nil || r.pool.client == nil {
-		return "", ErrClientClosed
+		return LogResult{}, ErrClientClosed
+	}
+
+	var cfg logConfig
+	for _, opt := range opts {
+		opt(&cfg)
 	}
 
 	reader, err := r.pool.client.ContainerLogs(ctx, r.container.ID, mobyclient.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
+		Tail:       cfg.tail,
+		Since:      cfg.since,
+		Until:      cfg.until,
+		Timestamps: cfg.timestamps,
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to get container logs: %w", err)
+		return LogResult{}, fmt.Errorf("failed to get container logs: %w", err)
 	}
 	defer reader.Close()
 
-	var buf bytes.Buffer
-	if _, err := stdcopy.StdCopy(&buf, &buf, reader); err != nil {
-		return "", fmt.Errorf("failed to read container logs: %w", err)
+	var stdout, stderr bytes.Buffer
+	if _, err := stdcopy.StdCopy(&stdout, &stderr, reader); err != nil {
+		return LogResult{}, fmt.Errorf("failed to read container logs: %w", err)
 	}
 
-	return buf.String(), nil
+	return LogResult{
+		StdOut: stdout.String(),
+		StdErr: stderr.String(),
+	}, nil
 }
 
 // ExecResult holds the output of a command executed inside a container.

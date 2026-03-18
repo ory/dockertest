@@ -334,11 +334,20 @@ t.Log(result.StdOut)
 ### Container logs
 
 ```go
-logs, err := resource.Logs(ctx)
+// Get all logs (stdout + stderr separated)
+result, err := resource.Logs(ctx)
 if err != nil {
     t.Fatal(err)
 }
-t.Log(logs)
+t.Log(result.StdOut)
+t.Log(result.StdErr)
+t.Log(result.Combined()) // stdout + stderr combined
+
+// With options: last 10 lines, with timestamps
+result, err = resource.Logs(ctx,
+    dockertest.WithTail("10"),
+    dockertest.WithTimestamps(),
+)
 ```
 
 ### Building from Dockerfile
