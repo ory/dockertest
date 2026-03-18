@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 
 	"github.com/containerd/errdefs"
@@ -25,6 +26,7 @@ type Resource interface {
 	GetBoundIP(portID string) string
 	GetHostPort(portID string) string
 	Logs(ctx context.Context, opts ...LogOption) (LogResult, error)
+	FollowLogs(ctx context.Context, stdout, stderr io.Writer, opts ...LogOption) error
 	Exec(ctx context.Context, cmd []string) (ExecResult, error)
 	ConnectToNetwork(ctx context.Context, net Network) error
 	DisconnectFromNetwork(ctx context.Context, net Network) error
@@ -187,6 +189,37 @@ func (r *resource) Logs(ctx context.Context, opts ...LogOption) (LogResult, erro
 		StdOut: stdout.String(),
 		StdErr: stderr.String(),
 	}, nil
+}
+
+// FollowLogs streams container logs to stdout and stderr until ctx is cancelled
+// or the container exits. Use LogOption values to filter by tail, time, etc.
+// Pass io.Discard for writers you don't need.
+func (r *resource) FollowLogs(ctx context.Context, stdout, stderr io.Writer, opts ...LogOption) error {
+	if r.pool == nil || r.pool.client == nil {
+		return ErrClientClosed
+	}
+
+	var cfg logConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+
+	reader, err := r.pool.client.ContainerLogs(ctx, r.container.ID, mobyclient.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     true,
+		Tail:       cfg.tail,
+		Since:      cfg.since,
+		Until:      cfg.until,
+		Timestamps: cfg.timestamps,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to follow container logs: %w", err)
+	}
+	defer reader.Close()
+
+	_, err = stdcopy.StdCopy(stdout, stderr, reader)
+	return err
 }
 
 // ExecResult holds the output of a command executed inside a container.
