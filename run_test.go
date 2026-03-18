@@ -551,69 +551,29 @@ func TestResourceLogsStdoutStderr(t *testing.T) {
 
 	// Wait for the container to finish writing logs
 	_ = pool.Retry(t.Context(), 0, func() error {
-		result, err := resource.Logs(t.Context())
+		stdout, _, err := resource.Logs(t.Context())
 		if err != nil {
 			return err
 		}
-		if result.StdOut == "" {
+		if stdout == "" {
 			return errors.New("stdout not ready yet")
 		}
 		return nil
 	})
 
-	result, err := resource.Logs(t.Context())
+	stdout, stderr, err := resource.Logs(t.Context())
 	if err != nil {
 		t.Fatalf("Logs() error = %v", err)
 	}
 
-	if result.StdOut != "stdout-line\n" {
-		t.Errorf("Logs().StdOut = %q, want %q", result.StdOut, "stdout-line\n")
+	if stdout != "stdout-line\n" {
+		t.Errorf("Logs() stdout = %q, want %q", stdout, "stdout-line\n")
 	}
-	if result.StdErr != "stderr-line\n" {
-		t.Errorf("Logs().StdErr = %q, want %q", result.StdErr, "stderr-line\n")
-	}
-	if result.Combined() != "stdout-line\nstderr-line\n" {
-		t.Errorf("Logs().Combined() = %q, want %q", result.Combined(), "stdout-line\nstderr-line\n")
+	if stderr != "stderr-line\n" {
+		t.Errorf("Logs() stderr = %q, want %q", stderr, "stderr-line\n")
 	}
 }
 
-func TestResourceLogsWithTail(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
-	dockertest.ResetRegistry()
-	t.Cleanup(func() { dockertest.ResetRegistry() })
-
-	pool := dockertest.NewPoolT(t, "")
-
-	resource := pool.RunT(t, "alpine",
-		dockertest.WithTag("latest"),
-		dockertest.WithCmd([]string{"sh", "-c", "echo line1; echo line2; echo line3"}),
-		dockertest.WithoutReuse(),
-	)
-
-	// Wait for logs to be available
-	_ = pool.Retry(t.Context(), 0, func() error {
-		result, err := resource.Logs(t.Context())
-		if err != nil {
-			return err
-		}
-		if result.StdOut == "" {
-			return errors.New("logs not ready yet")
-		}
-		return nil
-	})
-
-	result, err := resource.Logs(t.Context(), dockertest.WithTail("1"))
-	if err != nil {
-		t.Fatalf("Logs() error = %v", err)
-	}
-
-	if result.StdOut != "line3\n" {
-		t.Errorf("Logs(WithTail(1)).StdOut = %q, want %q", result.StdOut, "line3\n")
-	}
-}
 
 func TestResourceFollowLogs(t *testing.T) {
 	if testing.Short() {

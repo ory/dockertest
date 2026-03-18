@@ -25,8 +25,8 @@ type Resource interface {
 	GetPort(portID string) string
 	GetBoundIP(portID string) string
 	GetHostPort(portID string) string
-	Logs(ctx context.Context, opts ...LogOption) (LogResult, error)
-	FollowLogs(ctx context.Context, stdout, stderr io.Writer, opts ...LogOption) error
+	Logs(ctx context.Context) (stdout, stderr string, err error)
+	FollowLogs(ctx context.Context, stdout, stderr io.Writer) error
 	Exec(ctx context.Context, cmd []string) (ExecResult, error)
 	ConnectToNetwork(ctx context.Context, net Network) error
 	DisconnectFromNetwork(ctx context.Context, net Network) error
@@ -155,63 +155,40 @@ func (r *resource) Cleanup(t TestingTB) {
 	})
 }
 
-// Logs returns the container logs, demultiplexing stdout and stderr streams.
-// Use LogOption values to filter by tail, time range, or add timestamps.
-func (r *resource) Logs(ctx context.Context, opts ...LogOption) (LogResult, error) {
+// Logs returns the container logs, demultiplexing stdout and stderr.
+func (r *resource) Logs(ctx context.Context) (stdout, stderr string, err error) {
 	if r.pool == nil || r.pool.client == nil {
-		return LogResult{}, ErrClientClosed
-	}
-
-	var cfg logConfig
-	for _, opt := range opts {
-		opt(&cfg)
+		return "", "", ErrClientClosed
 	}
 
 	reader, err := r.pool.client.ContainerLogs(ctx, r.container.ID, mobyclient.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
-		Tail:       cfg.tail,
-		Since:      cfg.since,
-		Until:      cfg.until,
-		Timestamps: cfg.timestamps,
 	})
 	if err != nil {
-		return LogResult{}, fmt.Errorf("failed to get container logs: %w", err)
+		return "", "", fmt.Errorf("failed to get container logs: %w", err)
 	}
 	defer reader.Close()
 
-	var stdout, stderr bytes.Buffer
-	if _, err := stdcopy.StdCopy(&stdout, &stderr, reader); err != nil {
-		return LogResult{}, fmt.Errorf("failed to read container logs: %w", err)
+	var outBuf, errBuf bytes.Buffer
+	if _, err := stdcopy.StdCopy(&outBuf, &errBuf, reader); err != nil {
+		return "", "", fmt.Errorf("failed to read container logs: %w", err)
 	}
 
-	return LogResult{
-		StdOut: stdout.String(),
-		StdErr: stderr.String(),
-	}, nil
+	return outBuf.String(), errBuf.String(), nil
 }
 
 // FollowLogs streams container logs to stdout and stderr until ctx is cancelled
-// or the container exits. Use LogOption values to filter by tail, time, etc.
-// Pass io.Discard for writers you don't need.
-func (r *resource) FollowLogs(ctx context.Context, stdout, stderr io.Writer, opts ...LogOption) error {
+// or the container exits. Pass io.Discard for writers you don't need.
+func (r *resource) FollowLogs(ctx context.Context, stdout, stderr io.Writer) error {
 	if r.pool == nil || r.pool.client == nil {
 		return ErrClientClosed
-	}
-
-	var cfg logConfig
-	for _, opt := range opts {
-		opt(&cfg)
 	}
 
 	reader, err := r.pool.client.ContainerLogs(ctx, r.container.ID, mobyclient.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     true,
-		Tail:       cfg.tail,
-		Since:      cfg.since,
-		Until:      cfg.until,
-		Timestamps: cfg.timestamps,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to follow container logs: %w", err)
