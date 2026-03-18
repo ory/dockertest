@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net"
 
 	"github.com/containerd/errdefs"
@@ -24,7 +25,8 @@ type Resource interface {
 	GetPort(portID string) string
 	GetBoundIP(portID string) string
 	GetHostPort(portID string) string
-	Logs(ctx context.Context) (string, error)
+	Logs(ctx context.Context) (stdout, stderr string, err error)
+	FollowLogs(ctx context.Context, stdout, stderr io.Writer) error
 	Exec(ctx context.Context, cmd []string) (ExecResult, error)
 	ConnectToNetwork(ctx context.Context, net Network) error
 	DisconnectFromNetwork(ctx context.Context, net Network) error
@@ -153,28 +155,50 @@ func (r *resource) Cleanup(t TestingTB) {
 	})
 }
 
-// Logs returns the container logs, demultiplexing stdout and stderr streams.
-// Both stdout and stderr are combined in the returned string.
-func (r *resource) Logs(ctx context.Context) (string, error) {
+func (r *resource) containerLogReader(ctx context.Context, follow bool) (io.ReadCloser, error) {
 	if r.pool == nil || r.pool.client == nil {
-		return "", ErrClientClosed
+		return nil, ErrClientClosed
 	}
-
 	reader, err := r.pool.client.ContainerLogs(ctx, r.container.ID, mobyclient.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
+		Follow:     follow,
 	})
 	if err != nil {
-		return "", fmt.Errorf("failed to get container logs: %w", err)
+		return nil, fmt.Errorf("failed to get container logs: %w", err)
+	}
+	return reader, nil
+}
+
+// Logs returns the container logs, demultiplexing stdout and stderr.
+func (r *resource) Logs(ctx context.Context) (stdout, stderr string, err error) {
+	reader, err := r.containerLogReader(ctx, false)
+	if err != nil {
+		return "", "", err
 	}
 	defer reader.Close()
 
-	var buf bytes.Buffer
-	if _, err := stdcopy.StdCopy(&buf, &buf, reader); err != nil {
-		return "", fmt.Errorf("failed to read container logs: %w", err)
+	var outBuf, errBuf bytes.Buffer
+	if _, err := stdcopy.StdCopy(&outBuf, &errBuf, reader); err != nil {
+		return "", "", fmt.Errorf("failed to read container logs: %w", err)
 	}
 
-	return buf.String(), nil
+	return outBuf.String(), errBuf.String(), nil
+}
+
+// FollowLogs streams container logs to stdout and stderr until ctx is cancelled
+// or the container exits. Pass io.Discard for writers you don't need.
+func (r *resource) FollowLogs(ctx context.Context, stdout, stderr io.Writer) error {
+	reader, err := r.containerLogReader(ctx, true)
+	if err != nil {
+		return err
+	}
+	defer reader.Close()
+
+	if _, err := stdcopy.StdCopy(stdout, stderr, reader); err != nil {
+		return fmt.Errorf("failed to follow container logs: %w", err)
+	}
+	return nil
 }
 
 // ExecResult holds the output of a command executed inside a container.

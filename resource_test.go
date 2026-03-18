@@ -4,6 +4,8 @@
 package dockertest_test
 
 import (
+	"errors"
+	"io"
 	"net/netip"
 	"testing"
 
@@ -126,5 +128,21 @@ func TestResourceGetHostPortIPv6(t *testing.T) {
 	hostPort := r.GetHostPort("5432/tcp")
 	if hostPort != "[::1]:54320" {
 		t.Errorf("GetHostPort() = %q, want %q", hostPort, "[::1]:54320")
+	}
+}
+
+func TestLogsReturnsErrClientClosedWhenNoPool(t *testing.T) {
+	r := dockertest.NewResource(container.InspectResponse{ID: "test123"})
+	_, _, err := r.Logs(t.Context())
+	if !errors.Is(err, dockertest.ErrClientClosed) {
+		t.Errorf("Logs() error = %v, want ErrClientClosed", err)
+	}
+}
+
+func TestFollowLogsReturnsErrClientClosedWhenNoPool(t *testing.T) {
+	r := dockertest.NewResource(container.InspectResponse{ID: "test123"})
+	err := r.FollowLogs(t.Context(), io.Discard, io.Discard)
+	if !errors.Is(err, dockertest.ErrClientClosed) {
+		t.Errorf("FollowLogs() error = %v, want ErrClientClosed", err)
 	}
 }

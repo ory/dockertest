@@ -4,6 +4,8 @@
 package dockertest_test
 
 import (
+	"bytes"
+	"errors"
 	"testing"
 
 	"github.com/containerd/errdefs"
@@ -528,6 +530,77 @@ func TestResourceCloseRefCounting(t *testing.T) {
 	_, err = dc.ContainerInspect(t.Context(), containerID, mobyclient.ContainerInspectOptions{})
 	if !errdefs.IsNotFound(err) {
 		t.Fatalf("ContainerInspect() after last close: error = %v, want not found", err)
+	}
+}
+
+func TestResourceLogsStdoutStderr(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() { dockertest.ResetRegistry() })
+
+	pool := dockertest.NewPoolT(t, "")
+
+	resource := pool.RunT(t, "alpine",
+		dockertest.WithTag("latest"),
+		dockertest.WithCmd([]string{"sh", "-c", "echo stdout-line; echo stderr-line >&2"}),
+		dockertest.WithoutReuse(),
+	)
+
+	var stdout, stderr string
+	err := pool.Retry(t.Context(), 0, func() error {
+		var logErr error
+		stdout, stderr, logErr = resource.Logs(t.Context())
+		if logErr != nil {
+			return logErr
+		}
+		if stdout == "" {
+			return errors.New("stdout not ready yet")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Logs() error = %v", err)
+	}
+
+	if stdout != "stdout-line\n" {
+		t.Errorf("Logs() stdout = %q, want %q", stdout, "stdout-line\n")
+	}
+	if stderr != "stderr-line\n" {
+		t.Errorf("Logs() stderr = %q, want %q", stderr, "stderr-line\n")
+	}
+}
+
+func TestResourceFollowLogs(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() { dockertest.ResetRegistry() })
+
+	pool := dockertest.NewPoolT(t, "")
+
+	// Container prints output then exits — FollowLogs should return after container exit.
+	resource := pool.RunT(t, "alpine",
+		dockertest.WithTag("latest"),
+		dockertest.WithCmd([]string{"sh", "-c", "echo follow-stdout; echo follow-stderr >&2"}),
+		dockertest.WithoutReuse(),
+	)
+
+	var stdout, stderr bytes.Buffer
+	err := resource.FollowLogs(t.Context(), &stdout, &stderr)
+	if err != nil {
+		t.Fatalf("FollowLogs() error = %v", err)
+	}
+
+	if stdout.String() != "follow-stdout\n" {
+		t.Errorf("FollowLogs stdout = %q, want %q", stdout.String(), "follow-stdout\n")
+	}
+	if stderr.String() != "follow-stderr\n" {
+		t.Errorf("FollowLogs stderr = %q, want %q", stderr.String(), "follow-stderr\n")
 	}
 }
 

@@ -334,11 +334,17 @@ t.Log(result.StdOut)
 ### Container logs
 
 ```go
-logs, err := resource.Logs(ctx)
+// Get all logs with stdout and stderr separated
+stdout, stderr, err := resource.Logs(ctx)
 if err != nil {
     t.Fatal(err)
 }
-t.Log(logs)
+t.Log(stdout)
+t.Log(stderr)
+
+// Stream logs until container exits or ctx is cancelled
+var buf bytes.Buffer
+err = resource.FollowLogs(ctx, &buf, io.Discard)
 ```
 
 ### Building from Dockerfile
