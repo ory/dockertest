@@ -549,19 +549,18 @@ func TestResourceLogsStdoutStderr(t *testing.T) {
 		dockertest.WithoutReuse(),
 	)
 
-	// Wait for the container to finish writing logs
-	_ = pool.Retry(t.Context(), 0, func() error {
-		stdout, _, err := resource.Logs(t.Context())
-		if err != nil {
-			return err
+	var stdout, stderr string
+	err := pool.Retry(t.Context(), 0, func() error {
+		var logErr error
+		stdout, stderr, logErr = resource.Logs(t.Context())
+		if logErr != nil {
+			return logErr
 		}
 		if stdout == "" {
 			return errors.New("stdout not ready yet")
 		}
 		return nil
 	})
-
-	stdout, stderr, err := resource.Logs(t.Context())
 	if err != nil {
 		t.Fatalf("Logs() error = %v", err)
 	}
@@ -573,7 +572,6 @@ func TestResourceLogsStdoutStderr(t *testing.T) {
 		t.Errorf("Logs() stderr = %q, want %q", stderr, "stderr-line\n")
 	}
 }
-
 
 func TestResourceFollowLogs(t *testing.T) {
 	if testing.Short() {
