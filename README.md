@@ -55,11 +55,6 @@ kill them when the test completes.
 The Dockertest library provides easy to use commands for spinning up Docker
 containers and using them for your tests.
 
-> [!WARNING]
->
-> Dockertest v4 is not yet finalized and may still receive breaking changes
-> before the stable release.
-
 ## Installation
 
 ```bash
