@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 
 	"github.com/distribution/reference"
+	"github.com/moby/moby/api/types/build"
 	"github.com/moby/moby/api/types/jsonstream"
 	mobyclient "github.com/moby/moby/client"
 )
@@ -54,6 +55,10 @@ type BuildOptions struct {
 	// ForceRemove always removes intermediate containers, even on build failure.
 	// Useful for keeping the build environment clean.
 	ForceRemove bool
+
+	// Version specifies the builder to use. "1" for classic, "2" for BuildKit.
+	// Defaults to the daemon's configured default if empty.
+	Version string
 }
 
 // BuildAndRun builds a Docker image from a Dockerfile and runs it as a container.
@@ -111,6 +116,7 @@ func (p *pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 		Remove:      true,
 		ForceRemove: buildOpts.ForceRemove,
 		Labels:      buildOpts.Labels,
+		Version:     build.BuilderVersion(buildOpts.Version),
 	}
 
 	buildResult, err := p.client.ImageBuild(ctx, buildContext, imageBuildOpts)
