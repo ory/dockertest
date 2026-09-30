@@ -29,22 +29,21 @@ please disclose it by contacting us at security@ory.com.
 There are many ways in which you can contribute. The goal of this document is to
 provide a high-level overview of how you can get involved in Ory.
 
-As a potential contributor, your changes and ideas are welcome at any hour of
-the day or night, on weekdays, weekends, and holidays. Please do not ever
-hesitate to ask a question or send a pull request.
+The most valuable way to contribute is to report bugs and request features. If
+you would like to propose a change to the code, please **open an issue or a
+[discussion](https://github.com/orgs/ory/discussions) first** so we can align on the problem and the
+approach before any code is written. We generally do not accept unsolicited pull
+requests; see [Contribute code](#contribute-code) for the reasoning and the
+process.
 
-If you are unsure, just ask or submit the issue or pull request anyways. You
-won't be yelled at for giving it your best effort. The worst that can happen is
-that you'll be politely asked to change something. We appreciate any sort of
-contributions and don't want a wall of rules to get in the way of that.
+If you are unsure, just ask. You won't be yelled at for giving it your best
+effort. The worst that can happen is that you'll be politely asked to change
+something. We appreciate any sort of contribution and don't want a wall of rules
+to get in the way of that.
 
-That said, if you want to ensure that a pull request is likely to be merged,
-talk to us! You can find out our thoughts and ensure that your contribution
-won't clash with Ory
-Dockertest's direction. A great way to
-do this is via
-[Ory Dockertest Discussions](https://github.com/orgs/ory/discussions)
-or the [Ory Chat](https://www.ory.com/chat).
+A great way to start a conversation is via
+[Ory Dockertest Discussions](https://github.com/orgs/ory/discussions) or the
+[Ory Chat](https://www.ory.com/chat).
 
 ## FAQ
 
@@ -71,15 +70,18 @@ or the [Ory Chat](https://www.ory.com/chat).
 
 ## How can I contribute?
 
-If you want to start to contribute code right away, take a look at the
-[list of good first issues](https://github.com/ory/dockertest/labels/good%20first%20issue).
+The single most useful thing you can do is to
+[open a well-written issue or discussion](https://github.com/ory/dockertest/issues):
+a clear bug report with a reproducer, or a feature request with concrete use
+cases and examples. This is far more valuable to us than a pull request, and it
+is the first step for any code change.
 
-There are many other ways you can contribute. Here are a few things you can do
-to help out:
+There are many other ways you can contribute without writing code. Here are a
+few things you can do to help out:
 
 - **Give us a star.** It may not seem like much, but it really makes a
   difference. This is something that everyone can do to help out Ory Dockertest.
-  Github stars help the project gain visibility and stand out.
+  GitHub stars help the project gain visibility and stand out.
 
 - **Join the community.** Sometimes helping people can be as easy as listening
   to their problems and offering a different perspective. Join our Slack, have a
@@ -93,6 +95,14 @@ to help out:
   help, please share it! Bonus: You get GitHub achievements for answered
   discussions.
 
+- **Report bugs.** File a detailed issue when something does not work as
+  documented. A minimal, reproducible example is worth more than a thousand
+  words.
+
+- **Request features.** Tell us what you are trying to achieve and why. We would
+  rather understand the underlying problem than receive a proposed
+  implementation.
+
 - **Help with open issues.** We have a lot of open issues for Ory Dockertest and
   some of them may lack necessary information, some are duplicates of older
   issues. You can help out by guiding people through the process of filling out
@@ -103,9 +113,6 @@ to help out:
   proper spelling and grammar. If you think a document can be improved in any
   way, feel free to hit the `edit` button at the top of the page. More info on
   contributing to the documentation [here](#contribute-documentation).
-
-- **Help with tests.** Pull requests may lack proper tests or test plans. These
-  are needed for the change to be implemented safely.
 
 ## Communication
 
@@ -138,14 +145,28 @@ to add your example or Ory-related project to the awesome-ory README.
 
 ## Contribute code
 
-Unless you are fixing a known bug, we **strongly** recommend discussing it with
-the core team via a GitHub issue or [in our chat](https://www.ory.com/chat)
-before getting started to ensure your work is consistent with Ory Dockertest's
-roadmap and architecture.
+**Please open an issue or [discussion](https://github.com/orgs/ory/discussions) before you write any code,
+and wait for a maintainer to agree on the approach.** We do not accept
+unsolicited pull requests. Pull requests opened without a prior, agreed-upon
+issue will usually be closed with a pointer back to this document.
 
-All contributions are made via pull requests. To make a pull request, you will
-need a GitHub account; if you are unclear on this process, see GitHub's
-documentation on [forking](https://help.github.com/articles/fork-a-repo) and
+This may sound unwelcoming, but reviewing an external patch end to end is often
+more work than writing the change ourselves.
+
+So the process is:
+
+1. Open an issue that describes the bug or feature. Include a reproducer,
+   examples, and the use case you are trying to solve.
+2. Wait for a maintainer to confirm the problem and agree on an approach. For
+   anything beyond a trivial, known bug fix, this step is required.
+3. If you would like to include a patch as a proof-of-concept, that is great and
+   welcome. Please don't be offended if we rewrite it from scratch, take a
+   different approach, or reimplement the idea.
+
+Once a maintainer has agreed that a pull request is the right next step, open
+one. All contributions are made via pull requests, so you will need a GitHub
+account; if you are unclear on this process, see GitHub's documentation on
+[forking](https://help.github.com/articles/fork-a-repo) and
 [pull requests](https://help.github.com/articles/using-pull-requests). Pull
 requests should be targeted at the `master` branch. Before creating a pull
 request, go through this checklist:
@@ -158,7 +179,7 @@ request, go through this checklist:
 1. Run `make format`
 1. Add a descriptive prefix to commits. This ensures a uniform commit history
    and helps structure the changelog. Please refer to this
-   [Convential Commits configuration](https://github.com/ory/dockertest/blob/master/.github/workflows/conventional_commits.yml)
+   [Conventional Commits configuration](https://github.com/ory/dockertest/blob/master/.github/workflows/conventional_commits.yml)
    for the list of accepted prefixes. You can read more about the Conventional
    Commit specification
    [at their site](https://www.conventionalcommits.org/en/v1.0.0/).
@@ -181,14 +202,15 @@ failures until the tests pass.
 
 Pull requests eligible for review
 
-1. follow the repository's code formatting conventions;
-2. include tests that prove that the change works as intended and does not add
+1. reference an issue or discussion where a maintainer agreed to the change;
+2. follow the repository's code formatting conventions;
+3. include tests that prove that the change works as intended and does not add
    regressions;
-3. document the changes in the code and/or the project's documentation;
-4. pass the CI pipeline;
-5. have signed our
+4. document the changes in the code and/or the project's documentation;
+5. pass the CI pipeline;
+6. have signed our
    [Contributor License Agreement](https://cla-assistant.io/ory/dockertest);
-6. include a proper git commit message following the
+7. include a proper git commit message following the
    [Conventional Commit Specification](https://www.conventionalcommits.org/en/v1.0.0/).
 
 If all of these items are checked, the pull request is ready to be reviewed and
@@ -196,6 +218,34 @@ you should change the status to "Ready for review" and
 [request review from a maintainer](https://docs.github.com/en/github/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/requesting-a-pull-request-review).
 
 Reviewers will approve the pull request once they are satisfied with the patch.
+
+### AI-assisted contributions
+
+AI can be a valuable aid for writing code, documentation, and tests. However, to
+maintain the quality and reliability of Ory Dockertest, please follow these
+guidelines:
+
+- When submitting a pull request or issue that involved AI assistance, mention
+  the tools you used and the extent of their involvement. This helps reviewers
+  understand the context of your contribution.
+
+- Pull requests created with AI assistance should address an existing, accepted
+  issue. If you have an idea for a new feature or improvement, please open a
+  discussion or issue first to ensure alignment with the project's direction
+  before investing time in implementation.
+
+- You must use AI responsibly when writing code. All contributions must be
+  tested and verified before submission. Unreviewed AI-generated code will not
+  be accepted, and repeated submissions of this nature may result in restricted
+  contribution privileges.
+
+- When using AI to help draft issues, discussions, or documentation, review and
+  edit the output before submitting. AI tends to be verbose. Trim unnecessary
+  content and ensure your submission is clear and focused.
+
+Contributors must use AI responsibly. These guidelines exist to ensure that
+every contribution meets the high standards our community expects, while still
+embracing the productivity benefits that AI tools can provide.
 
 ## Contribute documentation
 
@@ -218,10 +268,10 @@ Please run `make format` to format all source code following the Ory standard.
 
 ```bash
 # First you clone the original repository
-git clone git@github.com:ory/ory/dockertest.git
+git clone git@github.com:ory/dockertest.git
 
 # Next you add a git remote that is your fork:
-git remote add fork git@github.com:<YOUR-GITHUB-USERNAME-HERE>/ory/dockertest.git
+git remote add fork git@github.com:<YOUR-GITHUB-USERNAME-HERE>/.git
 
 # Next you fetch the latest changes from origin for master:
 git fetch origin
