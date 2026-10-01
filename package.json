@@ -1,4 +1,5 @@
 {
+  "name": "dockertest",
   "private": true,
   "prettier": "ory-prettier-styles",
   "devDependencies": {
