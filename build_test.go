@@ -4,6 +4,8 @@
 package dockertest_test
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containerd/errdefs"
+	mobyclient "github.com/moby/moby/client"
 	dockertest "github.com/ory/dockertest/v4"
 )
 
@@ -238,8 +242,14 @@ CMD ["sleep", "300"]
 		ContextDir: tmpDir,
 	})
 
-	if r.Container().Config.Image != imageRef {
-		t.Fatalf("container image = %q, want %q", r.Container().Config.Image, imageRef)
+	// The caller's tag is applied, but the container is created from the
+	// immutable image ID so that a changed build can never reuse it.
+	tagged, err := pool.Client().ImageInspect(t.Context(), imageRef)
+	if err != nil {
+		t.Fatalf("ImageInspect(%s) error = %v", imageRef, err)
+	}
+	if r.Container().Config.Image != tagged.ID || r.Container().Image != tagged.ID {
+		t.Fatalf("container image = %q / %q, want image ID %q", r.Container().Config.Image, r.Container().Image, tagged.ID)
 	}
 }
 
@@ -276,4 +286,221 @@ CMD ["sleep", "300"]
 		dockertest.WithTag("latest"),
 		dockertest.WithoutReuse(),
 	)
+}
+
+func writeDockerfile(t *testing.T, dir, content string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(content), 0o644); err != nil {
+		t.Fatalf("Failed to write Dockerfile: %v", err)
+	}
+}
+
+func assertImageGone(t *testing.T, dc *mobyclient.Client, ref string) {
+	t.Helper()
+	_, err := dc.ImageInspect(t.Context(), ref)
+	if !errdefs.IsNotFound(err) {
+		t.Fatalf("ImageInspect(%s) error = %v, want not found", ref, err)
+	}
+}
+
+func TestBuildImageRemovedAfterLastContainer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(dockertest.ResetRegistry)
+
+	dc, err := mobyclient.New(mobyclient.FromEnv)
+	if err != nil {
+		t.Fatalf("mobyclient.New() error = %v", err)
+	}
+	t.Cleanup(func() { dc.Close() })
+
+	ctx := t.Context()
+	pool, err := dockertest.NewPool(ctx, "")
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	t.Cleanup(func() { pool.Close(context.WithoutCancel(ctx)) })
+
+	tmpDir := t.TempDir()
+	writeDockerfile(t, tmpDir, "FROM alpine:latest\nCMD [\"sleep\", \"300\"]\n")
+	tag := "dockertest-build-removed:test"
+	buildOpts := &dockertest.BuildOptions{ContextDir: tmpDir}
+
+	r1, err := pool.BuildAndRun(ctx, tag, buildOpts)
+	if err != nil {
+		t.Fatalf("BuildAndRun() error = %v", err)
+	}
+	r2, err := pool.BuildAndRun(ctx, tag, buildOpts)
+	if err != nil {
+		t.Fatalf("second BuildAndRun() error = %v", err)
+	}
+	if r1.ID() != r2.ID() {
+		t.Fatalf("unchanged build did not reuse the container: %s vs %s", r1.ID(), r2.ID())
+	}
+	imageID := r1.Container().Image
+	if labels := mustInspectImage(t, dc, imageID).Config.Labels; labels["io.ory.dockertest.managed"] != "true" || labels["io.ory.dockertest.run"] == "" {
+		t.Fatalf("built image labels = %v, want ownership labels", labels)
+	}
+
+	if err := r1.Close(ctx); err != nil {
+		t.Fatalf("r1.Close() error = %v", err)
+	}
+	mustInspectImage(t, dc, imageID) // still referenced by r2
+
+	if err := r2.Close(ctx); err != nil {
+		t.Fatalf("r2.Close() error = %v", err)
+	}
+	assertImageGone(t, dc, imageID)
+	assertImageGone(t, dc, tag)
+	mustInspectImage(t, dc, "alpine:latest") // downloaded base image survives
+}
+
+func mustInspectImage(t *testing.T, dc *mobyclient.Client, ref string) mobyclient.ImageInspectResult {
+	t.Helper()
+	img, err := dc.ImageInspect(t.Context(), ref)
+	if err != nil {
+		t.Fatalf("ImageInspect(%s) error = %v", ref, err)
+	}
+	return img
+}
+
+func TestBuildRetainImageSurvives(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(dockertest.ResetRegistry)
+
+	dc, err := mobyclient.New(mobyclient.FromEnv)
+	if err != nil {
+		t.Fatalf("mobyclient.New() error = %v", err)
+	}
+	t.Cleanup(func() { dc.Close() })
+
+	ctx := t.Context()
+	pool, err := dockertest.NewPool(ctx, "")
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	t.Cleanup(func() { pool.Close(context.WithoutCancel(ctx)) })
+
+	tmpDir := t.TempDir()
+	writeDockerfile(t, tmpDir, "FROM alpine:latest\nCMD [\"sleep\", \"300\"]\n")
+	tag := "dockertest-build-retained:test"
+	t.Cleanup(func() {
+		_, _ = dc.ImageRemove(context.WithoutCancel(ctx), tag, mobyclient.ImageRemoveOptions{})
+	})
+
+	r, err := pool.BuildAndRun(ctx, tag, &dockertest.BuildOptions{ContextDir: tmpDir, RetainImage: true}, dockertest.WithoutReuse())
+	if err != nil {
+		t.Fatalf("BuildAndRun() error = %v", err)
+	}
+	imageID := r.Container().Image
+	if err := r.Close(ctx); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if err := pool.Close(ctx); err != nil {
+		t.Fatalf("pool.Close() error = %v", err)
+	}
+	labels := mustInspectImage(t, dc, imageID).Config.Labels
+	if labels["io.ory.dockertest.retain"] != "true" || labels["io.ory.dockertest.run"] != "" {
+		t.Fatalf("retained image labels = %v", labels)
+	}
+}
+
+func TestBuildChangedImageUnderSameTag(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(dockertest.ResetRegistry)
+
+	dc, err := mobyclient.New(mobyclient.FromEnv)
+	if err != nil {
+		t.Fatalf("mobyclient.New() error = %v", err)
+	}
+	t.Cleanup(func() { dc.Close() })
+
+	ctx := t.Context()
+	pool, err := dockertest.NewPool(ctx, "")
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	t.Cleanup(func() { pool.Close(context.WithoutCancel(ctx)) })
+
+	tmpDir := t.TempDir()
+	tag := "dockertest-build-changed:test"
+	buildOpts := &dockertest.BuildOptions{ContextDir: tmpDir}
+
+	writeDockerfile(t, tmpDir, "FROM alpine:latest\nENV VERSION=1\nCMD [\"sleep\", \"300\"]\n")
+	r1, err := pool.BuildAndRun(ctx, tag, buildOpts)
+	if err != nil {
+		t.Fatalf("first BuildAndRun() error = %v", err)
+	}
+	writeDockerfile(t, tmpDir, "FROM alpine:latest\nENV VERSION=2\nCMD [\"sleep\", \"300\"]\n")
+	r2, err := pool.BuildAndRun(ctx, tag, buildOpts)
+	if err != nil {
+		t.Fatalf("second BuildAndRun() error = %v", err)
+	}
+	if r1.ID() == r2.ID() {
+		t.Fatal("changed build reused the container of the old build")
+	}
+	if r1.Container().Image == r2.Container().Image {
+		t.Fatal("changed build produced the same image ID")
+	}
+
+	if err := r1.Close(ctx); err != nil {
+		t.Fatalf("r1.Close() error = %v", err)
+	}
+	assertImageGone(t, dc, r1.Container().Image)
+	mustInspectImage(t, dc, r2.Container().Image)
+
+	if err := r2.Close(ctx); err != nil {
+		t.Fatalf("r2.Close() error = %v", err)
+	}
+	assertImageGone(t, dc, r2.Container().Image)
+	assertImageGone(t, dc, tag)
+}
+
+func TestBuildFailureKeepsPreexistingTag(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(dockertest.ResetRegistry)
+
+	dc, err := mobyclient.New(mobyclient.FromEnv)
+	if err != nil {
+		t.Fatalf("mobyclient.New() error = %v", err)
+	}
+	t.Cleanup(func() { dc.Close() })
+
+	ctx := t.Context()
+	pool := dockertest.NewPoolT(t, "")
+	pool.RunT(t, "alpine", dockertest.WithCmd([]string{"sleep", "300"})) // ensures alpine:latest exists
+
+	tag := "dockertest-preexisting:test"
+	if _, err := dc.ImageTag(ctx, mobyclient.ImageTagOptions{Source: "alpine:latest", Target: tag}); err != nil {
+		t.Fatalf("ImageTag() error = %v", err)
+	}
+	t.Cleanup(func() {
+		_, _ = dc.ImageRemove(context.WithoutCancel(ctx), tag, mobyclient.ImageRemoveOptions{})
+	})
+	before := mustInspectImage(t, dc, tag).ID
+
+	tmpDir := t.TempDir()
+	writeDockerfile(t, tmpDir, "FROM alpine:latest\nRUN false\n")
+	_, buildErr := pool.BuildAndRun(ctx, tag, &dockertest.BuildOptions{ContextDir: tmpDir})
+	if !errors.Is(buildErr, dockertest.ErrImageBuildFailed) {
+		t.Fatalf("BuildAndRun() error = %v, want ErrImageBuildFailed", buildErr)
+	}
+	if after := mustInspectImage(t, dc, tag).ID; after != before {
+		t.Fatalf("pre-existing tag changed from %s to %s", before, after)
+	}
 }

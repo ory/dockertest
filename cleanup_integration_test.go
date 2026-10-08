@@ -4,6 +4,9 @@
 package dockertest_test
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/containerd/errdefs"
@@ -225,5 +228,73 @@ func TestNoTestMainNeeded(t *testing.T) {
 	_, err = dc.ContainerInspect(t.Context(), containerID, mobyclient.ContainerInspectOptions{})
 	if !errdefs.IsNotFound(err) {
 		t.Fatalf("ContainerInspect(%s) after subtest: error = %v, want not found (no TestMain needed)", containerID, err)
+	}
+}
+
+func TestCleanupRemovesAnonymousVolumesKeepsNamed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(dockertest.ResetRegistry)
+
+	dc, err := mobyclient.New(mobyclient.FromEnv)
+	if err != nil {
+		t.Fatalf("mobyclient.New() error = %v", err)
+	}
+	t.Cleanup(func() { dc.Close() })
+
+	ctx := t.Context()
+	pool, err := dockertest.NewPool(ctx, "")
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	t.Cleanup(func() { pool.Close(context.WithoutCancel(ctx)) })
+
+	tmpDir := t.TempDir()
+	if writeErr := os.WriteFile(filepath.Join(tmpDir, "Dockerfile"), []byte("FROM alpine:latest\nVOLUME /data\nCMD [\"sleep\", \"300\"]\n"), 0o644); writeErr != nil {
+		t.Fatal(writeErr)
+	}
+	named := "dockertest-named-volume"
+	t.Cleanup(func() {
+		_, _ = dc.VolumeRemove(context.WithoutCancel(ctx), named, mobyclient.VolumeRemoveOptions{Force: true})
+	})
+
+	r, err := pool.BuildAndRun(ctx, "dockertest-volume:test", &dockertest.BuildOptions{ContextDir: tmpDir},
+		dockertest.WithMounts([]string{named + ":/named"}), dockertest.WithoutReuse())
+	if err != nil {
+		t.Fatalf("BuildAndRun() error = %v", err)
+	}
+	var anonymous string
+	for _, m := range r.Container().Mounts {
+		if m.Destination == "/data" {
+			anonymous = m.Name
+		}
+	}
+	if anonymous == "" {
+		t.Fatalf("no anonymous volume mounted at /data: %+v", r.Container().Mounts)
+	}
+	imageID := r.Container().Image
+	containerID := r.ID()
+
+	if closeErr := pool.Close(ctx); closeErr != nil {
+		t.Fatalf("pool.Close() error = %v", closeErr)
+	}
+
+	if _, err := dc.ContainerInspect(ctx, containerID, mobyclient.ContainerInspectOptions{}); !errdefs.IsNotFound(err) {
+		t.Fatalf("container still present: %v", err)
+	}
+	if _, err := dc.VolumeInspect(ctx, anonymous, mobyclient.VolumeInspectOptions{}); !errdefs.IsNotFound(err) {
+		t.Fatalf("anonymous volume %s still present: %v", anonymous, err)
+	}
+	if _, err := dc.VolumeInspect(ctx, named, mobyclient.VolumeInspectOptions{}); err != nil {
+		t.Fatalf("named volume removed: %v", err)
+	}
+	if _, err := dc.ImageInspect(ctx, imageID); !errdefs.IsNotFound(err) {
+		t.Fatalf("build image still present: %v", err)
+	}
+	if _, err := dc.ImageInspect(ctx, "alpine:latest"); err != nil {
+		t.Fatalf("downloaded image removed: %v", err)
 	}
 }

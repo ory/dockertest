@@ -5,12 +5,13 @@ package dockertest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"net/netip"
 	"strings"
+	"sync/atomic"
 
-	"github.com/containerd/errdefs"
 	mobynetwork "github.com/moby/moby/api/types/network"
 	mobyclient "github.com/moby/moby/client"
 )
@@ -34,6 +35,7 @@ type ClosableNetwork interface {
 type dockerNetwork struct {
 	pool    *pool
 	inspect mobynetwork.Inspect
+	closed  atomic.Bool
 }
 
 // ID returns the network ID.
@@ -70,6 +72,12 @@ type NetworkCreateOptions struct {
 // CreateNetwork creates a new Docker network with the given name and options.
 // If opts is nil, default network options are used (bridge driver, external access allowed).
 func (p *pool) CreateNetwork(ctx context.Context, name string, opts *NetworkCreateOptions) (ClosableNetwork, error) {
+	ctx, done, err := p.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+
 	createOpts := mobyclient.NetworkCreateOptions{}
 
 	if opts != nil {
@@ -84,6 +92,7 @@ func (p *pool) CreateNetwork(ctx context.Context, name string, opts *NetworkCrea
 		createOpts.Labels = opts.Labels
 		createOpts.Options = opts.Options
 	}
+	createOpts.Labels = owner.withOwnershipLabels(createOpts.Labels, false)
 
 	createResp, err := p.client.NetworkCreate(ctx, name, createOpts)
 	if err != nil {
@@ -92,11 +101,13 @@ func (p *pool) CreateNetwork(ctx context.Context, name string, opts *NetworkCrea
 			return nil, err
 		}
 	}
+	owner.trackNetwork(createResp.ID, p)
 
 	inspectResp, err := p.client.NetworkInspect(ctx, createResp.ID, mobyclient.NetworkInspectOptions{})
 	if err != nil {
-		_, _ = p.client.NetworkRemove(ctx, createResp.ID, mobyclient.NetworkRemoveOptions{}) //nolint:errcheck // Best effort cleanup
-		return nil, err
+		rollbackCtx, cancel := p.rollbackContext(ctx)
+		defer cancel()
+		return nil, errors.Join(fmt.Errorf("network inspect failed: %w", err), owner.removeNetwork(rollbackCtx, p.client, createResp.ID))
 	}
 
 	net := &dockerNetwork{
@@ -170,21 +181,23 @@ func (p *pool) CreateNetworkT(t TestingTB, name string, opts *NetworkCreateOptio
 	return net
 }
 
-// Close removes the network.
+// Close removes the network. It releases the handle exactly once; repeated
+// calls return nil. The removal honors ctx and is bounded by the pool's
+// cleanup timeout. A failed removal is retried by the pool's Close and by Main.
 // Any containers still connected to the network should be disconnected first,
 // or the network removal will fail.
 func (n *dockerNetwork) Close(ctx context.Context) error {
+	if !n.closed.CompareAndSwap(false, true) {
+		return nil
+	}
 	if n.pool == nil || n.pool.client == nil {
 		return ErrClientClosed
 	}
+	defer n.pool.untrackNetwork(n.inspect.ID)
 
-	_, err := n.pool.client.NetworkRemove(ctx, n.inspect.ID, mobyclient.NetworkRemoveOptions{})
-	if err != nil && !errdefs.IsNotFound(err) {
-		return err
-	}
-
-	n.pool.untrackNetwork(n.inspect.ID)
-	return nil
+	ctx, cancel := n.pool.cleanupContext(ctx)
+	defer cancel()
+	return owner.removeNetwork(ctx, n.pool.client, n.inspect.ID)
 }
 
 // CloseT removes the network and calls t.Fatalf on error.

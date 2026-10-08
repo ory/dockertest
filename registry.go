@@ -6,46 +6,23 @@ package dockertest
 import (
 	"fmt"
 	"sync"
-	"sync/atomic"
-
-	"github.com/moby/moby/api/types/container"
 )
 
-// resource represents a Docker container managed by dockertest.
-// It implements both Resource and ClosableResource interfaces.
-type resource struct {
-	pool      *pool
-	container container.InspectResponse
-	reuseID   string
-}
-
-// Container returns the Docker container inspection response.
-func (r *resource) Container() container.InspectResponse {
-	return r.container
-}
-
-// ID returns the container ID.
-func (r *resource) ID() string {
-	return r.container.ID
-}
-
-// NewResource creates a Resource for testing purposes.
-// This is intended for unit tests that need a Resource without a Docker container.
-func NewResource(c container.InspectResponse) ClosableResource {
-	return &resource{container: c}
-}
-
-// registryEntry wraps a resource with an atomic reference count.
-// When multiple callers share a reused container, the ref count tracks
-// how many are still using it. The container is only removed from Docker
-// when the last reference is released.
+// registryEntry is one physical, reusable container together with the number
+// of handles that currently reference it. The container is only removed from
+// Docker when the last handle is released.
 type registryEntry struct {
 	resource *resource
-	refs     atomic.Int32
+	refs     int
 }
 
-// globalRegistry is the package-level container registry using sync.Map for thread-safety.
-var globalRegistry sync.Map
+// globalRegistry is the package-level container reuse registry. All
+// transitions are serialized by its mutex so that a handle can never acquire
+// an entry that is concurrently being released and removed.
+var globalRegistry = struct { //nolint:govet // field alignment traded for readability
+	sync.Mutex
+	entries map[string]*registryEntry
+}{entries: map[string]*registryEntry{}}
 
 // Register stores a resource with the given reuseID in the global registry.
 //
@@ -94,14 +71,9 @@ func Get(reuseID string) (ClosableResource, bool) {
 // GetAll returns a slice of all resources in the global registry.
 // The order of resources in the returned slice is not guaranteed.
 //
-// This is useful for cleanup operations that need to process all registered containers:
-//
-//	func cleanupAll(ctx context.Context) {
-//		for _, resource := range dockertest.GetAll() {
-//			_ = resource.Close(ctx)
-//		}
-//		dockertest.ResetRegistry()
-//	}
+// The registry only contains reusable containers that are currently
+// referenced; it is not an inventory of everything dockertest created. Use
+// Main for process-wide cleanup.
 func GetAll() []ClosableResource {
 	internal := getAll()
 	result := make([]ClosableResource, len(internal))
@@ -111,66 +83,56 @@ func GetAll() []ClosableResource {
 	return result
 }
 
+// register stores r under reuseID with one reference, or adds a reference to
+// the existing entry. It returns the canonical resource and whether an entry
+// already existed.
 func register(reuseID string, r *resource) (*resource, bool) {
-	entry := &registryEntry{resource: r}
-	entry.refs.Store(1)
-	actual, loaded := globalRegistry.LoadOrStore(reuseID, entry)
-	existing, ok := actual.(*registryEntry)
-	if !ok {
-		return r, loaded
-	}
-	if loaded {
-		existing.refs.Add(1)
+	globalRegistry.Lock()
+	defer globalRegistry.Unlock()
+	if existing, ok := globalRegistry.entries[reuseID]; ok {
+		existing.refs++
 		return existing.resource, true
 	}
-	return existing.resource, false
+	globalRegistry.entries[reuseID] = &registryEntry{resource: r, refs: 1}
+	return r, false
 }
 
 // acquire looks up an existing entry and increments its ref count.
 // Returns the resource and true if found, nil and false otherwise.
+// Entries are deleted under the same lock when their last reference is
+// released, so a container that is being removed can never be acquired.
 func acquire(reuseID string) (*resource, bool) {
-	val, ok := globalRegistry.Load(reuseID)
+	globalRegistry.Lock()
+	defer globalRegistry.Unlock()
+	entry, ok := globalRegistry.entries[reuseID]
 	if !ok {
 		return nil, false
 	}
-	entry, ok := val.(*registryEntry)
-	if !ok {
-		return nil, false
-	}
-	entry.refs.Add(1)
-	// Verify the entry is still in the map (not deleted and replaced between Load and Add).
-	if current, ok := globalRegistry.Load(reuseID); !ok || current != val {
-		entry.refs.Add(-1)
-		return nil, false
-	}
+	entry.refs++
 	return entry.resource, true
 }
 
 // release decrements the reference count for the given reuseID.
 // Returns true if this was the last reference (caller should remove the container).
 func release(reuseID string) bool {
-	val, ok := globalRegistry.Load(reuseID)
+	globalRegistry.Lock()
+	defer globalRegistry.Unlock()
+	entry, ok := globalRegistry.entries[reuseID]
 	if !ok {
 		return true // Not found, treat as last reference
 	}
-	entry, ok := val.(*registryEntry)
-	if !ok {
-		globalRegistry.Delete(reuseID)
-		return true
+	entry.refs--
+	if entry.refs > 0 {
+		return false
 	}
-	if entry.refs.Add(-1) <= 0 {
-		globalRegistry.Delete(reuseID)
-		return true
-	}
-	return false
+	delete(globalRegistry.entries, reuseID)
+	return true
 }
 
 func get(reuseID string) (*resource, bool) {
-	val, ok := globalRegistry.Load(reuseID)
-	if !ok {
-		return nil, false
-	}
-	entry, ok := val.(*registryEntry)
+	globalRegistry.Lock()
+	defer globalRegistry.Unlock()
+	entry, ok := globalRegistry.entries[reuseID]
 	if !ok {
 		return nil, false
 	}
@@ -178,30 +140,19 @@ func get(reuseID string) (*resource, bool) {
 }
 
 func getAll() []*resource {
-	var resources []*resource
-
-	globalRegistry.Range(func(_, value any) bool {
-		if entry, ok := value.(*registryEntry); ok {
-			resources = append(resources, entry.resource)
-		}
-		return true
-	})
-
+	globalRegistry.Lock()
+	defer globalRegistry.Unlock()
+	resources := make([]*resource, 0, len(globalRegistry.entries))
+	for _, entry := range globalRegistry.entries {
+		resources = append(resources, entry.resource)
+	}
 	return resources
 }
 
 // ResetRegistry clears all resources from the global registry.
 // This does NOT stop or remove the containers themselves.
 func ResetRegistry() {
-	// Collect all keys first to avoid modifying the map while iterating
-	var keys []any
-	globalRegistry.Range(func(key, _ any) bool {
-		keys = append(keys, key)
-		return true
-	})
-
-	// Delete all collected keys
-	for _, key := range keys {
-		globalRegistry.Delete(key)
-	}
+	globalRegistry.Lock()
+	defer globalRegistry.Unlock()
+	clear(globalRegistry.entries)
 }

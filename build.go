@@ -8,12 +8,14 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
 	"github.com/distribution/reference"
+	"github.com/moby/moby/api/types/build"
 	"github.com/moby/moby/api/types/jsonstream"
 	mobyclient "github.com/moby/moby/client"
 )
@@ -54,13 +56,34 @@ type BuildOptions struct {
 	// ForceRemove always removes intermediate containers, even on build failure.
 	// Useful for keeping the build environment clean.
 	ForceRemove bool
+
+	// RetainImage keeps the built image after its last container is removed,
+	// across test runs, so that Docker can reuse it as a cache. Retained
+	// images carry stable ownership labels without a run ID and are never
+	// removed automatically, not even by Main's recovery of abandoned runs.
+	//
+	// Without RetainImage, the image is removed once the last container
+	// created from it has been removed and no build is pending.
+	RetainImage bool
+}
+
+func (o *BuildOptions) validate() error {
+	if o == nil {
+		return fmt.Errorf("%w: buildOpts cannot be nil", ErrInvalidOption)
+	}
+	if o.ContextDir == "" {
+		return fmt.Errorf("%w: buildOpts.ContextDir cannot be empty", ErrInvalidOption)
+	}
+	return nil
 }
 
 // BuildAndRun builds a Docker image from a Dockerfile and runs it as a container.
 //
 // The name parameter is used as the image tag. buildOpts.ContextDir is required.
-// The built image is cleaned up on error, but not on success - it will be reused
-// for subsequent runs with the same name, making repeated test runs faster.
+// The container is created from the immutable ID of the built image, so a
+// changed build under the same tag never reuses a container of an older build.
+// The image is removed once its last container is gone unless
+// BuildOptions.RetainImage is set.
 //
 // Example:
 //
@@ -75,92 +98,100 @@ type BuildOptions struct {
 //	}
 //	defer resource.Close(ctx)
 func (p *pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOptions, runOpts ...RunOption) (ClosableResource, error) {
-	if buildOpts == nil {
-		return nil, fmt.Errorf("buildOpts cannot be nil")
+	if err := buildOpts.validate(); err != nil {
+		return nil, err
 	}
-
-	if buildOpts.ContextDir == "" {
-		return nil, fmt.Errorf("buildOpts.ContextDir cannot be empty")
-	}
-
-	dockerfile := cmp.Or(buildOpts.Dockerfile, "Dockerfile")
-
-	// Create tar archive of build context
-	buildContext, err := createBuildContext(buildOpts.ContextDir)
+	cfg, err := buildRunConfig(runOpts)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create build context: %w", err)
+		return nil, err
 	}
-	defer func() {
-		if closeErr := buildContext.Close(); closeErr != nil && err == nil {
-			err = closeErr
-		}
-	}()
 
-	// Prepare tags
 	tags := buildOpts.Tags
 	if len(tags) == 0 {
 		tags = []string{name}
 	}
+	repository, tag, err := splitImageReference(tags[0])
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid image reference %q: %w", ErrInvalidOption, tags[0], err)
+	}
 
-	// Build image
-	imageBuildOpts := mobyclient.ImageBuildOptions{
+	ctx, done, err := p.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+
+	imageID, err := p.buildImage(ctx, tags, buildOpts)
+	if err != nil {
+		return nil, err
+	}
+	// The build holds one image user until the container exists; releasing it
+	// afterwards deletes the image if the container could not be created.
+	defer func() {
+		releaseCtx, cancel := p.rollbackContext(ctx)
+		defer cancel()
+		if err := owner.releaseImage(releaseCtx, p.client, imageID); err != nil {
+			owner.warn("%v", err)
+		}
+	}()
+
+	cfg.noPull = true
+	cfg.tag = tag
+	cfg.image = imageID
+	return p.run(ctx, repository, cfg)
+}
+
+// buildImage builds the image, verifies that the image reported by the daemon
+// carries this process's ownership labels, and registers it with one user
+// (the pending build). Images that are not owned, for example because a
+// pre-existing image was returned, are used but never deleted.
+func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOptions) (string, error) {
+	buildContext, err := createBuildContext(buildOpts.ContextDir)
+	if err != nil {
+		return "", fmt.Errorf("%w: failed to create build context: %w", ErrImageBuildFailed, err)
+	}
+	defer func() {
+		_ = buildContext.Close() //nolint:errcheck // Best effort close in defer
+	}()
+
+	labels := owner.withOwnershipLabels(buildOpts.Labels, buildOpts.RetainImage)
+	buildResult, err := p.client.ImageBuild(ctx, buildContext, mobyclient.ImageBuildOptions{
 		Tags:        tags,
-		Dockerfile:  dockerfile,
+		Dockerfile:  cmp.Or(buildOpts.Dockerfile, "Dockerfile"),
 		BuildArgs:   buildOpts.BuildArgs,
 		NoCache:     buildOpts.NoCache,
 		Remove:      true,
 		ForceRemove: buildOpts.ForceRemove,
-		Labels:      buildOpts.Labels,
-	}
-
-	buildResult, err := p.client.ImageBuild(ctx, buildContext, imageBuildOpts)
+		Labels:      labels,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("image build failed: %w", err)
+		return "", fmt.Errorf("%w: %w", ErrImageBuildFailed, err)
 	}
 	defer func() {
 		_ = buildResult.Body.Close() //nolint:errcheck // Best effort close in defer
 	}()
 
-	// Consume build response and check for errors in the JSON stream.
-	// Docker embeds build errors (failed RUN, syntax errors) as {"errorDetail":...}
-	// messages rather than returning them from ImageBuild directly.
-	if buildErr := drainBuildStream(buildResult.Body); buildErr != nil {
-		cleanupCtx := context.WithoutCancel(ctx)
-		for _, tag := range tags {
-			_, _ = p.client.ImageRemove(cleanupCtx, tag, mobyclient.ImageRemoveOptions{Force: true}) //nolint:errcheck // Best effort cleanup
-		}
-		return nil, fmt.Errorf("image build failed: %w", buildErr)
-	}
-
-	// Run the built image.
-	repository, tag, err := splitImageReference(tags[0])
+	imageID, err := readBuildResult(buildResult.Body)
 	if err != nil {
-		return nil, fmt.Errorf("invalid image reference %q: %w", tags[0], err)
+		return "", fmt.Errorf("%w: %w", ErrImageBuildFailed, err)
 	}
 
-	// Add noPull option since we just built the image locally.
-	noPullOpt := RunOption(func(rc *runConfig) error {
-		rc.noPull = true
-		return nil
-	})
-	allOpts := make([]RunOption, 0, len(runOpts)+2)
-	allOpts = append(allOpts, runOpts...)
-	allOpts = append(allOpts, noPullOpt, WithTag(tag))
-
-	resource, err := p.Run(ctx, repository, allOpts...)
+	inspect, err := p.client.ImageInspect(ctx, imageID)
 	if err != nil {
-		cleanupCtx := context.WithoutCancel(ctx)
-		for _, tag := range tags {
-			_, _ = p.client.ImageRemove(cleanupCtx, tag, mobyclient.ImageRemoveOptions{Force: true}) //nolint:errcheck // Best effort cleanup
-		}
-		return nil, err
+		return "", fmt.Errorf("%w: inspecting built image %s: %w", ErrImageBuildFailed, imageID, err)
 	}
-
-	return resource, nil
+	var have map[string]string
+	if inspect.Config != nil {
+		have = inspect.Config.Labels
+	}
+	if ownershipMatches(have, labels) {
+		owner.addImageUser(inspect.ID, p.client, buildOpts.RetainImage)
+	}
+	return inspect.ID, nil
 }
 
 // BuildAndRunT is a test helper that uses t.Context() and calls t.Fatalf on error.
-// The returned ManagedResource does not expose Close, CloseT, or Cleanup;
+// The returned Resource does not expose Close, CloseT, or Cleanup;
 // the resource is automatically cleaned up when the test finishes.
 func (p *pool) BuildAndRunT(t TestingTB, name string, buildOpts *BuildOptions, runOpts ...RunOption) Resource {
 	t.Helper()
@@ -288,20 +319,41 @@ func createBuildContext(contextDir string) (io.ReadCloser, error) {
 	return pr, nil
 }
 
-// drainBuildStream consumes the Docker build JSON stream and returns the first
-// error found. Docker embeds build errors (failed RUN commands, syntax errors)
-// as {"errorDetail":...} messages in the stream rather than returning them from
-// ImageBuild directly.
-func drainBuildStream(r io.Reader) error {
+// readBuildResult consumes the Docker build JSON stream and returns the ID of
+// the built image. Docker embeds build errors (failed RUN commands, syntax
+// errors) as {"errorDetail":...} messages in the stream rather than returning
+// them from ImageBuild directly, and reports the final image as a structured
+// {"aux":{"ID":...}} message. The ID is only accepted after the stream has
+// ended cleanly, so a truncated stream never yields an image.
+func readBuildResult(r io.Reader) (string, error) {
+	var imageID string
 	dec := json.NewDecoder(r)
-	for dec.More() {
+	for {
 		var msg jsonstream.Message
 		if err := dec.Decode(&msg); err != nil {
-			return fmt.Errorf("decoding build stream: %w", err)
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return "", fmt.Errorf("decoding build stream: %w", err)
 		}
 		if msg.Error != nil {
-			return msg.Error
+			return "", msg.Error
+		}
+		// BuildKit tags its trace messages with an ID; the image result is
+		// either untagged (classic builder) or tagged "moby.image.id".
+		if msg.Aux == nil || (msg.ID != "" && msg.ID != "moby.image.id") {
+			continue
+		}
+		var result build.Result
+		if err := json.Unmarshal(*msg.Aux, &result); err != nil {
+			return "", fmt.Errorf("decoding build result: %w", err)
+		}
+		if result.ID != "" {
+			imageID = result.ID
 		}
 	}
-	return nil
+	if imageID == "" {
+		return "", errors.New("build stream ended without an image ID")
+	}
+	return imageID, nil
 }
