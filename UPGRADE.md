@@ -389,11 +389,11 @@ to `"Dockerfile"`), `Tags`, `BuildArgs` (`map[string]*string`), `Labels`,
 
 > [!IMPORTANT]
 >
-> The container is created from the immutable image ID, so a changed build
-> under the same tag always gets a fresh container. The built image is removed
-> once its last container is gone; Docker's layer cache keeps rebuilds fast.
-> Set `RetainImage: true` to keep the image across runs. dockertest never
-> removes images it did not build and never forces an image removal.
+> The container is created from the immutable image ID, so a changed build under
+> the same tag always gets a fresh container. The built image is removed once
+> its last container is gone; Docker's layer cache keeps rebuilds fast. Set
+> `RetainImage: true` to keep the image across runs. dockertest never removes
+> images it did not build and never forces an image removal.
 
 ### Container Networks
 
@@ -449,13 +449,13 @@ func TestMain(m *testing.M) {
 ```
 
 `Main` owns process exit, runs `m.Run`, removes every container, network, and
-built image the package created, and exits with the test status. Cleanup
-errors are warnings on stderr. `SIGINT`/`SIGTERM` trigger cleanup and exit with
+built image the package created, and exits with the test status. Cleanup errors
+are warnings on stderr. `SIGINT`/`SIGTERM` trigger cleanup and exit with
 130/143. The optional `Cleanup` callback runs before Docker cleanup under
 `CleanupTimeout` (60 seconds by default). Runs of the same `Scope` on the same
-machine share a local `StateDir` and recover each other's leftovers after a
-hard kill; cross-machine recovery is not supported. `Main` must be installed
-before any Docker resource is created and only once per process.
+machine share a local `StateDir` and recover each other's leftovers after a hard
+kill; cross-machine recovery is not supported. `Main` must be installed before
+any Docker resource is created and only once per process.
 
 ### Advanced: Container Registry
 

@@ -73,10 +73,11 @@ type removal struct {
 	err  error
 }
 
-// start returns the in-flight attempt to wait on, or a new one to perform.
-func (o *processOwner) start(inflight **removal) (attempt *removal, wait bool) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
+// start returns the in-flight attempt to wait on, or a new one to perform. The
+// caller must hold o.mu and must have looked the record up under the same
+// lock: a record that was already removed and dropped must not start a second
+// attempt, which would release its image reference twice.
+func start(inflight **removal) (attempt *removal, wait bool) {
 	if *inflight != nil {
 		return *inflight, true
 	}
@@ -243,11 +244,12 @@ func (o *processOwner) attachImage(containerID, imageID string) {
 func (o *processOwner) removeContainer(ctx context.Context, c client.DockerClient, id string) error {
 	o.mu.Lock()
 	rec, ok := o.containers[id]
-	o.mu.Unlock()
 	if !ok {
+		o.mu.Unlock()
 		return nil
 	}
-	attempt, wait := o.start(&rec.inflight)
+	attempt, wait := start(&rec.inflight)
+	o.mu.Unlock()
 	if wait {
 		return attempt.wait()
 	}
@@ -276,11 +278,12 @@ func (o *processOwner) trackNetwork(id string, p *pool) {
 func (o *processOwner) removeNetwork(ctx context.Context, c client.DockerClient, id string) error {
 	o.mu.Lock()
 	rec, ok := o.networks[id]
-	o.mu.Unlock()
 	if !ok {
+		o.mu.Unlock()
 		return nil
 	}
-	attempt, wait := o.start(&rec.inflight)
+	attempt, wait := start(&rec.inflight)
+	o.mu.Unlock()
 	if wait {
 		return attempt.wait()
 	}

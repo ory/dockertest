@@ -319,7 +319,10 @@ func TestMainInterruptRemovesContainers(t *testing.T) {
 func TestMainInterruptDuringCreation(t *testing.T) {
 	dc := dockerClient(t)
 	stateDir := t.TempDir()
-	c := startChild(t, "creating", stateDir, "maintest")
+	// A scope of its own: other tests leave containers in "maintest" on
+	// purpose, and the child's run ID is unknown here.
+	const scope = "maintest-creating"
+	c := startChild(t, "creating", stateDir, scope)
 	waitFor(t, c.stdout, readyMarker)
 	interrupt(t, c.cmd)
 	if code := c.wait(t); code != 130 {
@@ -331,15 +334,13 @@ func TestMainInterruptDuringCreation(t *testing.T) {
 		assertContainerGone(t, dc, string(id))
 	}
 	filters := mobyclient.Filters{}
-	filters.Add("label", "io.ory.dockertest.scope=maintest")
+	filters.Add("label", "io.ory.dockertest.scope="+scope)
 	list, err := dc.ContainerList(t.Context(), mobyclient.ContainerListOptions{All: true, Filters: filters})
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, ct := range list.Items {
-		if strings.Contains(c.stderr.String(), ct.ID) {
-			t.Fatalf("container %s of the interrupted run survived; stderr:\n%s", ct.ID, c.stderr.String())
-		}
+	if len(list.Items) != 0 {
+		t.Fatalf("%d containers of the interrupted run survived; stderr:\n%s", len(list.Items), c.stderr.String())
 	}
 }
 
