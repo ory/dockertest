@@ -376,17 +376,16 @@ tag, so a changed Dockerfile never reuses a container of an older build. The
 caller's tag is still applied.
 
 **Image lifetime:** dockertest removes an owned final build image once the last
-container created from it is gone, subject to the conflicts described below.
-Set `RetainImage: true` to keep the image across runs;
-retained images are never removed by dockertest, not even by `Main`'s recovery.
-Images that dockertest did not build (for example a pre-existing tag) are never
-removed.
+container created from it is gone, subject to the conflicts described below. Set
+`RetainImage: true` to keep the image across runs; retained images are never
+removed by dockertest, not even by `Main`'s recovery. Images that dockertest did
+not build (for example a pre-existing tag) are never removed.
 
 **Builder cache and intermediate images:** cleanup only removes images whose
-complete ownership labels identify the run. The classic Docker builder can
-leave intermediate images with missing or partial ownership labels, including
-images created while applying those labels. These images and builder cache can
-remain and accumulate even when cleanup succeeds. Recovery includes fully owned
+complete ownership labels identify the run. The classic Docker builder can leave
+intermediate images with missing or partial ownership labels, including images
+created while applying those labels. These images and builder cache can remain
+and accumulate even when cleanup succeeds. Recovery includes fully owned
 intermediate images, but dockertest does not prune image parents or builder
 cache. Successful cleanup does not guarantee an empty image inventory or bounded
 builder disk usage. `ForceRemove` removes intermediate build containers; it does
@@ -402,9 +401,9 @@ extra tags are gone.
 
 While another build on the same daemon is pending, removal is deferred, because
 that build may produce the very same image. The same holds while `Run` creates a
-container from a tag, which may name a built image, until the container uses
-it. The build or `Run` that finishes last retries the deferred removals before
-it returns, bounded by the pool's cleanup timeout. Failures there are printed as
+container from a tag, which may name a built image, until the container uses it.
+The build or `Run` that finishes last retries the deferred removals before it
+returns, bounded by the pool's cleanup timeout. Failures there are printed as
 warnings rather than returned, since they are unrelated to that operation; the
 image stays tracked and is retried by `Pool.Close` and `Main`.
 
@@ -478,10 +477,9 @@ force-removed together with their anonymous volumes; named volumes and
 downloaded images are left alone.
 
 **Process-wide cleanup with `Main`:** `TestMain` can hand control to
-`dockertest.Main`, which cleans up the package's owned containers, networks,
-and non-retained build images, even when a test hangs or the process is
-interrupted. Image cleanup has the ownership and builder-cache limits described
-above:
+`dockertest.Main`, which cleans up the package's owned containers, networks, and
+non-retained build images, even when a test hangs or the process is interrupted.
+Image cleanup has the ownership and builder-cache limits described above:
 
 ```go
 func TestMain(m *testing.M) {
