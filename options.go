@@ -66,7 +66,6 @@ type runConfig struct {
 	hostConfigModifier func(*container.HostConfig)
 	image              string // immutable image ID of a locally built image; replaces repository:tag
 	noReuse            bool
-	noPull             bool // skip image pull (for locally built images)
 }
 
 // WithTag sets the image tag. Default is "latest".

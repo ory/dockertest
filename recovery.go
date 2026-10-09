@@ -161,8 +161,7 @@ func recoverAbandoned(ctx context.Context, dir, scope, host, daemonID, ownRunID 
 // recoverRun sweeps one abandoned run on one daemon while its lock is held and
 // updates its manifest accordingly.
 func recoverRun(ctx context.Context, c client.DockerClient, dir string, m runManifest, daemonID string, warn func(string, ...any)) {
-	want := map[string]string{labelManaged: labelTrue, labelScope: m.Scope, labelHost: m.Host, labelRun: m.RunID}
-	if err := sweepRun(ctx, c, want); err != nil {
+	if err := sweepRun(ctx, c, runLabels(m.Scope, m.Host, m.RunID)); err != nil {
 		warn("recovery: run %s on daemon %s: %v", m.RunID, daemonID, err)
 		return
 	}

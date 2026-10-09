@@ -67,16 +67,6 @@ type BuildOptions struct {
 	RetainImage bool
 }
 
-func (o *BuildOptions) validate() error {
-	if o == nil {
-		return fmt.Errorf("%w: buildOpts cannot be nil", ErrInvalidOption)
-	}
-	if o.ContextDir == "" {
-		return fmt.Errorf("%w: buildOpts.ContextDir cannot be empty", ErrInvalidOption)
-	}
-	return nil
-}
-
 // BuildAndRun builds a Docker image from a Dockerfile and runs it as a container.
 //
 // The name parameter is used as the image tag. buildOpts.ContextDir is required.
@@ -98,8 +88,11 @@ func (o *BuildOptions) validate() error {
 //	}
 //	defer resource.Close(ctx)
 func (p *pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOptions, runOpts ...RunOption) (ClosableResource, error) {
-	if err := buildOpts.validate(); err != nil {
-		return nil, err
+	if buildOpts == nil {
+		return nil, fmt.Errorf("%w: buildOpts cannot be nil", ErrInvalidOption)
+	}
+	if buildOpts.ContextDir == "" {
+		return nil, fmt.Errorf("%w: buildOpts.ContextDir cannot be empty", ErrInvalidOption)
 	}
 	cfg, err := buildRunConfig(runOpts)
 	if err != nil {
@@ -135,7 +128,6 @@ func (p *pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 		}
 	}()
 
-	cfg.noPull = true
 	cfg.tag = tag
 	cfg.image = imageID
 	return p.run(ctx, repository, cfg)

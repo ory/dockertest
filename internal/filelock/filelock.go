@@ -39,11 +39,6 @@ func TryLock(path string) (*Lock, error) {
 	return &Lock{f: f}, nil
 }
 
-// Path returns the lock file path.
-func (l *Lock) Path() string {
-	return l.f.Name()
-}
-
 // Close releases the lock and closes the file. The file stays on disk.
 func (l *Lock) Close() error {
 	return errors.Join(unlock(l.f), l.f.Close())

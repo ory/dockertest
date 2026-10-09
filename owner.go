@@ -6,7 +6,6 @@ package dockertest
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -38,10 +37,9 @@ type processOwner struct {
 	scope  string // set by Main; empty otherwise
 	stderr io.Writer
 
-	shutdownCtx  context.Context
-	cancel       context.CancelFunc
-	shuttingDown bool
-	pending      sync.WaitGroup // in-flight create/build operations
+	shutdownCtx context.Context
+	cancel      context.CancelFunc
+	pending     sync.WaitGroup // in-flight create/build operations
 
 	pools      []*pool
 	containers map[string]*containerRecord
@@ -127,11 +125,7 @@ func newProcessOwner(runID, hostID string, stderr io.Writer) *processOwner {
 var owner = newProcessOwner(newRunID(), localHostID(), os.Stderr)
 
 func newRunID() string {
-	var b [16]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		panic(fmt.Sprintf("dockertest: generating run ID: %v", err))
-	}
-	return hex.EncodeToString(b[:])
+	return rand.Text()
 }
 
 func localHostID() string {
@@ -150,10 +144,6 @@ func (o *processOwner) scopeName() string {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return o.scope
-}
-
-func (o *processOwner) installed() bool {
-	return o.scopeName() != ""
 }
 
 // install attaches Main to the owner. It fails when Main was already installed
@@ -184,7 +174,7 @@ func (o *processOwner) addPool(p *pool) {
 func (o *processOwner) beginOperation(ctx context.Context) (context.Context, func(), error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.shuttingDown {
+	if o.shutdownCtx.Err() != nil {
 		return nil, nil, ErrShuttingDown
 	}
 	o.pending.Add(1)
@@ -362,35 +352,37 @@ func (o *processOwner) removeUnusedImages(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// retryPool removes containers and networks created by p whose earlier removal
-// failed. Reused containers that other handles still reference are skipped.
-func (o *processOwner) retryPool(ctx context.Context, p *pool) error {
+// retry removes tracked containers and networks whose earlier removal failed,
+// each through the client of the pool that created it. With only set, the
+// retry is limited to that pool's resources and reused containers that other
+// handles still reference are skipped; with only nil, every record whose pool
+// still has a client is retried. Unused images are retried afterwards.
+func (o *processOwner) retry(ctx context.Context, only *pool) error {
 	o.mu.Lock()
-	var containers, networks []string
+	containers := map[string]client.DockerClient{}
+	networks := map[string]client.DockerClient{}
 	for id, rec := range o.containers {
-		if rec.pool != p {
+		if (only != nil && rec.pool != only) || rec.pool.client == nil {
 			continue
 		}
-		if _, live := get(rec.reuseID); rec.reuseID != "" && live {
+		if _, live := get(rec.reuseID); only != nil && rec.reuseID != "" && live {
 			continue
 		}
-		containers = append(containers, id)
+		containers[id] = rec.pool.client
 	}
 	for id, rec := range o.networks {
-		if rec.pool == p {
-			networks = append(networks, id)
+		if (only == nil || rec.pool == only) && rec.pool.client != nil {
+			networks[id] = rec.pool.client
 		}
 	}
 	o.mu.Unlock()
 
-	slices.Sort(containers)
-	slices.Sort(networks)
-	errs := make([]error, 0, len(containers)+len(networks))
-	for _, id := range containers {
-		errs = append(errs, o.removeContainer(ctx, p.client, id))
+	var errs []error
+	for _, id := range slices.Sorted(maps.Keys(containers)) {
+		errs = append(errs, o.removeContainer(ctx, containers[id], id))
 	}
-	for _, id := range networks {
-		errs = append(errs, o.removeNetwork(ctx, p.client, id))
+	for _, id := range slices.Sorted(maps.Keys(networks)) {
+		errs = append(errs, o.removeNetwork(ctx, networks[id], id))
 	}
 	return errors.Join(append(errs, o.removeUnusedImages(ctx))...)
 }
@@ -400,9 +392,8 @@ func (o *processOwner) retryPool(ctx context.Context, p *pool) error {
 // to expire.
 func (o *processOwner) beginShutdown() (drain func(context.Context) error) {
 	o.mu.Lock()
-	o.shuttingDown = true
-	o.mu.Unlock()
 	o.cancel()
+	o.mu.Unlock()
 	return func(ctx context.Context) error {
 		done := make(chan struct{})
 		go func() {
@@ -434,39 +425,12 @@ func (o *processOwner) cleanup(ctx context.Context) error {
 
 	// Pools keep their clients open under Main, so each record's own pool
 	// can remove it; a pool without a client leaves its records as leftovers.
-	o.mu.Lock()
-	remaining := map[string]*pool{}
-	for id, rec := range o.containers {
-		remaining["c"+id] = rec.pool
-	}
-	for id, rec := range o.networks {
-		remaining["n"+id] = rec.pool
-	}
-	o.mu.Unlock()
-	for _, key := range slices.Sorted(maps.Keys(remaining)) {
-		p, id := remaining[key], key[1:]
-		if p.client == nil {
-			continue
-		}
-		if key[0] == 'c' {
-			errs = append(errs, o.removeContainer(ctx, p.client, id))
-		} else {
-			errs = append(errs, o.removeNetwork(ctx, p.client, id))
-		}
-	}
-
-	errs = append(errs, o.removeUnusedImages(ctx))
+	errs = append(errs, o.retry(ctx, nil))
 
 	o.mu.Lock()
-	daemons := make([]client.DockerClient, 0, len(o.daemons))
-	for _, c := range o.daemons {
-		daemons = append(daemons, c)
-	}
+	daemons := slices.Collect(maps.Values(o.daemons))
 	o.mu.Unlock()
-	want := map[string]string{labelManaged: labelTrue, labelRun: o.runID, labelHost: o.hostID}
-	if scope := o.scopeName(); scope != "" {
-		want[labelScope] = scope
-	}
+	want := runLabels(o.scopeName(), o.hostID, o.runID)
 	for _, c := range daemons {
 		errs = append(errs, sweepRun(ctx, c, want))
 	}

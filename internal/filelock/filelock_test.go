@@ -33,9 +33,6 @@ func TestCloseReleasesLockAndKeepsFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TryLock() error = %v", err)
 	}
-	if first.Path() != path {
-		t.Fatalf("Path() = %q, want %q", first.Path(), path)
-	}
 	if closeErr := first.Close(); closeErr != nil {
 		t.Fatalf("Close() error = %v", closeErr)
 	}

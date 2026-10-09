@@ -24,15 +24,20 @@ const (
 func (o *processOwner) withOwnershipLabels(user map[string]string, retain bool) map[string]string {
 	labels := make(map[string]string, len(user)+5)
 	maps.Copy(labels, user)
-	labels[labelManaged] = labelTrue
-	labels[labelHost] = o.hostID
-	if scope := o.scopeName(); scope != "" {
-		labels[labelScope] = scope
-	}
+	maps.Copy(labels, runLabels(o.scopeName(), o.hostID, o.runID))
 	if retain {
+		delete(labels, labelRun)
 		labels[labelRetain] = labelTrue
-	} else {
-		labels[labelRun] = o.runID
+	}
+	return labels
+}
+
+// runLabels is the ownership tuple that identifies the resources of one run.
+// The scope label is only present under Main.
+func runLabels(scope, host, runID string) map[string]string {
+	labels := map[string]string{labelManaged: labelTrue, labelHost: host, labelRun: runID}
+	if scope != "" {
+		labels[labelScope] = scope
 	}
 	return labels
 }

@@ -58,7 +58,7 @@ const (
 
 // report writes a dockertest-prefixed line to w; output is best effort.
 func report(w io.Writer, format string, args ...any) {
-	_, _ = fmt.Fprintf(w, format, args...) //nolint:errcheck // stderr reporting is best effort
+	_, _ = fmt.Fprintf(w, "dockertest: "+format+"\n", args...) //nolint:errcheck // stderr reporting is best effort
 }
 
 func (o MainOptions) resolve() (MainOptions, error) {
@@ -114,14 +114,14 @@ func Main(ctx context.Context, m *testing.M, opts MainOptions) {
 func runMain(ctx context.Context, run func() int, opts MainOptions, stderr io.Writer, exit func(int)) {
 	opts, err := opts.resolve()
 	if err != nil {
-		report(stderr, "dockertest: %v\n", err)
+		report(stderr, "%v", err)
 		exit(1)
 		return
 	}
 	o := owner
 	state, err := o.attachMain(opts)
 	if err != nil {
-		report(stderr, "dockertest: %v\n", err)
+		report(stderr, "%v", err)
 		exit(1)
 		return
 	}
@@ -177,7 +177,7 @@ func (o *processOwner) shutdownProcess(ctx context.Context, opts MainOptions, st
 		timeout = min(timeout, windowsConsoleCloseTimeout)
 	}
 	if sig != nil {
-		report(stderr, "dockertest: received %v, cleaning up\n", sig)
+		report(stderr, "received %v, cleaning up", sig)
 	}
 
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
@@ -204,16 +204,16 @@ func (o *processOwner) shutdownProcess(ctx context.Context, opts MainOptions, st
 		clean := len(leftovers) == 0 && drainErr == nil && dockerErr == nil
 		errs = append(errs, state.close(clean))
 		if err := errors.Join(errs...); err != nil {
-			report(stderr, "dockertest: cleanup failed: %v\n", err)
+			report(stderr, "cleanup failed: %v", err)
 		}
 		for _, id := range leftovers {
-			report(stderr, "dockertest: leftover %s\n", id)
+			report(stderr, "leftover %s", id)
 		}
 	}()
 
 	select {
 	case <-done:
 	case <-time.After(timeout + shutdownGrace):
-		report(stderr, "dockertest: cleanup did not finish within %v; remaining resources are recorded for recovery\n", timeout)
+		report(stderr, "cleanup did not finish within %v; remaining resources are recorded for recovery", timeout)
 	}
 }
