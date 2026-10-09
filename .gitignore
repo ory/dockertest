@@ -20,3 +20,6 @@ vendor/
 # Temporary files
 go.list
 .vscode
+
+# Local notes
+/docs/notes/
