@@ -37,9 +37,8 @@ type processOwner struct {
 	scope  string // set by Main; empty otherwise
 	stderr io.Writer
 
-	shutdownCtx context.Context
-	cancel      context.CancelFunc
-	pending     sync.WaitGroup // in-flight create/build operations
+	shutdown chan struct{}  // closed when process shutdown starts
+	pending  sync.WaitGroup // in-flight create/build operations
 
 	pools      []*pool
 	containers map[string]*containerRecord
@@ -107,17 +106,15 @@ type imageRecord struct {
 }
 
 func newProcessOwner(runID, hostID string, stderr io.Writer) *processOwner {
-	ctx, cancel := context.WithCancel(context.Background()) //nolint:gocritic // shutdown signal is process-scoped, not request-scoped
 	return &processOwner{
-		runID:       runID,
-		hostID:      hostID,
-		stderr:      stderr,
-		shutdownCtx: ctx,
-		cancel:      cancel,
-		containers:  map[string]*containerRecord{},
-		networks:    map[string]*networkRecord{},
-		images:      map[string]*imageRecord{},
-		daemons:     map[string]client.DockerClient{},
+		runID:      runID,
+		hostID:     hostID,
+		stderr:     stderr,
+		shutdown:   make(chan struct{}),
+		containers: map[string]*containerRecord{},
+		networks:   map[string]*networkRecord{},
+		images:     map[string]*imageRecord{},
+		daemons:    map[string]client.DockerClient{},
 	}
 }
 
@@ -174,14 +171,21 @@ func (o *processOwner) addPool(p *pool) {
 func (o *processOwner) beginOperation(ctx context.Context) (context.Context, func(), error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.shutdownCtx.Err() != nil {
+	select {
+	case <-o.shutdown:
 		return nil, nil, ErrShuttingDown
+	default:
 	}
 	o.pending.Add(1)
 	ctx, cancel := context.WithCancel(ctx)
-	stop := context.AfterFunc(o.shutdownCtx, cancel)
+	go func() {
+		select {
+		case <-o.shutdown:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 	return ctx, func() {
-		stop()
 		cancel()
 		o.pending.Done()
 	}, nil
@@ -201,7 +205,13 @@ func (o *processOwner) registerDaemon(ctx context.Context, daemonID string, c cl
 	if hook == nil {
 		return nil
 	}
-	return hook(ctx, daemonID, c)
+	if err := hook(ctx, daemonID, c); err != nil {
+		o.mu.Lock()
+		delete(o.daemons, daemonID)
+		o.mu.Unlock()
+		return err
+	}
+	return nil
 }
 
 func (o *processOwner) trackContainer(id string, p *pool, reuseID string) {
@@ -251,9 +261,10 @@ func (o *processOwner) removeContainer(ctx context.Context, c client.DockerClien
 
 	o.mu.Lock()
 	delete(o.containers, id)
+	imageID := rec.imageID
 	o.mu.Unlock()
-	if rec.imageID != "" {
-		err = o.releaseImage(ctx, c, rec.imageID)
+	if imageID != "" {
+		err = o.releaseImage(ctx, c, imageID)
 	}
 	return o.finish(&rec.inflight, attempt, err)
 }
@@ -323,13 +334,36 @@ func (o *processOwner) releaseImage(ctx context.Context, c client.DockerClient, 
 }
 
 func (o *processOwner) deleteImage(ctx context.Context, c client.DockerClient, id string) error {
-	_, err := c.ImageRemove(ctx, id, mobyclient.ImageRemoveOptions{Force: false, PruneChildren: false})
-	if err != nil && !errdefs.IsNotFound(err) {
-		return fmt.Errorf("removing image %s: %w", id, err)
+	if err := removeImage(ctx, c, id); err != nil {
+		return err
 	}
 	o.mu.Lock()
 	delete(o.images, id)
 	o.mu.Unlock()
+	return nil
+}
+
+// removeImage removes an owned image by its full ID and never forces. The
+// daemon refuses to remove an image by ID while it is tagged in more than one
+// repository, so the extra tags are untagged first; untagging never deletes
+// while other references remain. Any other conflict, such as a foreign
+// container using the image, is returned.
+func removeImage(ctx context.Context, c client.DockerClient, id string) error {
+	opts := mobyclient.ImageRemoveOptions{Force: false, PruneChildren: false}
+	_, err := c.ImageRemove(ctx, id, opts)
+	if errdefs.IsConflict(err) {
+		if inspect, inspectErr := c.ImageInspect(ctx, id); inspectErr == nil && len(inspect.RepoTags) > 1 {
+			for _, tag := range inspect.RepoTags[1:] {
+				if _, untagErr := c.ImageRemove(ctx, tag, opts); untagErr != nil && !errdefs.IsNotFound(untagErr) {
+					return fmt.Errorf("untagging image %s: %w", tag, untagErr)
+				}
+			}
+			_, err = c.ImageRemove(ctx, id, opts)
+		}
+	}
+	if err != nil && !errdefs.IsNotFound(err) {
+		return fmt.Errorf("removing image %s: %w", id, err)
+	}
 	return nil
 }
 
@@ -365,8 +399,10 @@ func (o *processOwner) retry(ctx context.Context, only *pool) error {
 		if (only != nil && rec.pool != only) || rec.pool.client == nil {
 			continue
 		}
-		if _, live := get(rec.reuseID); only != nil && rec.reuseID != "" && live {
-			continue
+		if only != nil && rec.reuseID != "" {
+			if live, ok := get(rec.reuseID); ok && live.container.ID == id {
+				continue
+			}
 		}
 		containers[id] = rec.pool.client
 	}
@@ -392,7 +428,11 @@ func (o *processOwner) retry(ctx context.Context, only *pool) error {
 // to expire.
 func (o *processOwner) beginShutdown() (drain func(context.Context) error) {
 	o.mu.Lock()
-	o.cancel()
+	select {
+	case <-o.shutdown:
+	default:
+		close(o.shutdown)
+	}
 	o.mu.Unlock()
 	return func(ctx context.Context) error {
 		done := make(chan struct{})
@@ -517,9 +557,7 @@ func sweepRun(ctx context.Context, c client.DockerClient, want map[string]string
 		if !ownershipMatches(img.Labels, want) || img.Labels[labelRetain] == labelTrue {
 			continue
 		}
-		if _, removeErr := c.ImageRemove(ctx, img.ID, mobyclient.ImageRemoveOptions{Force: false, PruneChildren: false}); removeErr != nil && !errdefs.IsNotFound(removeErr) {
-			errs = append(errs, fmt.Errorf("removing image %s: %w", img.ID, removeErr))
-		}
+		errs = append(errs, removeImage(ctx, c, img.ID))
 	}
 	return errors.Join(errs...)
 }
