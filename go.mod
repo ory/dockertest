@@ -6,10 +6,11 @@ require (
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/containerd/errdefs v1.0.0
 	github.com/distribution/reference v0.6.0
+	github.com/gofrs/flock v0.13.1
 	github.com/moby/docker-image-spec v1.3.1
 	github.com/moby/moby/api v1.54.1
 	github.com/moby/moby/client v0.4.0
-	golang.org/x/sys v0.33.0
+	golang.org/x/sys v0.47.0
 )
 
 require (

@@ -15,7 +15,6 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 	mobyclient "github.com/moby/moby/client"
-	"github.com/ory/dockertest/v4/internal/filelock"
 )
 
 func writeTestManifest(t *testing.T, dir string, m runManifest) {
@@ -83,11 +82,11 @@ func TestRecoverAbandonedRun(t *testing.T) {
 func TestRecoverSkipsActiveRun(t *testing.T) {
 	dir := t.TempDir()
 	writeTestManifest(t, dir, runManifest{Scope: "s", Host: "h", RunID: "active", Daemons: []string{"d1"}})
-	held, err := filelock.TryLock(lockPath(dir, "active"))
+	held, err := tryLock(lockPath(dir, "active"))
 	if err != nil {
 		t.Fatalf("TryLock() error = %v", err)
 	}
-	t.Cleanup(func() { held.Close() })
+	t.Cleanup(func() { held.Unlock() })
 	c := newFakeClient()
 	abandonedContainers(c, "h", "active")
 
@@ -197,7 +196,7 @@ func TestRunStateLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("openRunState() error = %v", err)
 	}
-	if _, lockErr := filelock.TryLock(lockPath(dir, "run1")); !errors.Is(lockErr, filelock.ErrLocked) {
+	if _, lockErr := tryLock(lockPath(dir, "run1")); !errors.Is(lockErr, errLocked) {
 		t.Fatalf("run lock not held: %v", lockErr)
 	}
 	if _, openErr := openRunState(dir, "s", "h", "run1"); openErr == nil {
@@ -220,11 +219,11 @@ func TestRunStateLifecycle(t *testing.T) {
 	if _, ok := readTestManifest(t, dir, "run1"); !ok {
 		t.Fatal("manifest removed after unclean close, want it kept for recovery")
 	}
-	unlocked, err := filelock.TryLock(lockPath(dir, "run1"))
+	unlocked, err := tryLock(lockPath(dir, "run1"))
 	if err != nil {
 		t.Fatalf("lock still held after close: %v", err)
 	}
-	if closeErr := unlocked.Close(); closeErr != nil {
+	if closeErr := unlocked.Unlock(); closeErr != nil {
 		t.Fatal(closeErr)
 	}
 
@@ -240,5 +239,51 @@ func TestRunStateLifecycle(t *testing.T) {
 	}
 	if _, err := os.Stat(lockPath(dir, "run1")); err != nil {
 		t.Fatalf("lock file removed: %v", err)
+	}
+}
+
+func TestTryLockIsExclusive(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "run.lock")
+
+	first, err := tryLock(path)
+	if err != nil {
+		t.Fatalf("tryLock() error = %v", err)
+	}
+	t.Cleanup(func() { first.Unlock() })
+
+	if _, err := tryLock(path); !errors.Is(err, errLocked) {
+		t.Fatalf("second tryLock() error = %v, want errLocked", err)
+	}
+}
+
+func TestUnlockReleasesLockAndKeepsFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "run.lock")
+
+	first, err := tryLock(path)
+	if err != nil {
+		t.Fatalf("tryLock() error = %v", err)
+	}
+	if unlockErr := first.Unlock(); unlockErr != nil {
+		t.Fatalf("Unlock() error = %v", unlockErr)
+	}
+
+	if _, statErr := os.Stat(path); statErr != nil {
+		t.Fatalf("lock file removed after Unlock: %v", statErr)
+	}
+
+	second, err := tryLock(path)
+	if err != nil {
+		t.Fatalf("tryLock() after Unlock error = %v, want nil", err)
+	}
+	t.Cleanup(func() { second.Unlock() })
+}
+
+func TestTryLockMissingDirectory(t *testing.T) {
+	_, err := tryLock(filepath.Join(t.TempDir(), "missing", "run.lock"))
+	if err == nil {
+		t.Fatal("tryLock() error = nil, want error for missing directory")
+	}
+	if errors.Is(err, errLocked) {
+		t.Fatalf("tryLock() error = %v, want a non-errLocked error", err)
 	}
 }

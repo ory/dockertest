@@ -14,9 +14,14 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/gofrs/flock"
+
 	"github.com/ory/dockertest/v4/internal/client"
-	"github.com/ory/dockertest/v4/internal/filelock"
 )
+
+// errLocked is returned by tryLock when another open file description already
+// holds the lock.
+var errLocked = errors.New("file is locked")
 
 // runManifest is the on-disk ownership record of one Main-managed run. It
 // holds no credentials: only the identity needed to attribute resources on a
@@ -36,25 +41,41 @@ type runManifest struct {
 type runState struct {
 	mu       sync.Mutex
 	dir      string
-	lock     *filelock.Lock
+	lock     *flock.Flock
 	manifest runManifest
 }
 
 func manifestPath(dir, runID string) string { return filepath.Join(dir, runID+".json") }
 func lockPath(dir, runID string) string     { return filepath.Join(dir, runID+".lock") }
 
+// tryLock takes an exclusive, non-blocking lock on the file at path, creating
+// it if necessary. It returns errLocked when the lock is held elsewhere,
+// including by another descriptor in the same process. The file is never
+// removed so that lockers can never race on unlink and re-creation.
+func tryLock(path string) (*flock.Flock, error) {
+	l := flock.New(path)
+	locked, err := l.TryLock()
+	if err != nil {
+		return nil, err
+	}
+	if !locked {
+		return nil, fmt.Errorf("%w: %s", errLocked, path)
+	}
+	return l, nil
+}
+
 // openRunState takes this run's lock and publishes its manifest.
 func openRunState(dir, scope, host, runID string) (*runState, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("creating state directory: %w", err)
 	}
-	lock, err := filelock.TryLock(lockPath(dir, runID))
+	lock, err := tryLock(lockPath(dir, runID))
 	if err != nil {
 		return nil, fmt.Errorf("locking run: %w", err)
 	}
 	s := &runState{dir: dir, lock: lock, manifest: runManifest{Scope: scope, Host: host, RunID: runID}}
 	if err := writeManifest(dir, s.manifest); err != nil {
-		_ = lock.Close() //nolint:errcheck // Prioritize returning the write error
+		_ = lock.Unlock() //nolint:errcheck // Prioritize returning the write error
 		return nil, err
 	}
 	return s, nil
@@ -80,7 +101,7 @@ func (s *runState) close(clean bool) error {
 			errs = append(errs, fmt.Errorf("removing manifest: %w", err))
 		}
 	}
-	return errors.Join(append(errs, s.lock.Close())...)
+	return errors.Join(append(errs, s.lock.Unlock())...)
 }
 
 // writeManifest atomically replaces the manifest file.
@@ -143,8 +164,8 @@ func recoverAbandoned(ctx context.Context, dir, scope, host, daemonID, ownRunID 
 			continue
 		}
 
-		lock, err := filelock.TryLock(lockPath(dir, runID))
-		if errors.Is(err, filelock.ErrLocked) {
+		lock, err := tryLock(lockPath(dir, runID))
+		if errors.Is(err, errLocked) {
 			continue // run is still active
 		}
 		if err != nil {
@@ -152,7 +173,7 @@ func recoverAbandoned(ctx context.Context, dir, scope, host, daemonID, ownRunID 
 			continue
 		}
 		recoverRun(ctx, c, dir, m, daemonID, warn)
-		if err := lock.Close(); err != nil {
+		if err := lock.Unlock(); err != nil {
 			warn("recovery: releasing lock of run %s: %v", runID, err)
 		}
 	}
