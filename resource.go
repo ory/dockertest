@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync/atomic"
 
-	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	mobynetwork "github.com/moby/moby/api/types/network"
@@ -40,6 +40,38 @@ type ClosableResource interface {
 	Close(ctx context.Context) error
 	CloseT(t TestingTB)
 	Cleanup(t TestingTB)
+}
+
+// resource is one handle to a Docker container managed by dockertest.
+// Reused containers have one handle per acquisition; the physical container is
+// tracked by the process owner and removed when the last handle is closed.
+// It implements both Resource and ClosableResource interfaces.
+type resource struct {
+	pool      *pool
+	container container.InspectResponse
+	reuseID   string
+	closed    atomic.Bool
+}
+
+// handle returns a new, unreleased handle for the same container bound to p.
+func (r *resource) handle(p *pool) *resource {
+	return &resource{pool: p, container: r.container, reuseID: r.reuseID}
+}
+
+// Container returns the Docker container inspection response.
+func (r *resource) Container() container.InspectResponse {
+	return r.container
+}
+
+// ID returns the container ID.
+func (r *resource) ID() string {
+	return r.container.ID
+}
+
+// NewResource creates a Resource for testing purposes.
+// This is intended for unit tests that need a Resource without a Docker container.
+func NewResource(c container.InspectResponse) ClosableResource {
+	return &resource{container: c}
 }
 
 // GetPort returns the host port bound to the given container port.
@@ -98,42 +130,31 @@ func (r *resource) GetHostPort(portID string) string {
 	return net.JoinHostPort(ip, port)
 }
 
-// Close stops and removes the container.
-// Anonymous volumes created by the container are also removed.
+// Close releases this handle. The container and its anonymous volumes are
+// force-removed when the last handle referencing the container is closed; if
+// other callers still hold references, Close only untracks the handle from
+// its pool.
 //
-// For reused containers (those with a reuseID), Close only removes the Docker
-// container when the last reference is released. If other callers still hold
-// references, Close simply untracks the resource from this pool.
+// Close releases the handle exactly once: repeated or concurrent calls return
+// nil. The removal honors ctx and is bounded by the pool's cleanup timeout. A
+// failed removal is reported and retried by the pool's Close and by Main.
 func (r *resource) Close(ctx context.Context) error {
+	if !r.closed.CompareAndSwap(false, true) {
+		return nil
+	}
 	if r.pool == nil || r.pool.client == nil {
 		return ErrClientClosed
 	}
+	defer r.pool.untrackResource(r)
 
-	if r.reuseID != "" {
-		registryKey := r.pool.registryKey(r.reuseID)
-		r.reuseID = "" // prevent double-release on repeated Close calls
-		if !release(registryKey) {
-			// Other callers still hold references; just untrack from this pool.
-			r.pool.untrackResource(r.container.ID)
-			return nil
-		}
+	if r.reuseID != "" && !release(r.pool.registryKey(r.reuseID)) {
+		// Other callers still hold references.
+		return nil
 	}
 
-	// Stop container (ignore errors if already stopped)
-	_, _ = r.pool.client.ContainerStop(ctx, r.container.ID, mobyclient.ContainerStopOptions{}) //nolint:errcheck // Best effort stop
-
-	// Remove container (tolerate already-removed containers)
-	_, err := r.pool.client.ContainerRemove(ctx, r.container.ID, mobyclient.ContainerRemoveOptions{
-		RemoveVolumes: true,
-		Force:         true,
-	})
-	if err != nil && !errdefs.IsNotFound(err) {
-		return err
-	}
-
-	r.pool.untrackResource(r.container.ID)
-
-	return nil
+	ctx, cancel := r.pool.cleanupContext(ctx)
+	defer cancel()
+	return owner.removeContainer(ctx, r.pool, r.container.ID)
 }
 
 // CloseT stops and removes the container and calls t.Fatalf on error.

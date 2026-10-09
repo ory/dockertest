@@ -385,7 +385,20 @@ resource := pool.BuildAndRunT(t, "myapp:test",
 
 Available `BuildOptions` fields: `ContextDir` (required), `Dockerfile` (defaults
 to `"Dockerfile"`), `Tags`, `BuildArgs` (`map[string]*string`), `Labels`,
-`NoCache`, `ForceRemove`.
+`NoCache`, `ForceRemove`, `RetainImage`.
+
+> [!IMPORTANT]
+>
+> The container is created from the immutable image ID, so a changed build under
+> the same tag always gets a fresh container. The owned final image is removed
+> once its last container is gone, unless removal conflicts (for example,
+> because it has multiple tags). Set `RetainImage: true` to keep the image
+> across runs. dockertest never removes images it did not build and never forces
+> an image removal. Classic-builder intermediate images without complete
+> ownership labels and builder cache can remain and accumulate even when cleanup
+> succeeds. dockertest does not prune image parents or builder cache;
+> `ForceRemove` only removes intermediate build containers. Cleanup does not
+> bound builder disk usage.
 
 ### Container Networks
 
@@ -426,6 +439,30 @@ stdout, stderr, err := resource.Logs(ctx)
 // Stream logs until container exits or ctx is cancelled:
 err = resource.FollowLogs(ctx, os.Stdout, os.Stderr)
 ```
+
+### Process-Wide Cleanup with `Main`
+
+v3 left containers behind when a test hung or the process was killed. v4 adds
+`dockertest.Main` for `TestMain`:
+
+```go
+func TestMain(m *testing.M) {
+    dockertest.Main(context.Background(), m, dockertest.MainOptions{
+        Scope: "ory/my-project",
+    })
+}
+```
+
+`Main` owns process exit, runs `m.Run`, cleans up the package's owned
+containers, networks, and non-retained build images, and exits with the test
+status. Image cleanup requires complete ownership labels; the classic-builder
+intermediate image and cache limitations above also apply to recovery. Cleanup
+errors are warnings on stderr. `SIGINT`/`SIGTERM` trigger cleanup and exit with
+130/143. The optional `Cleanup` callback runs before Docker cleanup under
+`CleanupTimeout` (60 seconds by default). Runs of the same `Scope` on the same
+machine share a local `StateDir` and recover each other's leftovers after a hard
+kill; cross-machine recovery is not supported. `Main` must be installed before
+any Docker resource is created and only once per process.
 
 ### Advanced: Container Registry
 
@@ -488,5 +525,7 @@ resource.CloseT(t) // immediate removal
 - [ ] Updated pool.Retry(fn) to pool.Retry(ctx, timeout, fn)
 - [ ] Updated error handling to use errors.Is()
 - [ ] Added WithReuseID where same image has different configs
+- [ ] Added dockertest.Main to TestMain where tests may hang or be interrupted
+- [ ] Set RetainImage where a built image must survive across runs
 - [ ] Tested all changes
 - [ ] Verified container cleanup works correctly

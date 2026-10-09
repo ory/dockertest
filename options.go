@@ -23,6 +23,16 @@ func WithMaxWait(d time.Duration) PoolOption {
 	}
 }
 
+// WithCleanupTimeout bounds how long a pool spends removing its containers
+// and networks, both for explicit Close calls and for automatic cleanup
+// registered with t.Cleanup. The default is 60 seconds. NewPool rejects a
+// timeout that is not positive.
+func WithCleanupTimeout(timeout time.Duration) PoolOption {
+	return func(p *pool) {
+		p.cleanupTimeout = timeout
+	}
+}
+
 // WithMobyClient sets a custom Docker client.
 // When a custom client is provided, the pool will not close it on Close().
 func WithMobyClient(c client.DockerClient) PoolOption {
@@ -54,8 +64,8 @@ type runConfig struct {
 	portBindings       network.PortMap
 	configModifier     func(*container.Config)
 	hostConfigModifier func(*container.HostConfig)
+	image              string // immutable image ID of a locally built image; replaces repository:tag
 	noReuse            bool
-	noPull             bool // skip image pull (for locally built images)
 }
 
 // WithTag sets the image tag. Default is "latest".

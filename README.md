@@ -371,6 +371,47 @@ resource := pool.BuildAndRunT(t, "myapp:test",
 )
 ```
 
+The container is created from the immutable ID of the built image, not from the
+tag, so a changed Dockerfile never reuses a container of an older build. The
+caller's tag is still applied.
+
+**Image lifetime:** dockertest removes an owned final build image once the last
+container created from it is gone, subject to the conflicts described below. Set
+`RetainImage: true` to keep the image across runs; retained images are never
+removed by dockertest, not even by `Main`'s recovery. Images that dockertest did
+not build (for example a pre-existing tag) are never removed.
+
+**Builder cache and intermediate images:** cleanup only removes images whose
+complete ownership labels identify the run. The classic Docker builder can leave
+intermediate images with missing or partial ownership labels, including images
+created while applying those labels. These images and builder cache can remain
+and accumulate even when cleanup succeeds. Recovery includes fully owned
+intermediate images, but dockertest does not prune image parents or builder
+cache. Successful cleanup does not guarantee an empty image inventory or bounded
+builder disk usage. `ForceRemove` removes intermediate build containers; it does
+not remove these images or cache.
+
+Removal is by the image ID and never forced, and dockertest never removes tags
+one by one, since another process may have moved a tag to an unrelated image.
+Docker refuses to remove an image by its ID while it carries more than one tag
+or is used by a foreign container. With several `Tags`, the image therefore
+stays: closing its last container, `Pool.Close`, and `Main` return the conflict
+error and retry the removal on every later cleanup, which succeeds once the
+extra tags are gone.
+
+While another build on the same daemon is pending, removal is deferred, because
+that build may produce the very same image. The same holds while `Run` creates a
+container from a tag, which may name a built image, until the container uses it.
+The build or `Run` that finishes last retries the deferred removals before it
+returns, bounded by the pool's cleanup timeout. Failures there are printed as
+warnings rather than returned, since they are unrelated to that operation; the
+image stays tracked and is retried by `Pool.Close` and `Main`.
+
+If a build succeeds but its image cannot be inspected, `BuildAndRun` fails. The
+image is removed only after a later inspection shows this process's ownership
+labels, and is forgotten if it is gone or foreign; while the inspection keeps
+failing, `Pool.Close` and `Main` return the error and retry.
+
 ### Networks
 
 Create Docker networks for container-to-container communication:
@@ -429,18 +470,46 @@ if err != nil {
 defer resource.Close(ctx) // or let pool.Close handle it
 ```
 
-**Advanced: shared pool in `TestMain`:** Use this when you need a single pool
-shared across all tests in a package:
+Cleanup is bounded: automatic cleanup and `Close` never run longer than the
+pool's cleanup timeout (60 seconds by default, see `WithCleanupTimeout`), and a
+failed removal is reported and retried by the next `Close`. Containers are
+force-removed together with their anonymous volumes; named volumes and
+downloaded images are left alone.
+
+**Process-wide cleanup with `Main`:** `TestMain` can hand control to
+`dockertest.Main`, which cleans up the package's owned containers, networks, and
+non-retained build images, even when a test hangs or the process is interrupted.
+Image cleanup has the ownership and builder-cache limits described above:
 
 ```go
 func TestMain(m *testing.M) {
-    ctx := context.Background()
-    pool, _ := dockertest.NewPool(ctx, "")
-    code := m.Run()
-    pool.Close(ctx)
-    os.Exit(code)
+    dockertest.Main(context.Background(), m, dockertest.MainOptions{
+        Scope: "ory/my-project",
+    })
 }
 ```
+
+- `Main` owns process exit: it runs `m.Run` and exits with its status after
+  cleanup. Cleanup failures and leftover resource IDs are printed to stderr but
+  never change a passing or failing status.
+- On `SIGINT` or `SIGTERM` (Ctrl+C or Ctrl+Break on Windows), cleanup starts
+  even if a test is stuck and the process exits with 130 or 143. A second signal
+  terminates immediately.
+- `MainOptions.Cleanup` is an optional package teardown that runs before Docker
+  resources are removed, under the same `CleanupTimeout` (60 seconds by
+  default). The deadline is enforced even if the callback ignores its context.
+- `Scope` is required and should be the same for every package of a project.
+  Each run records its identity in `StateDir` (`os.UserCacheDir()/dockertest/v4`
+  by default). When a later run of the same scope connects to a Docker daemon,
+  it recovers attributable resources an earlier run on the same machine left
+  behind after a kill or power loss. Runs on other machines or with other state
+  directories are not swept. Processes that should recover each other must share
+  one local state directory.
+- Pools may be created before `Main` as long as no container, network, or image
+  was created yet. `Main` must be installed once per process.
+
+`NewPoolT` and `RunT` keep working without `Main`; `Main` adds the guarantees
+above for abnormal exits.
 
 ### Error handling
 

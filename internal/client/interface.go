@@ -31,6 +31,7 @@ type DockerClient interface {
 	ImageInspect(ctx context.Context, imageID string, inspectOpts ...mobyclient.ImageInspectOption) (mobyclient.ImageInspectResult, error)
 	ImageBuild(ctx context.Context, buildContext io.Reader, options mobyclient.ImageBuildOptions) (mobyclient.ImageBuildResult, error)
 	ImageRemove(ctx context.Context, imageID string, options mobyclient.ImageRemoveOptions) (mobyclient.ImageRemoveResult, error)
+	ImageList(ctx context.Context, options mobyclient.ImageListOptions) (mobyclient.ImageListResult, error)
 
 	NetworkCreate(ctx context.Context, name string, options mobyclient.NetworkCreateOptions) (mobyclient.NetworkCreateResult, error)
 	NetworkInspect(ctx context.Context, networkID string, options mobyclient.NetworkInspectOptions) (mobyclient.NetworkInspectResult, error)
@@ -40,6 +41,7 @@ type DockerClient interface {
 	NetworkList(ctx context.Context, options mobyclient.NetworkListOptions) (mobyclient.NetworkListResult, error)
 
 	Ping(ctx context.Context, options mobyclient.PingOptions) (mobyclient.PingResult, error)
+	Info(ctx context.Context, options mobyclient.InfoOptions) (mobyclient.SystemInfoResult, error)
 	DaemonHost() string
 	Close() error
 }
