@@ -504,3 +504,60 @@ func TestBuildFailureKeepsPreexistingTag(t *testing.T) {
 		t.Fatalf("pre-existing tag changed from %s to %s", before, after)
 	}
 }
+
+func TestBuildImageWithExtraTagsIsKeptUntilUntagged(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(dockertest.ResetRegistry)
+
+	dc, err := mobyclient.New(mobyclient.FromEnv)
+	if err != nil {
+		t.Fatalf("mobyclient.New() error = %v", err)
+	}
+	t.Cleanup(func() { dc.Close() })
+
+	ctx := t.Context()
+	tags := []string{"dockertest-build-multitag:a", "dockertest-build-multitag:b"}
+	t.Cleanup(func() {
+		for _, tag := range tags {
+			_, _ = dc.ImageRemove(context.WithoutCancel(ctx), tag, mobyclient.ImageRemoveOptions{})
+		}
+	})
+	pool, err := dockertest.NewPool(ctx, "")
+	if err != nil {
+		t.Fatalf("NewPool() error = %v", err)
+	}
+	t.Cleanup(func() { pool.Close(context.WithoutCancel(ctx)) })
+
+	tmpDir := t.TempDir()
+	writeDockerfile(t, tmpDir, "FROM alpine:latest\nCMD [\"sleep\", \"300\"]\n")
+	r, err := pool.BuildAndRun(ctx, tags[0], &dockertest.BuildOptions{ContextDir: tmpDir, Tags: tags}, dockertest.WithoutReuse())
+	if err != nil {
+		t.Fatalf("BuildAndRun() error = %v", err)
+	}
+	imageID := r.Container().Image
+
+	// The daemon refuses to remove an image tagged twice by its ID, and
+	// dockertest never removes tags, which other processes may have moved.
+	if err := r.Close(ctx); !errdefs.IsConflict(err) {
+		t.Fatalf("Close() error = %v, want a conflict", err)
+	}
+	for _, tag := range tags {
+		if got := mustInspectImage(t, dc, tag).ID; got != imageID {
+			t.Fatalf("tag %s points to %s, want %s", tag, got, imageID)
+		}
+	}
+
+	// Once the extra tag is gone, the pool's cleanup removes the image.
+	if _, err := dc.ImageRemove(ctx, tags[1], mobyclient.ImageRemoveOptions{}); err != nil {
+		t.Fatalf("untagging %s: %v", tags[1], err)
+	}
+	if err := pool.Close(ctx); err != nil {
+		t.Fatalf("pool.Close() error = %v", err)
+	}
+	assertImageGone(t, dc, imageID)
+	assertImageGone(t, dc, tags[0])
+}

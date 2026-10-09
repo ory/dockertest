@@ -64,6 +64,10 @@ func tryLock(path string) (*flock.Flock, error) {
 	return l, nil
 }
 
+// lockRecoveredRun takes the lock of a run that recovery considers abandoned.
+// Tests replace it to interleave the run's owner with recovery.
+var lockRecoveredRun = tryLock
+
 // openRunState takes this run's lock and publishes its manifest.
 func openRunState(dir, scope, host, runID string) (*runState, error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -81,15 +85,22 @@ func openRunState(dir, scope, host, runID string) (*runState, error) {
 	return s, nil
 }
 
-// addDaemon records that this run creates resources on the given daemon.
+// addDaemon records that this run creates resources on the given daemon. The
+// daemon is kept in memory only once it is persisted, so a failed write is
+// retried by the next call.
 func (s *runState) addDaemon(daemonID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if slices.Contains(s.manifest.Daemons, daemonID) {
 		return nil
 	}
-	s.manifest.Daemons = append(s.manifest.Daemons, daemonID)
-	return writeManifest(s.dir, s.manifest)
+	m := s.manifest
+	m.Daemons = append(slices.Clone(m.Daemons), daemonID)
+	if err := writeManifest(s.dir, m); err != nil {
+		return err
+	}
+	s.manifest = m
+	return nil
 }
 
 // close releases the run lock. The manifest is removed only when every
@@ -134,7 +145,8 @@ func writeManifest(dir string, m runManifest) error {
 // by earlier runs of the same scope on this host whose process is gone.
 //
 // A run is only considered abandoned when its lock can be taken; a held lock
-// means the run is still active. Missing or malformed records and lock errors
+// means the run is still active. Its record is read and validated again while
+// the lock is held. Missing or malformed records and lock errors
 // mean ownership cannot be proven, so those runs are reported and skipped.
 // Every resource is verified against the full ownership tuple before removal.
 // Records of runs whose cleanup failed are kept so a later run can retry.
@@ -150,21 +162,23 @@ func recoverAbandoned(ctx context.Context, dir, scope, host, daemonID, ownRunID 
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
-		data, err := os.ReadFile(path) // #nosec G304 -- path is inside the state directory
-		if err != nil {
-			warn("recovery: reading %s: %v", path, err)
-			continue
+		read := func() (m runManifest, ok bool) {
+			data, err := os.ReadFile(path) // #nosec G304 -- path is inside the state directory
+			if err != nil {
+				warn("recovery: reading %s: %v", path, err)
+				return m, false
+			}
+			if decodeErr := json.Unmarshal(data, &m); decodeErr != nil || m.RunID != runID {
+				warn("recovery: skipping malformed record %s", path)
+				return m, false
+			}
+			return m, m.Scope == scope && m.Host == host && slices.Contains(m.Daemons, daemonID)
 		}
-		var m runManifest
-		if decodeErr := json.Unmarshal(data, &m); decodeErr != nil || m.RunID != runID {
-			warn("recovery: skipping malformed record %s", path)
-			continue
-		}
-		if m.Scope != scope || m.Host != host || !slices.Contains(m.Daemons, daemonID) {
+		if _, ok := read(); !ok {
 			continue
 		}
 
-		lock, err := tryLock(lockPath(dir, runID))
+		lock, err := lockRecoveredRun(lockPath(dir, runID))
 		if errors.Is(err, errLocked) {
 			continue // run is still active
 		}
@@ -172,7 +186,11 @@ func recoverAbandoned(ctx context.Context, dir, scope, host, daemonID, ownRunID 
 			warn("recovery: cannot prove ownership of run %s: %v", runID, err)
 			continue
 		}
-		recoverRun(ctx, c, dir, m, daemonID, warn)
+		// Until the lock was taken, the run's owner could still record daemons
+		// or exit, so only the record read under the lock is authoritative.
+		if m, ok := read(); ok {
+			recoverRun(ctx, c, dir, m, daemonID, warn)
+		}
 		if err := lock.Unlock(); err != nil {
 			warn("recovery: releasing lock of run %s: %v", runID, err)
 		}

@@ -154,7 +154,7 @@ func (r *resource) Close(ctx context.Context) error {
 
 	ctx, cancel := r.pool.cleanupContext(ctx)
 	defer cancel()
-	return owner.removeContainer(ctx, r.pool.client, r.container.ID)
+	return owner.removeContainer(ctx, r.pool, r.container.ID)
 }
 
 // CloseT stops and removes the container and calls t.Fatalf on error.

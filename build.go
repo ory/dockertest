@@ -24,6 +24,10 @@ import (
 // Use with Pool.BuildAndRun to build and run custom Docker images.
 //
 // Only ContextDir is required. All other fields are optional and have sensible defaults.
+// Image cleanup requires complete ownership labels. The classic builder can leave
+// intermediate images with missing or partial labels; these and builder cache
+// may remain even after successful cleanup. Dockertest does not prune parents
+// or builder cache, so cleanup does not bound builder disk usage.
 //
 //nolint:govet // field alignment traded for readability
 type BuildOptions struct {
@@ -38,6 +42,13 @@ type BuildOptions struct {
 
 	// Tags are the tags to apply to the built image.
 	// If empty, the image name from BuildAndRun will be used.
+	//
+	// Docker refuses to remove an image that carries more than one tag by its
+	// ID, and dockertest never removes tags, which another process may have
+	// moved to an unrelated image. Without RetainImage, an image with several
+	// tags therefore stays: its removal fails with a conflict that is
+	// returned, and retried, by every later cleanup until the extra tags are
+	// gone.
 	Tags []string
 
 	// BuildArgs are build-time variables passed to the Dockerfile.
@@ -54,7 +65,7 @@ type BuildOptions struct {
 	NoCache bool
 
 	// ForceRemove always removes intermediate containers, even on build failure.
-	// Useful for keeping the build environment clean.
+	// It does not remove intermediate images or builder cache.
 	ForceRemove bool
 
 	// RetainImage keeps the built image after its last container is removed,
@@ -62,8 +73,16 @@ type BuildOptions struct {
 	// images carry stable ownership labels without a run ID and are never
 	// removed automatically, not even by Main's recovery of abandoned runs.
 	//
-	// Without RetainImage, the image is removed once the last container
-	// created from it has been removed and no build is pending.
+	// Without RetainImage, the owned final image is removed once the last
+	// container created from it has been removed, subject to removal conflicts
+	// (see Tags). While a build, or a Run creating a
+	// container from a tag, is pending on the same daemon, the removal is
+	// deferred until the last of them ends; that BuildAndRun or Run performs
+	// it, bounded by the pool's cleanup timeout, and reports failures as
+	// warnings. Failed removals are retried by Pool.Close and Main. If the
+	// built image cannot be inspected, BuildAndRun fails and the image is only
+	// removed once an inspection shows that it carries this process's
+	// ownership labels; until then, Pool.Close and Main retry.
 	RetainImage bool
 }
 
@@ -72,8 +91,10 @@ type BuildOptions struct {
 // The name parameter is used as the image tag. buildOpts.ContextDir is required.
 // The container is created from the immutable ID of the built image, so a
 // changed build under the same tag never reuses a container of an older build.
-// The image is removed once its last container is gone unless
-// BuildOptions.RetainImage is set.
+// The owned final image is removed once its last container is gone unless
+// BuildOptions.RetainImage is set or removal conflicts (see BuildOptions.Tags).
+// Intermediate images without complete ownership labels and builder cache may
+// remain after cleanup; see BuildOptions for the image-cleanup scope.
 //
 // Example:
 //
@@ -123,7 +144,7 @@ func (p *pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 	defer func() {
 		releaseCtx, cancel := p.rollbackContext(ctx)
 		defer cancel()
-		if err := owner.releaseImage(releaseCtx, p.client, imageID); err != nil {
+		if err := owner.releaseImage(releaseCtx, p.client, imageKey{daemon: p.daemonID, id: imageID}); err != nil {
 			owner.warn("%v", err)
 		}
 	}()
@@ -136,7 +157,9 @@ func (p *pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 // buildImage builds the image, verifies that the image reported by the daemon
 // carries this process's ownership labels, and registers it with one user
 // (the pending build). Images that are not owned, for example because a
-// pre-existing image was returned, are used but never deleted.
+// pre-existing image was returned, are used but never deleted. If the image
+// cannot be inspected, a non-retained image is kept as unverified: ending the
+// build, and later cleanups, verify its labels before deleting it.
 func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOptions) (string, error) {
 	buildContext, err := createBuildContext(buildOpts.ContextDir)
 	if err != nil {
@@ -145,6 +168,12 @@ func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOp
 	defer func() {
 		_ = buildContext.Close() //nolint:errcheck // Best effort close in defer
 	}()
+
+	endBuild, err := owner.beginImageAcquisition(ctx, p)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrImageBuildFailed, err)
+	}
+	defer endBuild()
 
 	labels := owner.withOwnershipLabels(buildOpts.Labels, buildOpts.RetainImage)
 	buildResult, err := p.client.ImageBuild(ctx, buildContext, mobyclient.ImageBuildOptions{
@@ -168,18 +197,17 @@ func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOp
 		return "", fmt.Errorf("%w: %w", ErrImageBuildFailed, err)
 	}
 
-	inspect, err := p.client.ImageInspect(ctx, imageID)
+	id, owned, err := inspectOwnership(ctx, p.client, imageID, labels)
 	if err != nil {
+		if !buildOpts.RetainImage {
+			owner.addUnverifiedImage(imageKey{daemon: p.daemonID, id: imageID}, p.client, labels)
+		}
 		return "", fmt.Errorf("%w: inspecting built image %s: %w", ErrImageBuildFailed, imageID, err)
 	}
-	var have map[string]string
-	if inspect.Config != nil {
-		have = inspect.Config.Labels
+	if owned {
+		owner.addImageUser(imageKey{daemon: p.daemonID, id: id}, p.client, buildOpts.RetainImage)
 	}
-	if ownershipMatches(have, labels) {
-		owner.addImageUser(inspect.ID, p.client, buildOpts.RetainImage)
-	}
-	return inspect.ID, nil
+	return id, nil
 }
 
 // BuildAndRunT is a test helper that uses t.Context() and calls t.Fatalf on error.

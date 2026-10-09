@@ -261,10 +261,10 @@ func testOwner(t *testing.T) (*processOwner, *bytes.Buffer) {
 }
 
 // imageUsers reads the user count of an owned image.
-func (o *processOwner) imageUsers(id string) (int, bool) {
+func (o *processOwner) imageUsers(daemonID, id string) (int, bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	img, ok := o.images[id]
+	img, ok := o.images[imageKey{daemon: daemonID, id: id}]
 	if !ok {
 		return 0, false
 	}

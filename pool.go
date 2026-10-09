@@ -60,8 +60,8 @@ type pool struct {
 	maxWait        time.Duration
 	cleanupTimeout time.Duration
 
-	daemonMu       sync.Mutex
-	daemonRecorded bool // daemon identity reported to the owner (only under Main)
+	daemonMu sync.Mutex
+	daemonID string // resolved on the first resource-creating operation
 
 	mu        sync.Mutex
 	resources []*resource // each entry is one handle; reused containers appear once per acquisition
@@ -124,9 +124,9 @@ func (p *pool) Client() client.DockerClient {
 	return p.client
 }
 
-// begin admits a resource-creating operation with the process owner and, under
-// Main, reports the daemon identity once so abandoned runs can be recovered
-// before the first resource is created on that daemon.
+// begin admits a resource-creating operation with the process owner and
+// resolves the daemon identity. Under Main, the daemon is registered so that
+// abandoned runs are recovered before the first resource is created on it.
 func (p *pool) begin(ctx context.Context) (context.Context, func(), error) {
 	if p.client == nil {
 		return nil, nil, ErrClientClosed
@@ -143,23 +143,18 @@ func (p *pool) begin(ctx context.Context) (context.Context, func(), error) {
 }
 
 func (p *pool) recordDaemon(ctx context.Context) error {
-	if owner.scopeName() == "" {
-		return nil
-	}
 	p.daemonMu.Lock()
-	defer p.daemonMu.Unlock()
-	if p.daemonRecorded {
-		return nil
+	if p.daemonID == "" {
+		info, err := p.client.Info(ctx, mobyclient.InfoOptions{})
+		if err != nil {
+			p.daemonMu.Unlock()
+			return fmt.Errorf("docker info failed: %w", err)
+		}
+		p.daemonID = info.Info.ID
 	}
-	info, err := p.client.Info(ctx, mobyclient.InfoOptions{})
-	if err != nil {
-		return fmt.Errorf("docker info failed: %w", err)
-	}
-	if err := owner.registerDaemon(ctx, info.Info.ID, p.client); err != nil {
-		return err
-	}
-	p.daemonRecorded = true
-	return nil
+	daemonID := p.daemonID
+	p.daemonMu.Unlock()
+	return owner.registerDaemon(ctx, daemonID, p.client)
 }
 
 // cleanupContext bounds a cleanup by the pool's cleanup timeout. Deriving from
@@ -343,6 +338,14 @@ func (p *pool) run(ctx context.Context, repository string, cfg *runConfig) (*res
 
 	ref := cfg.image
 	if ref == "" {
+		// The tag may name an owned build image, which must not be deleted
+		// between resolving the tag and attaching the new container to the
+		// image (or rolling the container back).
+		end, err := owner.beginImageAcquisition(ctx, p)
+		if err != nil {
+			return nil, err
+		}
+		defer end()
 		ref = fmt.Sprintf("%s:%s", repository, cfg.tag)
 		if err := p.pullImage(ctx, ref); err != nil {
 			return nil, err
@@ -502,7 +505,7 @@ func (p *pool) createAndStartContainer(ctx context.Context, ref string, cfg *run
 func (p *pool) rollbackContainer(ctx context.Context, containerID string) error {
 	ctx, cancel := p.rollbackContext(ctx)
 	defer cancel()
-	return owner.removeContainer(ctx, p.client, containerID)
+	return owner.removeContainer(ctx, p, containerID)
 }
 
 // inspectAndRegister inspects the container and registers it in the global registry.

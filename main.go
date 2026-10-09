@@ -81,9 +81,11 @@ func (o MainOptions) resolve() (MainOptions, error) {
 	return o, nil
 }
 
-// Main runs the tests of a package and guarantees cleanup of every Docker
-// resource the package created, even when a test hangs or the process is
-// interrupted. Use it from TestMain:
+// Main runs the tests of a package and cleans up its owned Docker resources,
+// even when a test hangs or the process is interrupted. Image cleanup requires
+// complete ownership labels and excludes retained images. Classic-builder
+// intermediates with missing or partial labels and builder cache can remain;
+// Main does not prune image parents or builder cache. Use it from TestMain:
 //
 //	func TestMain(m *testing.M) {
 //		dockertest.Main(context.Background(), m, dockertest.MainOptions{

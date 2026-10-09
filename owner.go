@@ -4,6 +4,7 @@
 package dockertest
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"maps"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 
 	"github.com/containerd/errdefs"
@@ -40,19 +42,21 @@ type processOwner struct {
 	shutdown chan struct{}  // closed when process shutdown starts
 	pending  sync.WaitGroup // in-flight create/build operations
 
-	pools      []*pool
-	containers map[string]*containerRecord
-	networks   map[string]*networkRecord
-	images     map[string]*imageRecord
-	daemons    map[string]client.DockerClient // daemon ID -> a client for reconciliation
-	onDaemon   func(ctx context.Context, daemonID string, c client.DockerClient) error
-	created    int // total resources ever tracked; Main refuses to install after the fact
+	pools       []*pool
+	containers  map[string]*containerRecord
+	networks    map[string]*networkRecord
+	images      map[imageKey]*imageRecord
+	acquiring   map[string]int                 // daemon ID -> pending image acquisitions
+	daemons     map[string]client.DockerClient // daemon ID -> a client for reconciliation
+	registering map[string]chan struct{}       // daemon ID -> closed when its pending hook returns
+	onDaemon    func(ctx context.Context, daemonID string, c client.DockerClient) error
+	created     int // total resources ever tracked; Main refuses to install after the fact
 }
 
 //nolint:govet // field alignment traded for readability
 type containerRecord struct {
 	pool     *pool
-	imageID  string
+	image    imageKey
 	reuseID  string // registry key; empty for WithoutReuse containers
 	inflight *removal
 }
@@ -91,30 +95,60 @@ func (o *processOwner) finish(inflight **removal, attempt *removal, err error) e
 	return err
 }
 
-func (r *removal) wait() error {
-	<-r.done
-	return r.err
+// wait waits for the attempt or for ctx to expire, so that a caller's deadline
+// is honored even when the attempt runs under a longer one.
+func (r *removal) wait(ctx context.Context) error {
+	select {
+	case <-r.done:
+		return r.err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// imageKey identifies an image on a daemon. Image IDs are content-addressed,
+// so identical builds on distinct daemons share an ID but are distinct images.
+type imageKey struct {
+	daemon string
+	id     string
+}
+
+func (k imageKey) compare(other imageKey) int {
+	return cmp.Or(strings.Compare(k.daemon, other.daemon), strings.Compare(k.id, other.id))
 }
 
 // imageRecord is a build image owned by this process. users counts pending
 // builds and live containers created from the image. The image is deleted
 // when users drops to zero unless it is retained.
+//
+// A build whose image could not be inspected leaves a record with the
+// ownership labels it expected in verify: the daemon reported the ID, but
+// whether the image is the one this process built is unknown. Such an image
+// is only deleted after an inspection shows those labels, and is forgotten if
+// it is gone or turns out to be foreign.
+//
+//nolint:govet // field alignment traded for readability
 type imageRecord struct {
-	client client.DockerClient // client of the pool that built the image
-	users  int
-	retain bool
+	client   client.DockerClient // client of the last pool that built or tried to delete the image
+	users    int
+	retain   bool
+	deferred bool              // deletion was skipped because an image acquisition on the daemon was pending
+	verify   map[string]string // ownership labels to verify before deletion; nil once verified
+	inflight *removal
 }
 
 func newProcessOwner(runID, hostID string, stderr io.Writer) *processOwner {
 	return &processOwner{
-		runID:      runID,
-		hostID:     hostID,
-		stderr:     stderr,
-		shutdown:   make(chan struct{}),
-		containers: map[string]*containerRecord{},
-		networks:   map[string]*networkRecord{},
-		images:     map[string]*imageRecord{},
-		daemons:    map[string]client.DockerClient{},
+		runID:       runID,
+		hostID:      hostID,
+		stderr:      stderr,
+		shutdown:    make(chan struct{}),
+		containers:  map[string]*containerRecord{},
+		networks:    map[string]*networkRecord{},
+		images:      map[imageKey]*imageRecord{},
+		acquiring:   map[string]int{},
+		daemons:     map[string]client.DockerClient{},
+		registering: map[string]chan struct{}{},
 	}
 }
 
@@ -191,27 +225,45 @@ func (o *processOwner) beginOperation(ctx context.Context) (context.Context, fun
 	}, nil
 }
 
-// registerDaemon records the daemon a pool talks to. The first time a daemon is
-// seen, Main's hook runs recovery for abandoned runs on that daemon.
+// registerDaemon records, under Main, the daemon a pool talks to. The first
+// time a daemon is seen, Main's hook runs recovery for abandoned runs on that
+// daemon and adds it to the run's manifest. The daemon is published only after
+// the hook succeeded: concurrent callers wait for the pending hook and run it
+// again if it failed, so no resource is created on a daemon the manifest lacks.
 func (o *processOwner) registerDaemon(ctx context.Context, daemonID string, c client.DockerClient) error {
-	o.mu.Lock()
-	if _, ok := o.daemons[daemonID]; ok {
-		o.mu.Unlock()
-		return nil
-	}
-	o.daemons[daemonID] = c
-	hook := o.onDaemon
-	o.mu.Unlock()
-	if hook == nil {
-		return nil
-	}
-	if err := hook(ctx, daemonID, c); err != nil {
+	for {
 		o.mu.Lock()
-		delete(o.daemons, daemonID)
+		hook := o.onDaemon
+		if _, ok := o.daemons[daemonID]; ok || o.scope == "" {
+			o.mu.Unlock()
+			return nil
+		}
+		if pending, ok := o.registering[daemonID]; ok {
+			o.mu.Unlock()
+			select {
+			case <-pending:
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		done := make(chan struct{})
+		o.registering[daemonID] = done
 		o.mu.Unlock()
+
+		var err error
+		if hook != nil {
+			err = hook(ctx, daemonID, c)
+		}
+		o.mu.Lock()
+		delete(o.registering, daemonID)
+		if err == nil {
+			o.daemons[daemonID] = c
+		}
+		o.mu.Unlock()
+		close(done)
 		return err
 	}
-	return nil
 }
 
 func (o *processOwner) trackContainer(id string, p *pool, reuseID string) {
@@ -227,31 +279,41 @@ func (o *processOwner) attachImage(containerID, imageID string) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	rec, ok := o.containers[containerID]
-	if !ok || rec.imageID != "" {
+	if !ok || rec.image.id != "" {
 		return
 	}
-	rec.imageID = imageID
-	if img, ok := o.images[imageID]; ok {
+	rec.image = imageKey{daemon: rec.pool.daemonID, id: imageID}
+	if img, ok := o.images[rec.image]; ok {
 		img.users++
 	}
 }
 
 // removeContainer force-removes a container and its anonymous volumes through
-// c, the client of whoever performs the removal (the creating pool may have
-// closed its own client by now). On success (or if the container is already
-// gone) the record is dropped and the container's image reference is
-// released. On failure the record is kept so that a later cleanup can retry.
-func (o *processOwner) removeContainer(ctx context.Context, c client.DockerClient, id string) error {
+// the client of p, the pool that performs the removal (the creating pool may
+// have closed its own client by now). p becomes responsible for retrying: a
+// reused container is removed by whichever pool released the last reference.
+// On success (or if the container is already gone) the record is dropped and
+// the container's image reference is released. On failure the record is kept
+// so that a later cleanup of p can retry.
+func (o *processOwner) removeContainer(ctx context.Context, p *pool, id string) error {
 	o.mu.Lock()
 	rec, ok := o.containers[id]
 	if !ok {
 		o.mu.Unlock()
 		return nil
 	}
+	c := p.client
+	if c == nil {
+		o.mu.Unlock()
+		return ErrClientClosed
+	}
 	attempt, wait := start(&rec.inflight)
+	if !wait {
+		rec.pool = p
+	}
 	o.mu.Unlock()
 	if wait {
-		return attempt.wait()
+		return attempt.wait(ctx)
 	}
 
 	_, err := c.ContainerRemove(ctx, id, mobyclient.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
@@ -259,12 +321,18 @@ func (o *processOwner) removeContainer(ctx context.Context, c client.DockerClien
 		return o.finish(&rec.inflight, attempt, fmt.Errorf("removing container %s: %w", id, err))
 	}
 
+	// The container stops counting as a user of its image in the same step in
+	// which it stops being tracked, so that a concurrent first registration of
+	// the image counts it exactly once.
 	o.mu.Lock()
 	delete(o.containers, id)
-	imageID := rec.imageID
+	if img, ok := o.images[rec.image]; ok && img.users > 0 {
+		img.users--
+	}
 	o.mu.Unlock()
-	if imageID != "" {
-		err = o.releaseImage(ctx, c, imageID)
+	err = nil
+	if rec.image.id != "" {
+		err = o.deleteImage(ctx, c, rec.image)
 	}
 	return o.finish(&rec.inflight, attempt, err)
 }
@@ -286,7 +354,7 @@ func (o *processOwner) removeNetwork(ctx context.Context, c client.DockerClient,
 	attempt, wait := start(&rec.inflight)
 	o.mu.Unlock()
 	if wait {
-		return attempt.wait()
+		return attempt.wait(ctx)
 	}
 	_, err := c.NetworkRemove(ctx, id, mobyclient.NetworkRemoveOptions{})
 	if err != nil && !errdefs.IsNotFound(err) {
@@ -298,69 +366,204 @@ func (o *processOwner) removeNetwork(ctx context.Context, c client.DockerClient,
 	return o.finish(&rec.inflight, attempt, nil)
 }
 
-// addImageUser registers an owned build image, or adds a user to it.
-func (o *processOwner) addImageUser(id string, c client.DockerClient, retain bool) {
+// beginImageAcquisition admits an operation on p's daemon that resolves an
+// image and makes it used: a build, which can produce, by content address, the
+// very image that is being deleted before the build registers as its user, or
+// the creation of a container from a tag that may name an owned build image
+// until the container is attached to it. Such operations and image deletions
+// on the same daemon exclude each other: an acquisition waits for in-flight
+// deletions, and deletions are deferred while acquisitions are pending.
+//
+// The returned function ends the acquisition. When it was the last pending
+// one on the daemon, it retries the deferred deletions through p's client,
+// ignoring cancellation of ctx but bounded by p's cleanup timeout. They are
+// unrelated to the operation, so failures are only reported as warnings; the
+// images stay tracked for a later cleanup.
+func (o *processOwner) beginImageAcquisition(ctx context.Context, p *pool) (end func(), err error) {
+	daemonID := p.daemonID
+	o.mu.Lock()
+	for {
+		var attempt *removal
+		for key, img := range o.images {
+			if key.daemon == daemonID && img.inflight != nil {
+				attempt = img.inflight
+				break
+			}
+		}
+		if attempt == nil {
+			break
+		}
+		o.mu.Unlock()
+		select {
+		case <-attempt.done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		o.mu.Lock()
+	}
+	o.acquiring[daemonID]++
+	o.mu.Unlock()
+	return func() {
+		o.mu.Lock()
+		o.acquiring[daemonID]--
+		if o.acquiring[daemonID] > 0 {
+			o.mu.Unlock()
+			return
+		}
+		delete(o.acquiring, daemonID)
+		var deferred []imageKey
+		for key, img := range o.images {
+			if key.daemon == daemonID && img.deferred {
+				deferred = append(deferred, key)
+			}
+		}
+		o.mu.Unlock()
+		slices.SortFunc(deferred, imageKey.compare)
+		retryCtx, cancel := p.rollbackContext(ctx)
+		defer cancel()
+		for _, key := range deferred {
+			if err := o.deleteImage(retryCtx, p.client, key); err != nil {
+				o.warn("%v", err)
+			}
+		}
+	}, nil
+}
+
+// attachedUsers counts the tracked containers that were attached to the image
+// before it was registered: a container created from a tag can be attached
+// while the build that produced the image is still verifying it. The caller
+// must hold o.mu.
+func (o *processOwner) attachedUsers(key imageKey) int {
+	var n int
+	for _, rec := range o.containers {
+		if rec.image == key {
+			n++
+		}
+	}
+	return n
+}
+
+// addImageUser registers an owned build image, or adds a user to it. The
+// caller must be inside beginImageAcquisition for the image's daemon and must
+// have verified the image's ownership labels.
+func (o *processOwner) addImageUser(key imageKey, c client.DockerClient, retain bool) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	img, ok := o.images[id]
+	img, ok := o.images[key]
 	if !ok {
 		o.created++
-		img = &imageRecord{client: c, retain: retain}
-		o.images[id] = img
+		img = &imageRecord{client: c, retain: retain, users: o.attachedUsers(key)}
+		o.images[key] = img
 	}
+	img.verify = nil
 	img.users++
 }
 
-// releaseImage drops one user of an owned image and deletes the image once
-// nobody uses it. Deletion is by full ID and never forced: an image that is
-// still tagged elsewhere or referenced by a foreign container stays, the
-// conflict is returned, and the record is kept for a later retry.
-func (o *processOwner) releaseImage(ctx context.Context, c client.DockerClient, id string) error {
+// addUnverifiedImage records a non-retained image that a build reported but
+// whose ownership labels, want, could not be verified. Its deletion is
+// deferred until the caller, which must be inside beginImageAcquisition for
+// the image's daemon, ends the acquisition; later cleanups retry it.
+func (o *processOwner) addUnverifiedImage(key imageKey, c client.DockerClient, want map[string]string) {
 	o.mu.Lock()
-	img, ok := o.images[id]
-	if !ok {
-		o.mu.Unlock()
-		return nil
+	defer o.mu.Unlock()
+	if _, ok := o.images[key]; ok {
+		return // already owned and verified by another build
 	}
-	if img.users > 0 {
+	o.created++
+	o.images[key] = &imageRecord{client: c, verify: want, deferred: true, users: o.attachedUsers(key)}
+}
+
+// releaseImage drops one user of an owned image and deletes the image once
+// nobody uses it.
+func (o *processOwner) releaseImage(ctx context.Context, c client.DockerClient, key imageKey) error {
+	o.mu.Lock()
+	if img, ok := o.images[key]; ok && img.users > 0 {
 		img.users--
 	}
-	if img.users > 0 || img.retain {
+	o.mu.Unlock()
+	return o.deleteImage(ctx, c, key)
+}
+
+// deleteImage deletes an owned image through c unless it is in use or
+// retained. While an image acquisition on its daemon is pending, the deletion
+// is deferred until the last pending acquisition ends. An unverified image is
+// inspected first and only deleted if it carries the expected ownership
+// labels; if it is gone or foreign, it is forgotten without being deleted, and
+// if the inspection fails, it is kept. Deletion is by full ID and never forced:
+// an image that is still tagged elsewhere or referenced by a foreign container
+// stays, the conflict is returned, and the record is kept for a later retry.
+// Concurrent deleters share one attempt.
+func (o *processOwner) deleteImage(ctx context.Context, c client.DockerClient, key imageKey) error {
+	o.mu.Lock()
+	img, ok := o.images[key]
+	if !ok || img.users > 0 || img.retain {
 		o.mu.Unlock()
 		return nil
 	}
-	o.mu.Unlock()
-	return o.deleteImage(ctx, c, id)
-}
-
-func (o *processOwner) deleteImage(ctx context.Context, c client.DockerClient, id string) error {
-	if err := removeImage(ctx, c, id); err != nil {
-		return err
+	if o.acquiring[key.daemon] > 0 {
+		img.deferred = true
+		o.mu.Unlock()
+		return nil
 	}
-	o.mu.Lock()
-	delete(o.images, id)
+	// c is open now, while the pool that built the image may have closed its
+	// client: later retries use c.
+	img.client = c
+	img.deferred = false
+	attempt, wait := start(&img.inflight)
+	verify := img.verify
 	o.mu.Unlock()
-	return nil
-}
-
-// removeImage removes an owned image by its full ID and never forces. The
-// daemon refuses to remove an image by ID while it is tagged in more than one
-// repository, so the extra tags are untagged first; untagging never deletes
-// while other references remain. Any other conflict, such as a foreign
-// container using the image, is returned.
-func removeImage(ctx context.Context, c client.DockerClient, id string) error {
-	opts := mobyclient.ImageRemoveOptions{Force: false, PruneChildren: false}
-	_, err := c.ImageRemove(ctx, id, opts)
-	if errdefs.IsConflict(err) {
-		if inspect, inspectErr := c.ImageInspect(ctx, id); inspectErr == nil && len(inspect.RepoTags) > 1 {
-			for _, tag := range inspect.RepoTags[1:] {
-				if _, untagErr := c.ImageRemove(ctx, tag, opts); untagErr != nil && !errdefs.IsNotFound(untagErr) {
-					return fmt.Errorf("untagging image %s: %w", tag, untagErr)
-				}
-			}
-			_, err = c.ImageRemove(ctx, id, opts)
+	if wait {
+		return attempt.wait(ctx)
+	}
+	if verify != nil {
+		_, owned, err := inspectOwnership(ctx, c, key.id, verify)
+		if err != nil && !errdefs.IsNotFound(err) {
+			return o.finish(&img.inflight, attempt, fmt.Errorf("verifying image %s: %w", key.id, err))
+		}
+		o.mu.Lock()
+		if owned {
+			img.verify = nil
+		} else {
+			delete(o.images, key)
+		}
+		o.mu.Unlock()
+		if !owned {
+			return o.finish(&img.inflight, attempt, nil)
 		}
 	}
+	err := removeImage(ctx, c, key.id)
+	if err == nil {
+		o.mu.Lock()
+		if img.users == 0 {
+			delete(o.images, key)
+		}
+		o.mu.Unlock()
+	}
+	return o.finish(&img.inflight, attempt, err)
+}
+
+// inspectOwnership inspects an image and reports its ID and whether it
+// carries the ownership labels want.
+func inspectOwnership(ctx context.Context, c client.DockerClient, ref string, want map[string]string) (id string, owned bool, err error) {
+	inspect, err := c.ImageInspect(ctx, ref)
+	if err != nil {
+		return "", false, err
+	}
+	var have map[string]string
+	if inspect.Config != nil {
+		have = inspect.Config.Labels
+	}
+	return inspect.ID, ownershipMatches(have, want), nil
+}
+
+// removeImage removes an owned image by its immutable ID and never forces.
+// Tags are never removed individually: another process can move a tag to an
+// unrelated image at any time, and untagging that image could delete it. The
+// daemon therefore refuses the removal while the image is tagged in more than
+// one repository or used by a foreign container; the conflict is returned so
+// that the owner keeps the image for a later retry.
+func removeImage(ctx context.Context, c client.DockerClient, id string) error {
+	_, err := c.ImageRemove(ctx, id, mobyclient.ImageRemoveOptions{Force: false, PruneChildren: false})
 	if err != nil && !errdefs.IsNotFound(err) {
 		return fmt.Errorf("removing image %s: %w", id, err)
 	}
@@ -369,31 +572,32 @@ func removeImage(ctx context.Context, c client.DockerClient, id string) error {
 
 // removeUnusedImages retries the deletion of owned images that nobody uses
 // anymore but whose earlier deletion failed, for example because of a tag
-// conflict that has since been resolved.
+// conflict that has since been resolved, or was deferred.
 func (o *processOwner) removeUnusedImages(ctx context.Context) error {
 	o.mu.Lock()
-	unused := map[string]client.DockerClient{}
-	for id, img := range o.images {
+	unused := map[imageKey]client.DockerClient{}
+	for key, img := range o.images {
 		if img.users == 0 && !img.retain {
-			unused[id] = img.client
+			unused[key] = img.client
 		}
 	}
 	o.mu.Unlock()
+	// deleteImage re-checks each image: it may have gained a user since.
 	var errs []error
-	for _, id := range slices.Sorted(maps.Keys(unused)) {
-		errs = append(errs, o.deleteImage(ctx, unused[id], id))
+	for _, key := range slices.SortedFunc(maps.Keys(unused), imageKey.compare) {
+		errs = append(errs, o.deleteImage(ctx, unused[key], key))
 	}
 	return errors.Join(errs...)
 }
 
 // retry removes tracked containers and networks whose earlier removal failed,
-// each through the client of the pool that created it. With only set, the
+// each through the client of the pool responsible for it. With only set, the
 // retry is limited to that pool's resources and reused containers that other
 // handles still reference are skipped; with only nil, every record whose pool
 // still has a client is retried. Unused images are retried afterwards.
 func (o *processOwner) retry(ctx context.Context, only *pool) error {
 	o.mu.Lock()
-	containers := map[string]client.DockerClient{}
+	containers := map[string]*pool{}
 	networks := map[string]client.DockerClient{}
 	for id, rec := range o.containers {
 		if (only != nil && rec.pool != only) || rec.pool.client == nil {
@@ -404,7 +608,7 @@ func (o *processOwner) retry(ctx context.Context, only *pool) error {
 				continue
 			}
 		}
-		containers[id] = rec.pool.client
+		containers[id] = rec.pool
 	}
 	for id, rec := range o.networks {
 		if (only == nil || rec.pool == only) && rec.pool.client != nil {
@@ -488,9 +692,9 @@ func (o *processOwner) leftovers() []string {
 	for id := range o.networks {
 		ids = append(ids, "network "+id)
 	}
-	for id, img := range o.images {
+	for key, img := range o.images {
 		if !img.retain {
-			ids = append(ids, "image "+id)
+			ids = append(ids, "image "+key.id)
 		}
 	}
 	slices.Sort(ids)
@@ -548,7 +752,11 @@ func sweepRun(ctx context.Context, c client.DockerClient, want map[string]string
 		}
 	}
 
-	images, err := c.ImageList(ctx, mobyclient.ImageListOptions{Filters: filters})
+	// All includes intermediate images: an owned image that became the
+	// untagged parent of another owned image is otherwise not listed and would
+	// survive the removal of its child. If the parent is listed first, its
+	// removal conflicts and the error keeps the run for a later sweep.
+	images, err := c.ImageList(ctx, mobyclient.ImageListOptions{All: true, Filters: filters})
 	if err != nil {
 		return errors.Join(append(errs, fmt.Errorf("listing images: %w", err))...)
 	}
