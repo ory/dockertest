@@ -5,6 +5,7 @@ package dockertest
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -23,17 +24,21 @@ import (
 
 // fakeClient is a controllable DockerClient for daemon-free tests. Every
 // method succeeds unless the matching hook is set. Calls are recorded in order.
+// Containers report the image they were created from, with tags of fake builds
+// resolved to the built image ID.
 //
 //nolint:govet // field alignment traded for readability
 type fakeClient struct {
 	client.DockerClient // nil: unhooked methods panic, which is intended
 
-	mu       sync.Mutex
-	calls    []string
-	created  int
-	images   map[string]map[string]string // image ID -> labels
-	closed   bool
-	daemonID string
+	mu         sync.Mutex
+	calls      []string
+	created    int
+	images     map[string]map[string]string // image ID -> labels
+	tags       map[string]string            // tag -> image ID, set by buildStream
+	containers map[string]string            // container ID -> image reference it was created from
+	closed     bool
+	daemonID   string
 
 	containerCreate  func(ctx context.Context, opts mobyclient.ContainerCreateOptions) (string, error)
 	containerStart   func(ctx context.Context, id string) error
@@ -52,7 +57,7 @@ type fakeClient struct {
 }
 
 func newFakeClient() *fakeClient {
-	return &fakeClient{images: map[string]map[string]string{}, daemonID: "daemon-1"}
+	return &fakeClient{images: map[string]map[string]string{}, tags: map[string]string{}, containers: map[string]string{}, daemonID: "daemon-1"}
 }
 
 func (f *fakeClient) record(format string, args ...any) {
@@ -75,17 +80,23 @@ func (f *fakeClient) callsMatching(prefix string) []string {
 }
 
 func (f *fakeClient) ContainerCreate(ctx context.Context, opts mobyclient.ContainerCreateOptions) (mobyclient.ContainerCreateResult, error) { //nolint:gocritic // mirrors the client interface
+	var id string
+	var err error
 	if f.containerCreate != nil {
-		id, err := f.containerCreate(ctx, opts)
-		f.record("ContainerCreate %s", id)
-		return mobyclient.ContainerCreateResult{ID: id}, err
+		id, err = f.containerCreate(ctx, opts)
+	} else {
+		f.mu.Lock()
+		f.created++
+		id = fmt.Sprintf("container-%d", f.created)
+		f.mu.Unlock()
 	}
-	f.mu.Lock()
-	f.created++
-	id := fmt.Sprintf("container-%d", f.created)
-	f.mu.Unlock()
 	f.record("ContainerCreate %s", id)
-	return mobyclient.ContainerCreateResult{ID: id}, nil
+	if err == nil {
+		f.mu.Lock()
+		f.containers[id] = opts.Config.Image
+		f.mu.Unlock()
+	}
+	return mobyclient.ContainerCreateResult{ID: id}, err
 }
 
 func (f *fakeClient) ContainerStart(ctx context.Context, id string, _ mobyclient.ContainerStartOptions) (mobyclient.ContainerStartResult, error) {
@@ -102,7 +113,10 @@ func (f *fakeClient) ContainerInspect(ctx context.Context, id string, _ mobyclie
 		resp, err := f.containerInspect(ctx, id)
 		return mobyclient.ContainerInspectResult{Container: resp}, err
 	}
-	return mobyclient.ContainerInspectResult{Container: container.InspectResponse{ID: id, Image: "sha256:image-of-" + id}}, nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	ref := f.containers[id]
+	return mobyclient.ContainerInspectResult{Container: container.InspectResponse{ID: id, Image: cmp.Or(f.tags[ref], ref)}}, nil
 }
 
 func (f *fakeClient) ContainerRemove(ctx context.Context, id string, opts mobyclient.ContainerRemoveOptions) (mobyclient.ContainerRemoveResult, error) {
@@ -120,6 +134,19 @@ func (f *fakeClient) ContainerList(ctx context.Context, opts mobyclient.Containe
 		return mobyclient.ContainerListResult{Items: items}, err
 	}
 	return mobyclient.ContainerListResult{}, nil
+}
+
+// listedContainers returns the containers a daemon lists for opts: stopped
+// ones only with All. Label filters are ignored, so only dockertest's own
+// ownership check protects foreign containers.
+func listedContainers(opts mobyclient.ContainerListOptions, all ...container.Summary) []container.Summary {
+	var items []container.Summary
+	for i := range all {
+		if opts.All || all[i].State == container.StateRunning {
+			items = append(items, all[i])
+		}
+	}
+	return items
 }
 
 func (f *fakeClient) NetworkCreate(ctx context.Context, name string, opts mobyclient.NetworkCreateOptions) (mobyclient.NetworkCreateResult, error) { //nolint:gocritic // mirrors the client interface
@@ -169,11 +196,14 @@ func (f *fakeClient) ImageBuild(ctx context.Context, buildContext io.Reader, opt
 }
 
 // buildStream returns a classic-builder stream that labels image id with the
-// build's labels and reports id as the result.
+// build's labels, points the build's tags at it, and reports id as the result.
 func (f *fakeClient) buildStream(id string) func(context.Context, mobyclient.ImageBuildOptions) (io.ReadCloser, error) {
 	return func(_ context.Context, opts mobyclient.ImageBuildOptions) (io.ReadCloser, error) {
 		f.mu.Lock()
 		f.images[id] = opts.Labels
+		for _, tag := range opts.Tags {
+			f.tags[tag] = id
+		}
 		f.mu.Unlock()
 		return io.NopCloser(strings.NewReader(fmt.Sprintf(`{"stream":"Step 1/1 : FROM scratch"}
 {"aux":{"ID":%q}}

@@ -20,8 +20,8 @@ jobs:
       - name: Coveralls
         run: bash <(curl -s https://codecov.io/bash)
   native:
-    # Daemon-free tests of the platform file locks and of Main's signal
-    # handling on the platforms where their native implementations differ.
+    # Daemon-free tests of the run locks, recovery, and Main's signal handling
+    # on the platforms where their native implementations differ.
     strategy:
       matrix:
         os: [macos-latest, windows-latest]
@@ -33,3 +33,4 @@ jobs:
           go-version: "1.25"
       - run: go vet ./...
       - run: go test -short -race ./internal/...
+      - run: go test -short -race -run '^Test(Main|Recover[A-Z]|RunState|TryLock|Unlock)' .

@@ -22,6 +22,7 @@ import (
 	"github.com/containerd/errdefs"
 	mobyclient "github.com/moby/moby/client"
 	dockertest "github.com/ory/dockertest/v4"
+	"github.com/ory/dockertest/v4/internal/client"
 )
 
 const (
@@ -73,13 +74,20 @@ func TestHelperProcess(t *testing.T) {
 		os.Exit(0) // simulates a run that dies without cleanup
 	case "container-pass":
 		runContainer(t)
-	case "creating":
-		pool := dockertest.NewPoolT(t, "")
-		ready()
-		r, err := pool.Run(t.Context(), "alpine", dockertest.WithCmd([]string{"sleep", "300"}), dockertest.WithoutReuse())
-		if err == nil {
-			writeOut(t, r.ID())
+	case "container-stopped-exit":
+		id := runContainer(t)
+		zero := 0
+		if _, err := dockerClient(t).ContainerStop(t.Context(), id, mobyclient.ContainerStopOptions{Timeout: &zero}); err != nil {
+			t.Fatal(err)
 		}
+		os.Exit(0) // simulates a run that dies without cleanup
+	case "creating":
+		dc, err := client.NewMobyClient(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		pool := dockertest.NewPoolT(t, "", dockertest.WithMobyClient(lostCreateClient{DockerClient: dc, t: t}))
+		_, _ = pool.Run(t.Context(), "alpine", dockertest.WithCmd([]string{"sleep", "300"}), dockertest.WithoutReuse()) //nolint:errcheck // the interrupt fails it
 		select {}
 	default:
 		t.Fatalf("unknown case %q", testCase)
@@ -97,11 +105,31 @@ func writeOut(t *testing.T, id string) {
 	}
 }
 
-func runContainer(t *testing.T) {
+func runContainer(t *testing.T) string {
 	t.Helper()
 	pool := dockertest.NewPoolT(t, "")
 	r := pool.RunT(t, "alpine", dockertest.WithCmd([]string{"sleep", "300"}), dockertest.WithoutReuse())
 	writeOut(t, r.ID())
+	return r.ID()
+}
+
+// lostCreateClient is a Docker client whose ContainerCreate creates the
+// container, reports it as ready, and then waits until its context is canceled
+// and returns without the create response, as if the request was interrupted.
+type lostCreateClient struct {
+	client.DockerClient
+	t *testing.T
+}
+
+func (c lostCreateClient) ContainerCreate(ctx context.Context, opts mobyclient.ContainerCreateOptions) (mobyclient.ContainerCreateResult, error) { //nolint:gocritic // mirrors the client interface
+	resp, err := c.DockerClient.ContainerCreate(ctx, opts)
+	if err != nil {
+		return resp, err
+	}
+	writeOut(c.t, resp.ID)
+	ready()
+	<-ctx.Done()
+	return mobyclient.ContainerCreateResult{}, ctx.Err()
 }
 
 // child is a running child process whose stdout and stderr are captured.
@@ -318,21 +346,19 @@ func TestMainInterruptRemovesContainers(t *testing.T) {
 
 func TestMainInterruptDuringCreation(t *testing.T) {
 	dc := dockerClient(t)
-	stateDir := t.TempDir()
 	// A scope of its own: other tests leave containers in "maintest" on
 	// purpose, and the child's run ID is unknown here.
 	const scope = "maintest-creating"
-	c := startChild(t, "creating", stateDir, scope)
+	c := startChild(t, "creating", t.TempDir(), scope)
 	waitFor(t, c.stdout, readyMarker)
+	// The container exists, but the child has not received its ID.
+	id := c.containerID(t)
+	assertContainerAlive(t, dc, id)
 	interrupt(t, c.cmd)
 	if code := c.wait(t); code != 130 {
 		t.Fatalf("exit = %d, want 130; stderr:\n%s", code, c.stderr.String())
 	}
-	// Whether the creation was rejected, canceled, or completed, nothing
-	// labeled with this scope may remain.
-	if id, err := os.ReadFile(c.out); err == nil {
-		assertContainerGone(t, dc, string(id))
-	}
+	assertContainerGone(t, dc, id)
 	filters := mobyclient.Filters{}
 	filters.Add("label", "io.ory.dockertest.scope="+scope)
 	list, err := dc.ContainerList(t.Context(), mobyclient.ContainerListOptions{All: true, Filters: filters})
@@ -379,6 +405,28 @@ func TestMainRecoversAfterExit(t *testing.T) {
 			t.Fatalf("manifest %s left after recovery", e.Name())
 		}
 	}
+}
+
+func TestMainRecoversStoppedContainer(t *testing.T) {
+	dc := dockerClient(t)
+	stateDir := t.TempDir()
+	c := startChild(t, "container-stopped-exit", stateDir, "maintest")
+	if code := c.wait(t); code != 0 {
+		t.Fatalf("exit = %d, stderr:\n%s", code, c.stderr.String())
+	}
+	id := c.containerID(t)
+	inspect, err := dc.ContainerInspect(t.Context(), id, mobyclient.ContainerInspectOptions{})
+	if err != nil {
+		t.Fatalf("ContainerInspect(%s) error = %v", id, err)
+	}
+	if inspect.Container.State.Running {
+		t.Fatal("container still running, want it stopped")
+	}
+
+	if code, stderr := run(t, "container-pass", stateDir, "maintest"); code != 0 || stderr != "" {
+		t.Fatalf("exit = %d, stderr:\n%s", code, stderr)
+	}
+	assertContainerGone(t, dc, id)
 }
 
 func TestMainRecoversAfterKill(t *testing.T) {

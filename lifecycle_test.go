@@ -16,6 +16,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/containerd/errdefs"
@@ -30,11 +31,11 @@ func TestRunStartFailureRollsBackWithCanceledContext(t *testing.T) {
 	o, _ := testOwner(t)
 	c := newFakeClient()
 	startErr := errors.New("boom")
-	c.containerStart = func(context.Context, string) error { return startErr }
+	ctx, cancel := context.WithCancel(t.Context())
+	// The caller gives up after the container was created.
+	c.containerStart = func(context.Context, string) error { cancel(); return startErr }
 	p := newFakePool(t, c)
 
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
 	_, err := p.Run(ctx, "alpine", WithoutReuse())
 	if !errors.Is(err, ErrContainerStartFailed) || !errors.Is(err, startErr) {
 		t.Fatalf("Run() error = %v, want ErrContainerStartFailed wrapping %v", err, startErr)
@@ -132,11 +133,11 @@ func TestNetworkInspectFailureRollsBack(t *testing.T) {
 	o, _ := testOwner(t)
 	c := newFakeClient()
 	inspectErr := errors.New("inspect failed")
-	c.networkInspect = func(context.Context, string) (network.Inspect, error) { return network.Inspect{}, inspectErr }
+	ctx, cancel := context.WithCancel(t.Context())
+	// The caller gives up after the network was created.
+	c.networkInspect = func(context.Context, string) (network.Inspect, error) { cancel(); return network.Inspect{}, inspectErr }
 	p := newFakePool(t, c)
 
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
 	_, err := p.CreateNetwork(ctx, "net", nil)
 	if !errors.Is(err, inspectErr) {
 		t.Fatalf("CreateNetwork() error = %v, want %v", err, inspectErr)
@@ -149,29 +150,74 @@ func TestNetworkInspectFailureRollsBack(t *testing.T) {
 	}
 }
 
-func TestCleanupPreservesOuterDeadline(t *testing.T) {
-	testOwner(t)
-	c := newFakeClient()
-	var seen time.Time
-	c.containerRemove = func(ctx context.Context, _ string, _ mobyclient.ContainerRemoveOptions) error {
-		seen, _ = ctx.Deadline()
-		return nil
-	}
-	p := newFakePool(t, c, WithCleanupTimeout(time.Hour))
-	r, err := p.Run(t.Context(), "alpine", WithoutReuse())
-	if err != nil {
-		t.Fatalf("Run() error = %v", err)
+func TestCleanupDeadline(t *testing.T) {
+	const timeout = time.Hour
+	for _, tc := range []struct {
+		name  string
+		outer time.Duration // caller deadline relative to the start; zero for none
+		want  time.Duration // expected removal deadline relative to the start
+	}{
+		{name: "pool timeout without caller deadline", want: timeout},
+		{name: "earlier caller deadline is preserved", outer: time.Minute, want: time.Minute},
+		{name: "later caller deadline is shortened", outer: 2 * timeout, want: timeout},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				testOwner(t)
+				c := newFakeClient()
+				var seen time.Time
+				c.containerRemove = func(ctx context.Context, _ string, _ mobyclient.ContainerRemoveOptions) error {
+					seen, _ = ctx.Deadline()
+					return nil
+				}
+				p := newFakePool(t, c, WithCleanupTimeout(timeout))
+				r, err := p.Run(t.Context(), "alpine", WithoutReuse())
+				if err != nil {
+					t.Fatalf("Run() error = %v", err)
+				}
+
+				start := time.Now()
+				ctx := t.Context()
+				if tc.outer != 0 {
+					var cancel context.CancelFunc
+					ctx, cancel = context.WithDeadline(ctx, start.Add(tc.outer))
+					t.Cleanup(cancel)
+				}
+				if err := r.Close(ctx); err != nil {
+					t.Fatalf("Close() error = %v", err)
+				}
+				if want := start.Add(tc.want); !seen.Equal(want) {
+					t.Fatalf("removal deadline = %v, want %v", seen, want)
+				}
+			})
+		})
 	}
 
-	outer := time.Now().Add(time.Minute)
-	ctx, cancel := context.WithDeadline(t.Context(), outer)
-	t.Cleanup(cancel)
-	if err := r.Close(ctx); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-	if !seen.Equal(outer) {
-		t.Fatalf("removal deadline = %v, want the outer deadline %v", seen, outer)
-	}
+	t.Run("expired removal is kept for retry", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			o, _ := testOwner(t)
+			c := newFakeClient()
+			c.containerRemove = func(ctx context.Context, _ string, _ mobyclient.ContainerRemoveOptions) error {
+				<-ctx.Done()
+				return ctx.Err()
+			}
+			p := newFakePool(t, c, WithCleanupTimeout(timeout))
+			if _, err := p.Run(t.Context(), "alpine", WithoutReuse()); err != nil {
+				t.Fatalf("Run() error = %v", err)
+			}
+
+			start := time.Now()
+			if err := p.Close(t.Context()); !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("Close() error = %v, want context.DeadlineExceeded", err)
+			}
+			if elapsed := time.Since(start); elapsed != timeout {
+				t.Fatalf("Close() took %v, want the cleanup timeout %v", elapsed, timeout)
+			}
+			if left := o.leftovers(); !slices.Equal(left, []string{"container container-1"}) {
+				t.Fatalf("leftovers = %v, want the container", left)
+			}
+		})
+	})
 }
 
 func TestResourceCloseReleasesOnceUnderConcurrency(t *testing.T) {
@@ -375,9 +421,6 @@ func TestBuildImageRemovedAfterLastContainer(t *testing.T) {
 	o, _ := testOwner(t)
 	c := newFakeClient()
 	c.imageBuild = c.buildStream("sha256:img1")
-	c.containerInspect = func(_ context.Context, id string) (container.InspectResponse, error) {
-		return container.InspectResponse{ID: id, Image: "sha256:img1"}, nil
-	}
 	var createdFrom string
 	c.containerCreate = func(_ context.Context, opts mobyclient.ContainerCreateOptions) (string, error) {
 		createdFrom = opts.Config.Image
@@ -415,9 +458,6 @@ func TestBuildImageSharedByPoolsRemovedAfterLastUser(t *testing.T) {
 	o, _ := testOwner(t)
 	c := newFakeClient()
 	c.imageBuild = c.buildStream("sha256:shared")
-	c.containerInspect = func(_ context.Context, id string) (container.InspectResponse, error) {
-		return container.InspectResponse{ID: id, Image: "sha256:shared"}, nil
-	}
 	a := newFakePool(t, c)
 	b := newFakePool(t, c)
 	opts := &BuildOptions{ContextDir: t.TempDir()}
@@ -452,39 +492,45 @@ func TestBuildImageSharedByPoolsRemovedAfterLastUser(t *testing.T) {
 }
 
 func TestBuildChangedImageUnderSameTagDoesNotReuseContainer(t *testing.T) {
-	testOwner(t)
-	c := newFakeClient()
-	images := make([]string, 0, 2)
-	c.containerInspect = func(_ context.Context, id string) (container.InspectResponse, error) {
-		return container.InspectResponse{ID: id, Image: images[len(images)-1]}, nil
-	}
-	p := newFakePool(t, c)
-	opts := &BuildOptions{ContextDir: t.TempDir()}
+	for _, tc := range []struct {
+		name string
+		key  string // reuse key of the second build
+		opts []RunOption
+	}{
+		{name: "default reuse key", key: "myapp:test@sha256:v2"},
+		{name: "custom reuse key", opts: []RunOption{WithReuseID("custom")}, key: "custom@sha256:v2"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testOwner(t)
+			c := newFakeClient()
+			p := newFakePool(t, c)
+			opts := &BuildOptions{ContextDir: t.TempDir()}
+			build := func(image string) ClosableResource {
+				t.Helper()
+				c.imageBuild = c.buildStream(image)
+				r, err := p.BuildAndRun(t.Context(), "myapp:test", opts, tc.opts...)
+				if err != nil {
+					t.Fatalf("BuildAndRun() of %s error = %v", image, err)
+				}
+				if r.Container().Image != image {
+					t.Fatalf("container image = %q, want %q", r.Container().Image, image)
+				}
+				return r
+			}
 
-	images = append(images, "sha256:v1")
-	c.imageBuild = c.buildStream("sha256:v1")
-	r1, err := p.BuildAndRun(t.Context(), "myapp:test", opts)
-	if err != nil {
-		t.Fatalf("first BuildAndRun() error = %v", err)
-	}
-	images = append(images, "sha256:v2")
-	c.imageBuild = c.buildStream("sha256:v2")
-	r2, err := p.BuildAndRun(t.Context(), "myapp:test", opts, WithReuseID("custom"))
-	if err != nil {
-		t.Fatalf("second BuildAndRun() error = %v", err)
-	}
-	r3, err := p.BuildAndRun(t.Context(), "myapp:test", opts, WithReuseID("custom"))
-	if err != nil {
-		t.Fatalf("third BuildAndRun() error = %v", err)
-	}
-	if r1.ID() == r2.ID() {
-		t.Fatal("changed build reused the container of the previous build")
-	}
-	if r2.ID() != r3.ID() {
-		t.Fatal("unchanged build with the same custom reuse ID did not reuse its container")
-	}
-	if _, ok := get(p.registryKey("custom@sha256:v2")); !ok {
-		t.Fatal("custom reuse key does not include the image ID")
+			r1 := build("sha256:v1")
+			r2 := build("sha256:v2")
+			r3 := build("sha256:v2")
+			if r1.ID() == r2.ID() {
+				t.Fatal("changed build reused the container of the previous build")
+			}
+			if r2.ID() != r3.ID() {
+				t.Fatal("unchanged build did not reuse its container")
+			}
+			if _, ok := get(p.registryKey(tc.key)); !ok {
+				t.Fatalf("registry has no entry for %q", tc.key)
+			}
+		})
 	}
 }
 
@@ -492,9 +538,6 @@ func TestBuildRetainImageIsNeverRemoved(t *testing.T) {
 	o, _ := testOwner(t)
 	c := newFakeClient()
 	c.imageBuild = c.buildStream("sha256:cached")
-	c.containerInspect = func(_ context.Context, id string) (container.InspectResponse, error) {
-		return container.InspectResponse{ID: id, Image: "sha256:cached"}, nil
-	}
 	p := newFakePool(t, c)
 	r, err := p.BuildAndRun(t.Context(), "myapp:test", &BuildOptions{ContextDir: t.TempDir(), RetainImage: true})
 	if err != nil {
@@ -525,9 +568,6 @@ func TestBuildDoesNotOwnPreexistingImage(t *testing.T) {
 	}
 	c.imageInspect = func(_ context.Context, id string) (image.InspectResponse, error) {
 		return inspectWithLabels(id, map[string]string{labelManaged: "true", labelRun: "someone-else"}), nil
-	}
-	c.containerInspect = func(_ context.Context, id string) (container.InspectResponse, error) {
-		return container.InspectResponse{ID: id, Image: "sha256:foreign"}, nil
 	}
 	p := newFakePool(t, c)
 	r, err := p.BuildAndRun(t.Context(), "myapp:test", &BuildOptions{ContextDir: t.TempDir()})
@@ -578,60 +618,65 @@ func TestBuildRunFailureRemovesFreshImage(t *testing.T) {
 	}
 }
 
-func TestImageRemoveConflictIsRetainedForRetry(t *testing.T) {
-	o, _ := testOwner(t)
-	c := newFakeClient()
-	c.imageBuild = c.buildStream("sha256:tagged-twice")
-	c.containerInspect = func(_ context.Context, id string) (container.InspectResponse, error) {
-		return container.InspectResponse{ID: id, Image: "sha256:tagged-twice"}, nil
-	}
-	conflict := errors.New("conflict: image is referenced in multiple repositories")
-	c.imageRemove = func(context.Context, string, mobyclient.ImageRemoveOptions) error { return conflict }
-	p := newFakePool(t, c)
-	r, err := p.BuildAndRun(t.Context(), "myapp:test", &BuildOptions{ContextDir: t.TempDir()})
-	if err != nil {
-		t.Fatalf("BuildAndRun() error = %v", err)
-	}
-	if err := r.Close(t.Context()); !errors.Is(err, conflict) {
-		t.Fatalf("Close() error = %v, want the conflict", err)
-	}
-	if left := o.leftovers(); len(left) != 1 || left[0] != "image sha256:tagged-twice" {
-		t.Fatalf("leftovers = %v, want the conflicting image", left)
-	}
-	if got := c.callsMatching("ImageRemove"); len(got) != 1 || !strings.Contains(got[0], "force=false") {
-		t.Fatalf("ImageRemove calls = %q, want exactly one non-forced attempt", got)
-	}
-}
-
 func TestSweepRunOnlyRemovesFullyMatchingResources(t *testing.T) {
+	want := map[string]string{labelManaged: "true", labelScope: "s", labelHost: "h", labelRun: "r1"}
+	variants := []struct {
+		labels map[string]string
+		name   string
+	}{
+		{labels: map[string]string{labelManaged: "true", labelScope: "s", labelHost: "h", labelRun: "r1"}, name: "owned"},
+		{labels: map[string]string{labelScope: "s", labelHost: "h", labelRun: "r1"}, name: "unmanaged"},
+		{labels: map[string]string{labelManaged: "true", labelHost: "h", labelRun: "r1"}, name: "no-scope"},
+		{labels: map[string]string{labelManaged: "true", labelScope: "other", labelHost: "h", labelRun: "r1"}, name: "other-scope"},
+		{labels: map[string]string{labelManaged: "true", labelScope: "s", labelRun: "r1"}, name: "no-host"},
+		{labels: map[string]string{labelManaged: "true", labelScope: "s", labelHost: "other", labelRun: "r1"}, name: "other-host"},
+		{labels: map[string]string{labelManaged: "true", labelScope: "s", labelHost: "h"}, name: "no-run"},
+		{labels: map[string]string{labelManaged: "true", labelScope: "s", labelHost: "h", labelRun: "r2"}, name: "other-run"},
+	}
 	c := newFakeClient()
-	want := map[string]string{labelManaged: "true", labelRun: "r1", labelHost: "h"}
-	full := map[string]string{labelManaged: "true", labelRun: "r1", labelHost: "h"}
-	partial := map[string]string{labelManaged: "true", labelRun: "r1"}
 	var filters mobyclient.Filters
 	c.containerList = func(_ context.Context, opts mobyclient.ContainerListOptions) ([]container.Summary, error) {
 		filters = opts.Filters
-		return []container.Summary{{ID: "ok", Labels: full}, {ID: "partial", Labels: partial}}, nil
+		all := make([]container.Summary, 0, 2*len(variants))
+		for _, v := range variants {
+			all = append(all,
+				container.Summary{ID: "running-" + v.name, State: container.StateRunning, Labels: v.labels},
+				container.Summary{ID: "stopped-" + v.name, State: container.StateExited, Labels: v.labels})
+		}
+		return listedContainers(opts, all...), nil
 	}
 	c.networkList = func(context.Context, mobyclient.NetworkListOptions) ([]network.Summary, error) {
-		return []network.Summary{{Network: network.Network{ID: "n-ok", Labels: full}}, {Network: network.Network{ID: "n-partial", Labels: partial}}}, nil
+		items := make([]network.Summary, 0, len(variants))
+		for _, v := range variants {
+			items = append(items, network.Summary{Network: network.Network{ID: "network-" + v.name, Labels: v.labels}})
+		}
+		return items, nil
 	}
 	c.imageList = func(context.Context, mobyclient.ImageListOptions) ([]image.Summary, error) {
-		retained := map[string]string{labelManaged: "true", labelRun: "r1", labelHost: "h", labelRetain: "true"}
-		return []image.Summary{{ID: "i-ok", Labels: full}, {ID: "i-retained", Labels: retained}, {ID: "i-partial", Labels: partial}}, nil
+		items := make([]image.Summary, 0, len(variants)+1)
+		items = append(items, image.Summary{ID: "image-retained", Labels: map[string]string{labelManaged: "true", labelScope: "s", labelHost: "h", labelRun: "r1", labelRetain: "true"}})
+		for _, v := range variants {
+			items = append(items, image.Summary{ID: "image-" + v.name, Labels: v.labels})
+		}
+		return items, nil
 	}
 
 	if err := sweepRun(t.Context(), c, want); err != nil {
 		t.Fatalf("sweepRun() error = %v", err)
 	}
-	for _, k := range []string{labelManaged + "=true", labelRun + "=r1", labelHost + "=h"} {
+	for _, k := range []string{labelManaged + "=true", labelScope + "=s", labelHost + "=h", labelRun + "=r1"} {
 		if !filters["label"][k] {
 			t.Fatalf("list filters %v miss label %q", filters, k)
 		}
 	}
-	got := strings.Join(c.callsMatching("ContainerRemove"), ";") + "|" + strings.Join(c.callsMatching("NetworkRemove"), ";") + "|" + strings.Join(c.callsMatching("ImageRemove"), ";")
-	wantCalls := "ContainerRemove ok force=true volumes=true canceled=false|NetworkRemove n-ok canceled=false|ImageRemove i-ok force=false prune=false"
-	if got != wantCalls {
+	got := slices.Concat(c.callsMatching("ContainerRemove"), c.callsMatching("NetworkRemove"), c.callsMatching("ImageRemove"))
+	wantCalls := []string{
+		"ContainerRemove running-owned force=true volumes=true canceled=false",
+		"ContainerRemove stopped-owned force=true volumes=true canceled=false",
+		"NetworkRemove network-owned canceled=false",
+		"ImageRemove image-owned force=false prune=false",
+	}
+	if !slices.Equal(got, wantCalls) {
 		t.Fatalf("removals = %q\nwant       %q", got, wantCalls)
 	}
 }
@@ -718,9 +763,6 @@ func TestImageDeletionDeferredWhileBuildPending(t *testing.T) {
 	o, _ := testOwner(t)
 	c := newFakeClient()
 	c.imageBuild = c.buildStream("sha256:same")
-	c.containerInspect = func(_ context.Context, id string) (container.InspectResponse, error) {
-		return container.InspectResponse{ID: id, Image: "sha256:same"}, nil
-	}
 	p := newFakePool(t, c)
 	opts := &BuildOptions{ContextDir: t.TempDir()}
 	r1, err := p.BuildAndRun(t.Context(), "myapp:test", opts, WithoutReuse())
@@ -774,49 +816,70 @@ func TestImageDeletionDeferredWhileBuildPending(t *testing.T) {
 }
 
 func TestBuildWaitsForInflightImageDeletion(t *testing.T) {
-	o, _ := testOwner(t)
-	c := newFakeClient()
-	c.imageBuild = c.buildStream("sha256:same")
-	c.containerInspect = func(_ context.Context, id string) (container.InspectResponse, error) {
-		return container.InspectResponse{ID: id, Image: "sha256:same"}, nil
-	}
-	p := newFakePool(t, c)
-	opts := &BuildOptions{ContextDir: t.TempDir()}
-	r, err := p.BuildAndRun(t.Context(), "myapp:test", opts, WithoutReuse())
-	if err != nil {
-		t.Fatalf("BuildAndRun() error = %v", err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		o, _ := testOwner(t)
+		c := newFakeClient()
+		c.imageBuild = c.buildStream("sha256:same")
+		p := newFakePool(t, c)
+		opts := &BuildOptions{ContextDir: t.TempDir()}
+		r, err := p.BuildAndRun(t.Context(), "myapp:test", opts, WithoutReuse())
+		if err != nil {
+			t.Fatalf("BuildAndRun() error = %v", err)
+		}
 
-	removing, proceed := make(chan struct{}), make(chan struct{})
-	c.imageRemove = func(context.Context, string, mobyclient.ImageRemoveOptions) error {
-		close(removing)
-		<-proceed
-		return nil
-	}
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		if closeErr := r.Close(t.Context()); closeErr != nil {
-			t.Errorf("Close() error = %v", closeErr)
+		proceed := make(chan struct{})
+		c.imageRemove = func(context.Context, string, mobyclient.ImageRemoveOptions) error {
+			<-proceed
+			return nil
+		}
+		go func() {
+			if closeErr := r.Close(t.Context()); closeErr != nil {
+				t.Errorf("Close() error = %v", closeErr)
+			}
+		}()
+		synctest.Wait()
+
+		// Both builds wait for the deletion; one gives up, the other proceeds
+		// once the deletion is done.
+		ctx, cancel := context.WithCancel(t.Context())
+		canceled := make(chan error, 1)
+		go func() {
+			_, buildErr := p.BuildAndRun(ctx, "myapp:test", opts, WithoutReuse())
+			canceled <- buildErr
+		}()
+		var released ClosableResource
+		releasedDone := make(chan error, 1)
+		go func() {
+			var buildErr error
+			released, buildErr = p.BuildAndRun(t.Context(), "myapp:test", opts, WithoutReuse())
+			releasedDone <- buildErr
+		}()
+		synctest.Wait()
+		if got := c.callsMatching("ImageBuild"); len(got) != 1 {
+			t.Fatalf("ImageBuild calls = %q, want no build during the deletion", got)
+		}
+
+		cancel()
+		if err := <-canceled; !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled BuildAndRun() error = %v, want context.Canceled", err)
+		}
+		close(proceed)
+		if err := <-releasedDone; err != nil {
+			t.Fatalf("released BuildAndRun() error = %v", err)
+		}
+		if got := c.callsMatching("ImageBuild"); len(got) != 2 {
+			t.Fatalf("ImageBuild calls = %q, want one build after the deletion", got)
+		}
+		if users, ok := o.imageUsers("daemon-1", "sha256:same"); !ok || users != 1 {
+			t.Fatalf("image users = %d, %t; want the rebuilt image owned by its container", users, ok)
+		}
+		if err := released.Close(t.Context()); err != nil {
+			t.Fatalf("Close() error = %v", err)
+		}
+		if left := o.leftovers(); len(left) != 0 {
+			t.Fatalf("leftovers = %v, want none", left)
 		}
 	})
-	<-removing
-
-	// The deletion is in flight, so the build must wait for it; with an
-	// expired context it gives up without building.
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	if _, err := p.BuildAndRun(ctx, "myapp:test", opts, WithoutReuse()); !errors.Is(err, context.Canceled) {
-		t.Fatalf("BuildAndRun() error = %v, want context.Canceled", err)
-	}
-	if got := c.callsMatching("ImageBuild"); len(got) != 1 {
-		t.Fatalf("ImageBuild calls = %q, want no build during the deletion", got)
-	}
-
-	close(proceed)
-	wg.Wait()
-	if left := o.leftovers(); len(left) != 0 {
-		t.Fatalf("leftovers = %v, want none", left)
-	}
 }
 
 func TestImageRecordsAreScopedByDaemon(t *testing.T) {
@@ -825,9 +888,6 @@ func TestImageRecordsAreScopedByDaemon(t *testing.T) {
 		c := newFakeClient()
 		c.daemonID = daemonID
 		c.imageBuild = c.buildStream("sha256:same")
-		c.containerInspect = func(_ context.Context, id string) (container.InspectResponse, error) {
-			return container.InspectResponse{ID: id, Image: "sha256:same"}, nil
-		}
 		// Container IDs are random and therefore unique across daemons.
 		c.containerCreate = func(context.Context, mobyclient.ContainerCreateOptions) (string, error) {
 			return "container-on-" + daemonID, nil
@@ -875,104 +935,112 @@ func TestImageRecordsAreScopedByDaemon(t *testing.T) {
 func TestPoolCloseHonorsDeadlineWhileRemovalInFlight(t *testing.T) {
 	for _, kind := range []string{"container", "network"} {
 		t.Run(kind, func(t *testing.T) {
-			testOwner(t)
-			c := newFakeClient()
-			removing, proceed := make(chan struct{}), make(chan struct{})
-			block := func() {
-				close(removing)
-				<-proceed
-			}
-			c.containerRemove = func(context.Context, string, mobyclient.ContainerRemoveOptions) error { block(); return nil }
-			c.networkRemove = func(context.Context, string) error { block(); return nil }
-			p := newFakePool(t, c)
+			synctest.Test(t, func(t *testing.T) {
+				testOwner(t)
+				c := newFakeClient()
+				proceed := make(chan struct{})
+				c.containerRemove = func(context.Context, string, mobyclient.ContainerRemoveOptions) error { <-proceed; return nil }
+				c.networkRemove = func(context.Context, string) error { <-proceed; return nil }
+				p := newFakePool(t, c)
 
-			var closer interface{ Close(context.Context) error }
-			var err error
-			if kind == "container" {
-				closer, err = p.Run(t.Context(), "alpine", WithoutReuse())
-			} else {
-				closer, err = p.CreateNetwork(t.Context(), "net", nil)
-			}
-			if err != nil {
-				t.Fatalf("create error = %v", err)
-			}
-			var wg sync.WaitGroup
-			wg.Go(func() {
-				if closeErr := closer.Close(t.Context()); closeErr != nil {
-					t.Errorf("Close() error = %v", closeErr)
+				var closer interface{ Close(context.Context) error }
+				var err error
+				if kind == "container" {
+					closer, err = p.Run(t.Context(), "alpine", WithoutReuse())
+				} else {
+					closer, err = p.CreateNetwork(t.Context(), "net", nil)
 				}
+				if err != nil {
+					t.Fatalf("create error = %v", err)
+				}
+				go func() {
+					if closeErr := closer.Close(t.Context()); closeErr != nil {
+						t.Errorf("Close() error = %v", closeErr)
+					}
+				}()
+				synctest.Wait()
+
+				// The pool's Close shares the in-flight removal but gives up
+				// at its own deadline, before the pool's cleanup timeout.
+				const deadline = 30 * time.Second
+				ctx, cancel := context.WithTimeout(t.Context(), deadline)
+				defer cancel()
+				start := time.Now()
+				if err := p.Close(ctx); !errors.Is(err, context.DeadlineExceeded) {
+					t.Fatalf("Pool.Close() error = %v, want context.DeadlineExceeded", err)
+				}
+				if elapsed := time.Since(start); elapsed != deadline {
+					t.Fatalf("Pool.Close() took %v, want %v", elapsed, deadline)
+				}
+				close(proceed)
 			})
-			<-removing
-
-			// The pool's Close shares the in-flight removal but must give up
-			// when its own context expires.
-			ctx, cancel := context.WithCancel(t.Context())
-			cancel()
-			if err := p.Close(ctx); !errors.Is(err, context.Canceled) {
-				t.Fatalf("Pool.Close() error = %v, want context.Canceled", err)
-			}
-
-			close(proceed)
-			wg.Wait()
 		})
 	}
 }
 
 func TestDaemonRegistrationWaitsForHook(t *testing.T) {
-	o, _ := testOwner(t)
-	c := newFakeClient()
-	entered, proceed := make(chan struct{}), make(chan struct{})
-	hookErr := errors.New("manifest write failed")
-	var calls int
-	err := o.install("scope", func(context.Context, string, client.DockerClient) error {
-		calls++
-		if calls == 1 {
-			close(entered)
-			<-proceed
-			return hookErr
+	synctest.Test(t, func(t *testing.T) {
+		o, _ := testOwner(t)
+		c := newFakeClient()
+		proceed := make(chan struct{})
+		hookErr := errors.New("manifest write failed")
+		var calls int
+		err := o.install("scope", func(context.Context, string, client.DockerClient) error {
+			calls++
+			if calls == 1 {
+				<-proceed
+				return hookErr
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("install() error = %v", err)
 		}
-		return nil
-	})
-	if err != nil {
-		t.Fatalf("install() error = %v", err)
-	}
-	a, b := newFakePool(t, c), newFakePool(t, c)
+		a, b := newFakePool(t, c), newFakePool(t, c)
 
-	var wg sync.WaitGroup
-	wg.Go(func() {
-		if _, runErr := a.Run(t.Context(), "alpine", WithoutReuse()); !errors.Is(runErr, hookErr) {
-			t.Errorf("a.Run() error = %v, want the hook error", runErr)
+		run := func(ctx context.Context, p *pool) <-chan error {
+			result := make(chan error, 1)
+			go func() {
+				_, runErr := p.Run(ctx, "alpine", WithoutReuse())
+				result <- runErr
+			}()
+			return result
+		}
+		first := run(t.Context(), a)
+		synctest.Wait()
+
+		// The daemon is not registered while the hook is pending: other
+		// callers wait for it instead of creating resources.
+		ctx, cancel := context.WithCancel(t.Context())
+		canceled := run(ctx, b)
+		waiting := run(t.Context(), b)
+		synctest.Wait()
+		if got := c.callsMatching("ContainerCreate"); len(got) != 0 {
+			t.Fatalf("container created before the daemon hook finished: %q", got)
+		}
+		cancel()
+		if err := <-canceled; !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled Run() error = %v, want context.Canceled", err)
+		}
+
+		close(proceed)
+		if err := <-first; !errors.Is(err, hookErr) {
+			t.Fatalf("first Run() error = %v, want the hook error", err)
+		}
+		// The waiting caller runs the failed hook again.
+		if err := <-waiting; err != nil {
+			t.Fatalf("waiting Run() error = %v", err)
+		}
+		if calls != 2 {
+			t.Fatalf("hook calls = %d, want the failed hook retried", calls)
+		}
+		if got := c.callsMatching("ContainerCreate"); len(got) != 1 {
+			t.Fatalf("ContainerCreate calls = %q, want only the retried caller's", got)
 		}
 	})
-	<-entered
-
-	// The daemon is not registered while the hook is pending: another pool
-	// waits for it instead of creating resources.
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	if _, err := b.Run(ctx, "alpine", WithoutReuse()); !errors.Is(err, context.Canceled) {
-		t.Fatalf("b.Run() error = %v, want context.Canceled", err)
-	}
-	if got := c.callsMatching("ContainerCreate"); len(got) != 0 {
-		t.Fatalf("container created before the daemon hook finished: %q", got)
-	}
-
-	close(proceed)
-	wg.Wait()
-	if got := c.callsMatching("ContainerCreate"); len(got) != 0 {
-		t.Fatalf("container created although the daemon hook failed: %q", got)
-	}
-
-	// The failed hook is run again by the next caller.
-	if _, err := b.Run(t.Context(), "alpine", WithoutReuse()); err != nil {
-		t.Fatalf("b.Run() after failed hook error = %v", err)
-	}
-	if calls != 2 {
-		t.Fatalf("hook calls = %d, want the failed hook retried", calls)
-	}
 }
 
-func TestImageRemovalNeverUsesMutableTags(t *testing.T) {
+func TestImageRemoveConflictIsRetainedForRetry(t *testing.T) {
 	conflict := fmt.Errorf("%w: unable to delete (must be forced) - image is referenced in multiple repositories", errdefs.ErrConflict)
 	// newClient returns a client on which image sha256:x is tagged twice, so
 	// that deletion by ID conflicts. Tag myapp:b may meanwhile point to an
@@ -980,9 +1048,6 @@ func TestImageRemovalNeverUsesMutableTags(t *testing.T) {
 	newClient := func() *fakeClient {
 		c := newFakeClient()
 		c.imageBuild = c.buildStream("sha256:x")
-		c.containerInspect = func(_ context.Context, id string) (container.InspectResponse, error) {
-			return container.InspectResponse{ID: id, Image: "sha256:x"}, nil
-		}
 		c.imageInspect = func(_ context.Context, id string) (image.InspectResponse, error) {
 			c.mu.Lock()
 			resp := inspectWithLabels(id, c.images[id])
@@ -1058,9 +1123,6 @@ func TestSharedContainerRemovalRetriedByLastReleasingPool(t *testing.T) {
 		c := newFakeClient()
 		c.daemonID = daemonID
 		c.imageBuild = c.buildStream("sha256:img")
-		c.containerInspect = func(_ context.Context, id string) (container.InspectResponse, error) {
-			return container.InspectResponse{ID: id, Image: "sha256:img"}, nil
-		}
 		return c
 	}
 	ca, cb, other := newClient("daemon-1"), newClient("daemon-1"), newClient("daemon-2")
@@ -1143,7 +1205,7 @@ func TestOwnershipLabelsOverrideReservedRetainLabel(t *testing.T) {
 
 	// Recovery removes an image whose retention was overridden.
 	c := newFakeClient()
-	want := runLabels("", "host-test", "run-test")
+	want := map[string]string{labelManaged: "true", labelHost: "host-test", labelRun: "run-test"}
 	derived := o.withOwnershipLabels(inherited, false)
 	c.imageList = func(context.Context, mobyclient.ImageListOptions) ([]image.Summary, error) {
 		return []image.Summary{{ID: "sha256:derived", Labels: derived}}, nil
@@ -1157,61 +1219,35 @@ func TestOwnershipLabelsOverrideReservedRetainLabel(t *testing.T) {
 }
 
 func TestDeferredImageDeletionRetriedWhenBuildsDrain(t *testing.T) {
-	// setup builds image sha256:x on p and returns its container, and a
-	// function that starts a second build on q which blocks until release is
-	// called and then reports result (an image ID, or "" for a failed build).
-	setup := func(t *testing.T, p, q *pool, c *fakeClient, result string) (ClosableResource, func() (release func() ClosableResource)) {
+	buildX := func(t *testing.T, p *pool, c *fakeClient) ClosableResource {
 		t.Helper()
+		c.imageBuild = c.buildStream("sha256:x")
 		x, err := p.BuildAndRun(t.Context(), "myapp:x", &BuildOptions{ContextDir: t.TempDir()}, WithoutReuse())
 		if err != nil {
 			t.Fatalf("BuildAndRun(x) error = %v", err)
 		}
-		return x, func() func() ClosableResource {
-			building, proceed := make(chan struct{}), make(chan struct{})
-			c.imageBuild = func(ctx context.Context, opts mobyclient.ImageBuildOptions) (io.ReadCloser, error) {
-				close(building)
-				<-proceed
-				if result == "" {
-					return io.NopCloser(strings.NewReader(`{"errorDetail":{"message":"RUN exited 1"}}` + "\n")), nil
-				}
-				return c.buildStream(result)(ctx, opts)
-			}
-			var y ClosableResource
-			var wg sync.WaitGroup
-			wg.Go(func() {
-				var buildErr error
-				y, buildErr = q.BuildAndRun(t.Context(), "myapp:y", &BuildOptions{ContextDir: t.TempDir()}, WithoutReuse())
-				if (buildErr == nil) != (result != "") {
-					t.Errorf("BuildAndRun(y) error = %v", buildErr)
-				}
-			})
-			<-building
-			return func() ClosableResource {
-				close(proceed)
-				wg.Wait()
-				return y
-			}
-		}
+		return x
 	}
-	newClient := func() *fakeClient {
-		c := newFakeClient()
-		c.imageBuild = c.buildStream("sha256:x")
-		// Containers are created from the built image's ID.
-		images := map[string]string{}
-		c.containerCreate = func(_ context.Context, opts mobyclient.ContainerCreateOptions) (string, error) {
-			c.mu.Lock()
-			defer c.mu.Unlock()
-			c.created++
-			id := fmt.Sprintf("container-%d", c.created)
-			images[id] = opts.Config.Image
-			return id, nil
+	// startY starts a build of myapp:y through p, which blocks in the daemon
+	// until proceed is closed and then reports image id, or fails if id is
+	// empty. The build's resource is sent on the returned channel.
+	startY := func(t *testing.T, p *pool, c *fakeClient, id string, proceed <-chan struct{}) <-chan ClosableResource {
+		c.imageBuild = func(ctx context.Context, opts mobyclient.ImageBuildOptions) (io.ReadCloser, error) {
+			<-proceed
+			if id == "" {
+				return io.NopCloser(strings.NewReader(`{"errorDetail":{"message":"RUN exited 1"}}` + "\n")), nil
+			}
+			return c.buildStream(id)(ctx, opts)
 		}
-		c.containerInspect = func(_ context.Context, id string) (container.InspectResponse, error) {
-			c.mu.Lock()
-			defer c.mu.Unlock()
-			return container.InspectResponse{ID: id, Image: images[id]}, nil
-		}
-		return c
+		y := make(chan ClosableResource, 1)
+		go func() {
+			r, err := p.BuildAndRun(t.Context(), "myapp:y", &BuildOptions{ContextDir: t.TempDir()}, WithoutReuse())
+			if (err == nil) != (id != "") {
+				t.Errorf("BuildAndRun(y) error = %v", err)
+			}
+			y <- r
+		}()
+		return y
 	}
 	removedX := func(t *testing.T, c *fakeClient) {
 		t.Helper()
@@ -1222,106 +1258,131 @@ func TestDeferredImageDeletionRetriedWhenBuildsDrain(t *testing.T) {
 
 	for _, result := range []string{"", "sha256:y"} {
 		t.Run("second build "+cmp.Or(result, "fails"), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				o, _ := testOwner(t)
+				c := newFakeClient()
+				p := newFakePool(t, c)
+				x := buildX(t, p, c)
+				proceed := make(chan struct{})
+				pending := startY(t, p, c, result, proceed)
+				synctest.Wait()
+
+				if err := x.Close(t.Context()); err != nil {
+					t.Fatalf("x.Close() error = %v", err)
+				}
+				if got := c.callsMatching("ImageRemove"); len(got) != 0 {
+					t.Fatalf("image removed while a build was pending: %q", got)
+				}
+
+				// Only resources are closed: no pool cleanup triggers the retry.
+				close(proceed)
+				y := <-pending
+				removedX(t, c)
+				if y != nil {
+					if err := y.Close(t.Context()); err != nil {
+						t.Fatalf("y.Close() error = %v", err)
+					}
+				}
+				if left := o.leftovers(); len(left) != 0 {
+					t.Fatalf("leftovers = %v, want none", left)
+				}
+			})
+		})
+	}
+
+	t.Run("originating pool closed", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
 			o, _ := testOwner(t)
-			c := newClient()
-			p := newFakePool(t, c)
-			x, startY := setup(t, p, p, c, result)
-			releaseY := startY()
+			ca, cb := newFakeClient(), newFakeClient()
+			a, b := newFakePool(t, ca), newFakePool(t, cb)
+			a.ownedClient = true
+			x := buildX(t, a, ca)
+			proceed := make(chan struct{})
+			pending := startY(t, b, cb, "", proceed)
+			synctest.Wait()
+
 			if err := x.Close(t.Context()); err != nil {
 				t.Fatalf("x.Close() error = %v", err)
 			}
-			if got := c.callsMatching("ImageRemove"); len(got) != 0 {
-				t.Fatalf("image removed while a build was pending: %q", got)
+			if err := a.Close(t.Context()); err != nil {
+				t.Fatalf("a.Close() error = %v", err)
+			}
+			if !ca.closed {
+				t.Fatal("a's owned client not closed")
+			}
+			close(proceed)
+			<-pending
+			if got := ca.callsMatching("ImageRemove"); len(got) != 0 {
+				t.Fatalf("image removed through the closed client: %q", got)
+			}
+			removedX(t, cb)
+			if left := o.leftovers(); len(left) != 0 {
+				t.Fatalf("leftovers = %v, want none", left)
+			}
+		})
+	})
+
+	t.Run("failed retry is kept", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			o, stderr := testOwner(t)
+			c := newFakeClient()
+			p := newFakePool(t, c)
+			x := buildX(t, p, c)
+			proceed := make(chan struct{})
+			pending := startY(t, p, c, "", proceed)
+			synctest.Wait()
+
+			if err := x.Close(t.Context()); err != nil {
+				t.Fatalf("x.Close() error = %v", err)
+			}
+			removeErr := errors.New("busy")
+			c.imageRemove = func(context.Context, string, mobyclient.ImageRemoveOptions) error { return removeErr }
+			close(proceed)
+			<-pending
+			if left := o.leftovers(); len(left) != 1 || left[0] != "image sha256:x" {
+				t.Fatalf("leftovers = %v, want x kept for retry", left)
+			}
+			if !strings.Contains(stderr.String(), removeErr.Error()) {
+				t.Fatalf("stderr = %q, want the failed retry reported", stderr.String())
 			}
 
-			// Only resources are closed: no pool cleanup triggers the retry.
-			y := releaseY()
-			removedX(t, c)
-			if y != nil {
-				if err := y.Close(t.Context()); err != nil {
-					t.Fatalf("y.Close() error = %v", err)
-				}
+			c.imageRemove = nil
+			if err := p.Close(t.Context()); err != nil {
+				t.Fatalf("Close() error = %v", err)
+			}
+			if got := c.callsMatching("ImageRemove sha256:x"); len(got) != 2 {
+				t.Fatalf("ImageRemove calls for x = %q, want a failed attempt and a retry", got)
 			}
 			if left := o.leftovers(); len(left) != 0 {
 				t.Fatalf("leftovers = %v, want none", left)
 			}
 		})
-	}
-
-	t.Run("originating pool closed", func(t *testing.T) {
-		o, _ := testOwner(t)
-		ca, cb := newClient(), newClient()
-		a, b := newFakePool(t, ca), newFakePool(t, cb)
-		a.ownedClient = true
-		x, startY := setup(t, a, b, cb, "")
-		releaseY := startY()
-		if err := x.Close(t.Context()); err != nil {
-			t.Fatalf("x.Close() error = %v", err)
-		}
-		if err := a.Close(t.Context()); err != nil {
-			t.Fatalf("a.Close() error = %v", err)
-		}
-		if !ca.closed {
-			t.Fatal("a's owned client not closed")
-		}
-		releaseY()
-		if got := ca.callsMatching("ImageRemove"); len(got) != 0 {
-			t.Fatalf("image removed through the closed client: %q", got)
-		}
-		removedX(t, cb)
-		if left := o.leftovers(); len(left) != 0 {
-			t.Fatalf("leftovers = %v, want none", left)
-		}
-	})
-
-	t.Run("failed retry is kept", func(t *testing.T) {
-		o, stderr := testOwner(t)
-		c := newClient()
-		p := newFakePool(t, c)
-		x, startY := setup(t, p, p, c, "")
-		releaseY := startY()
-		if err := x.Close(t.Context()); err != nil {
-			t.Fatalf("x.Close() error = %v", err)
-		}
-		removeErr := errors.New("busy")
-		c.imageRemove = func(context.Context, string, mobyclient.ImageRemoveOptions) error { return removeErr }
-		releaseY()
-		if left := o.leftovers(); len(left) != 1 || left[0] != "image sha256:x" {
-			t.Fatalf("leftovers = %v, want x kept for retry", left)
-		}
-		if !strings.Contains(stderr.String(), removeErr.Error()) {
-			t.Fatalf("stderr = %q, want the failed retry reported", stderr.String())
-		}
-		c.imageRemove = nil
-		if err := p.Close(t.Context()); err != nil {
-			t.Fatalf("Close() error = %v", err)
-		}
-		if got := c.callsMatching("ImageRemove sha256:x"); len(got) != 2 {
-			t.Fatalf("ImageRemove calls for x = %q, want a failed attempt and a retry", got)
-		}
-		if left := o.leftovers(); len(left) != 0 {
-			t.Fatalf("leftovers = %v, want none", left)
-		}
 	})
 
 	t.Run("retained and used images stay", func(t *testing.T) {
-		testOwner(t)
-		c := newClient()
-		p := newFakePool(t, c)
-		c.imageBuild = c.buildStream("sha256:retained")
-		retained, err := p.BuildAndRun(t.Context(), "myapp:r", &BuildOptions{ContextDir: t.TempDir(), RetainImage: true}, WithoutReuse())
-		if err != nil {
-			t.Fatalf("BuildAndRun(retained) error = %v", err)
-		}
-		if err := retained.Close(t.Context()); err != nil {
-			t.Fatalf("Close() error = %v", err)
-		}
-		c.imageBuild = c.buildStream("sha256:x")
-		_, startY := setup(t, p, p, c, "")
-		startY()()
-		if got := c.callsMatching("ImageRemove"); len(got) != 0 {
-			t.Fatalf("ImageRemove calls = %q, want retained and used images kept", got)
-		}
+		synctest.Test(t, func(t *testing.T) {
+			testOwner(t)
+			c := newFakeClient()
+			p := newFakePool(t, c)
+			c.imageBuild = c.buildStream("sha256:retained")
+			retained, err := p.BuildAndRun(t.Context(), "myapp:r", &BuildOptions{ContextDir: t.TempDir(), RetainImage: true}, WithoutReuse())
+			if err != nil {
+				t.Fatalf("BuildAndRun(retained) error = %v", err)
+			}
+			if err := retained.Close(t.Context()); err != nil {
+				t.Fatalf("Close() error = %v", err)
+			}
+			buildX(t, p, c)
+			proceed := make(chan struct{})
+			pending := startY(t, p, c, "", proceed)
+			synctest.Wait()
+
+			close(proceed)
+			<-pending
+			if got := c.callsMatching("ImageRemove"); len(got) != 0 {
+				t.Fatalf("ImageRemove calls = %q, want retained and used images kept", got)
+			}
+		})
 	})
 }
 
@@ -1357,7 +1418,7 @@ func TestRecoveryRemovesIntermediateImage(t *testing.T) {
 	// untagged intermediate image that a default image listing omits.
 	parentID := build("FROM alpine:latest\nCMD [\"sleep\", \"300\"]\n")
 	childID := build("FROM dockertest-intermediate:test\nRUN true\n")
-	want := runLabels("", "host-test", "run-test")
+	want := map[string]string{labelManaged: "true", labelHost: "host-test", labelRun: "run-test"}
 	filters := mobyclient.Filters{}
 	for k, v := range want {
 		filters.Add("label", k+"="+v)
@@ -1431,7 +1492,7 @@ func TestRecoveryRemovesImageDerivedFromRetainedImage(t *testing.T) {
 	}
 
 	// The run is abandoned: recovery sweeps everything carrying its labels.
-	if err := sweepRun(ctx, c, runLabels("", "host-test", "run-test")); err != nil {
+	if err := sweepRun(ctx, c, map[string]string{labelManaged: "true", labelHost: "host-test", labelRun: "run-test"}); err != nil {
 		t.Fatalf("sweepRun() error = %v", err)
 	}
 	if _, err := c.ImageInspect(ctx, derivedID); !errdefs.IsNotFound(err) {
@@ -1481,7 +1542,6 @@ func TestRunProtectsResolvedImageUntilContainerAttached(t *testing.T) {
 		t.Run(fmt.Sprintf("same pool %t", samePool), func(t *testing.T) {
 			o, _ := testOwner(t)
 			c := newFakeClient()
-			c.containerInspect = inspectX
 			creating, proceed := pauseCreate(c, nil)
 			a := newFakePool(t, c)
 			b := a
@@ -1556,7 +1616,6 @@ func TestRunProtectsResolvedImageUntilContainerAttached(t *testing.T) {
 		t.Run(step+" failure", func(t *testing.T) {
 			o, _ := testOwner(t)
 			c := newFakeClient()
-			c.containerInspect = inspectX
 			failure := errors.New(step + " failed")
 			creating, proceed := failures[step](c, failure)
 			p := newFakePool(t, c)
@@ -1591,12 +1650,10 @@ func TestRunProtectsResolvedImageUntilContainerAttached(t *testing.T) {
 	t.Run("unrelated daemon is not blocked", func(t *testing.T) {
 		o, _ := testOwner(t)
 		c := newFakeClient()
-		c.containerInspect = inspectX
 		creating, proceed := pauseCreate(c, nil)
 		p := newFakePool(t, c)
 		other := newFakeClient()
 		other.daemonID = "daemon-2"
-		other.containerInspect = inspectX
 		other.containerCreate = func(context.Context, mobyclient.ContainerCreateOptions) (string, error) {
 			return "daemon-2-container", nil
 		}
@@ -1629,39 +1686,44 @@ func TestRunProtectsResolvedImageUntilContainerAttached(t *testing.T) {
 	})
 
 	t.Run("waits for in-flight deletion", func(t *testing.T) {
-		o, _ := testOwner(t)
-		c := newFakeClient()
-		c.containerInspect = inspectX
-		p := newFakePool(t, c)
-		r := buildOwnedImage(t, p, c)
+		synctest.Test(t, func(t *testing.T) {
+			o, _ := testOwner(t)
+			c := newFakeClient()
+			p := newFakePool(t, c)
+			r := buildOwnedImage(t, p, c)
 
-		removing, proceed := make(chan struct{}), make(chan struct{})
-		c.imageRemove = func(context.Context, string, mobyclient.ImageRemoveOptions) error {
-			close(removing)
-			<-proceed
-			return nil
-		}
-		var wg sync.WaitGroup
-		wg.Go(func() {
-			if closeErr := r.Close(t.Context()); closeErr != nil {
-				t.Errorf("Close() error = %v", closeErr)
+			proceed := make(chan struct{})
+			c.imageRemove = func(context.Context, string, mobyclient.ImageRemoveOptions) error {
+				<-proceed
+				return nil
+			}
+			go func() {
+				if closeErr := r.Close(t.Context()); closeErr != nil {
+					t.Errorf("Close() error = %v", closeErr)
+				}
+			}()
+			synctest.Wait()
+
+			ctx, cancel := context.WithCancel(t.Context())
+			result := make(chan error, 1)
+			go func() {
+				_, runErr := p.Run(ctx, "myapp", WithTag("test"), WithoutReuse())
+				result <- runErr
+			}()
+			synctest.Wait()
+			if got := c.callsMatching("ImageInspect myapp:test"); len(got) != 0 {
+				t.Fatalf("image resolved during its deletion: %q", got)
+			}
+			cancel()
+			if err := <-result; !errors.Is(err, context.Canceled) {
+				t.Fatalf("Run() error = %v, want context.Canceled", err)
+			}
+			close(proceed)
+			synctest.Wait()
+			if left := o.leftovers(); len(left) != 0 {
+				t.Fatalf("leftovers = %v, want none", left)
 			}
 		})
-		<-removing
-
-		ctx, cancel := context.WithCancel(t.Context())
-		cancel()
-		if _, err := p.Run(ctx, "myapp", WithTag("test"), WithoutReuse()); !errors.Is(err, context.Canceled) {
-			t.Fatalf("Run() error = %v, want context.Canceled", err)
-		}
-		if got := c.callsMatching("ImageInspect myapp:test"); len(got) != 0 {
-			t.Fatalf("image resolved during its deletion: %q", got)
-		}
-		close(proceed)
-		wg.Wait()
-		if left := o.leftovers(); len(left) != 0 {
-			t.Fatalf("leftovers = %v, want none", left)
-		}
 	})
 }
 
@@ -1847,9 +1909,6 @@ func TestBuildKeepsUnverifiedImageForCleanup(t *testing.T) {
 		})
 		c2 := newFakeClient()
 		c2.daemonID = "daemon-2"
-		c2.containerInspect = func(_ context.Context, id string) (container.InspectResponse, error) {
-			return container.InspectResponse{ID: id, Image: "sha256:x"}, nil
-		}
 		c2.containerCreate = func(context.Context, mobyclient.ContainerCreateOptions) (string, error) {
 			return "daemon-2-container", nil
 		}
@@ -1954,9 +2013,6 @@ func TestContainerNotFoundOnRetryIsSuccess(t *testing.T) {
 	t.Run("attached image error propagates", func(t *testing.T) {
 		o, _ := testOwner(t)
 		c := newFakeClient()
-		c.containerInspect = func(_ context.Context, id string) (container.InspectResponse, error) {
-			return container.InspectResponse{ID: id, Image: "sha256:x"}, nil
-		}
 		p := newFakePool(t, c)
 		r := buildOwnedImage(t, p, c)
 		c.containerRemove = func(context.Context, string, mobyclient.ContainerRemoveOptions) error { return notFound }
@@ -1988,7 +2044,6 @@ func TestImageRegistrationCountsAttachedContainers(t *testing.T) {
 	pauseBuild := func(c *fakeClient, failure error) (inspecting, proceed chan struct{}) {
 		inspecting, proceed = make(chan struct{}), make(chan struct{})
 		c.imageBuild = c.buildStream("sha256:x")
-		c.containerInspect = inspectX
 		var paused bool
 		c.imageInspect = func(_ context.Context, id string) (image.InspectResponse, error) {
 			c.mu.Lock()

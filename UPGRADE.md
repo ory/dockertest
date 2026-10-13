@@ -387,18 +387,8 @@ Available `BuildOptions` fields: `ContextDir` (required), `Dockerfile` (defaults
 to `"Dockerfile"`), `Tags`, `BuildArgs` (`map[string]*string`), `Labels`,
 `NoCache`, `ForceRemove`, `RetainImage`.
 
-> [!IMPORTANT]
->
-> The container is created from the immutable image ID, so a changed build under
-> the same tag always gets a fresh container. The owned final image is removed
-> once its last container is gone, unless removal conflicts (for example,
-> because it has multiple tags). Set `RetainImage: true` to keep the image
-> across runs. dockertest never removes images it did not build and never forces
-> an image removal. Classic-builder intermediate images without complete
-> ownership labels and builder cache can remain and accumulate even when cleanup
-> succeeds. dockertest does not prune image parents or builder cache;
-> `ForceRemove` only removes intermediate build containers. Cleanup does not
-> bound builder disk usage.
+Built images are now removed with their last container unless `RetainImage` is
+set. See the README for image lifetime, removal conflicts, and limits.
 
 ### Container Networks
 
@@ -453,16 +443,10 @@ func TestMain(m *testing.M) {
 }
 ```
 
-`Main` owns process exit, runs `m.Run`, cleans up the package's owned
-containers, networks, and non-retained build images, and exits with the test
-status. Image cleanup requires complete ownership labels; the classic-builder
-intermediate image and cache limitations above also apply to recovery. Cleanup
-errors are warnings on stderr. `SIGINT`/`SIGTERM` trigger cleanup and exit with
-130/143. The optional `Cleanup` callback runs before Docker cleanup under
-`CleanupTimeout` (60 seconds by default). Runs of the same `Scope` on the same
-machine share a local `StateDir` and recover each other's leftovers after a hard
-kill; cross-machine recovery is not supported. `Main` must be installed before
-any Docker resource is created and only once per process.
+`Main` never returns: it runs `m.Run`, cleans up, and exits with the test
+status; cleanup errors are only printed. Install it once per process, before
+any Docker resource is created, and use the same `Scope` in every package of a
+project. See the README for signals, timeouts, and recovery.
 
 ### Advanced: Container Registry
 

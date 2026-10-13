@@ -65,14 +65,25 @@ func TestRecoverAbandonedRun(t *testing.T) {
 	dir := t.TempDir()
 	writeTestManifest(t, dir, runManifest{Scope: "s", Host: "h", RunID: "dead", Daemons: []string{"d1"}})
 	c := newFakeClient()
-	abandonedContainers(c, "h", "dead")
+	owned := map[string]string{labelManaged: "true", labelScope: "s", labelHost: "h", labelRun: "dead"}
+	c.containerList = func(_ context.Context, opts mobyclient.ContainerListOptions) ([]container.Summary, error) {
+		return listedContainers(opts,
+			container.Summary{ID: "running", State: container.StateRunning, Labels: owned},
+			container.Summary{ID: "stopped", State: container.StateExited, Labels: owned},
+			container.Summary{ID: "other-scope", State: container.StateExited, Labels: map[string]string{labelManaged: "true", labelScope: "other", labelHost: "h", labelRun: "dead"}},
+		), nil
+	}
 	var warnings bytes.Buffer
 	warn := func(format string, _ ...any) { warnings.WriteString(strings.TrimSpace(format) + "\n") }
 
 	recoverAbandoned(t.Context(), dir, "s", "h", "d1", "me", c, warn)
 
-	if got := c.callsMatching("ContainerRemove"); len(got) != 1 || got[0] != "ContainerRemove container-of-dead force=true volumes=true canceled=false" {
-		t.Fatalf("ContainerRemove calls = %q", got)
+	want := []string{
+		"ContainerRemove running force=true volumes=true canceled=false",
+		"ContainerRemove stopped force=true volumes=true canceled=false",
+	}
+	if got := c.callsMatching("ContainerRemove"); !slices.Equal(got, want) {
+		t.Fatalf("ContainerRemove calls = %q, want %q", got, want)
 	}
 	if _, ok := readTestManifest(t, dir, "dead"); ok {
 		t.Fatal("manifest of recovered run still exists")
@@ -302,13 +313,21 @@ func TestRunStateAddDaemonRetriesFailedWrite(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.close(true) }) //nolint:errcheck // best effort
 
-	if err := os.RemoveAll(dir); err != nil {
+	// A non-empty directory in place of the manifest makes replacing it fail
+	// on every platform, while the open lock file stays untouched.
+	if err := os.Remove(manifestPath(dir, "run1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(manifestPath(dir, "run1"), "blocker"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.addDaemon("d1"); err == nil {
-		t.Fatal("addDaemon() succeeded without a state directory")
+		t.Fatal("addDaemon() succeeded although the manifest cannot be replaced")
 	}
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if tmp, _ := filepath.Glob(filepath.Join(dir, "*.tmp")); len(tmp) != 0 {
+		t.Fatalf("temporary manifests left behind: %v", tmp)
+	}
+	if err := os.RemoveAll(manifestPath(dir, "run1")); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.addDaemon("d1"); err != nil {
@@ -324,7 +343,7 @@ func TestRecoverKeepsRecordWhileImageRemovalConflicts(t *testing.T) {
 	writeTestManifest(t, dir, runManifest{Scope: "s", Host: "h", RunID: "dead", Daemons: []string{"d1"}})
 	c := newFakeClient()
 	c.imageList = func(context.Context, mobyclient.ImageListOptions) ([]image.Summary, error) {
-		return []image.Summary{{ID: "sha256:x", Labels: runLabels("s", "h", "dead"), RepoTags: []string{"myapp:a", "myapp:b"}}}, nil
+		return []image.Summary{{ID: "sha256:x", Labels: map[string]string{labelManaged: "true", labelScope: "s", labelHost: "h", labelRun: "dead"}, RepoTags: []string{"myapp:a", "myapp:b"}}}, nil
 	}
 	// Tag myapp:b may meanwhile point to an unrelated image.
 	c.imageInspect = func(_ context.Context, id string) (image.InspectResponse, error) {
@@ -418,7 +437,7 @@ func imageGraph(c *fakeClient, images ...fakeImage) (remaining func() []string) 
 }
 
 func TestRecoverRemovesIntermediateImages(t *testing.T) {
-	owned := runLabels("s", "h", "dead")
+	owned := map[string]string{labelManaged: "true", labelScope: "s", labelHost: "h", labelRun: "dead"}
 	retained := maps.Clone(owned)
 	retained[labelRetain] = labelTrue
 	parent := fakeImage{id: "sha256:a", labels: owned}
@@ -449,7 +468,7 @@ func TestRecoverRemovesIntermediateImages(t *testing.T) {
 		images: []fakeImage{
 			{id: "sha256:b", parent: "sha256:r", labels: owned, tagged: true},
 			{id: "sha256:r", parent: "sha256:f", labels: retained},
-			{id: "sha256:f", labels: runLabels("s", "h", "other")},
+			{id: "sha256:f", labels: map[string]string{labelManaged: "true", labelScope: "s", labelHost: "h", labelRun: "other"}},
 		},
 		steps: []step{{removals: []string{"sha256:b"}, remain: []string{"sha256:r", "sha256:f"}}},
 	}} {

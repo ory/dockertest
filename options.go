@@ -23,10 +23,10 @@ func WithMaxWait(d time.Duration) PoolOption {
 	}
 }
 
-// WithCleanupTimeout bounds how long a pool spends removing its containers
-// and networks, both for explicit Close calls and for automatic cleanup
-// registered with t.Cleanup. The default is 60 seconds. NewPool rejects a
-// timeout that is not positive.
+// WithCleanupTimeout sets the context deadline for removing the pool's
+// resources, both in Close and in automatic cleanup registered with t.Cleanup.
+// An earlier deadline of the caller's context is kept. The default is 60
+// seconds; NewPool rejects a timeout that is not positive.
 func WithCleanupTimeout(timeout time.Duration) PoolOption {
 	return func(p *pool) {
 		p.cleanupTimeout = timeout

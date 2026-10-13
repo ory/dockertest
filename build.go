@@ -24,10 +24,8 @@ import (
 // Use with Pool.BuildAndRun to build and run custom Docker images.
 //
 // Only ContextDir is required. All other fields are optional and have sensible defaults.
-// Image cleanup requires complete ownership labels. The classic builder can leave
-// intermediate images with missing or partial labels; these and builder cache
-// may remain even after successful cleanup. Dockertest does not prune parents
-// or builder cache, so cleanup does not bound builder disk usage.
+// Intermediate images without complete ownership labels and builder cache are
+// never removed.
 //
 //nolint:govet // field alignment traded for readability
 type BuildOptions struct {
@@ -43,12 +41,9 @@ type BuildOptions struct {
 	// Tags are the tags to apply to the built image.
 	// If empty, the image name from BuildAndRun will be used.
 	//
-	// Docker refuses to remove an image that carries more than one tag by its
-	// ID, and dockertest never removes tags, which another process may have
-	// moved to an unrelated image. Without RetainImage, an image with several
-	// tags therefore stays: its removal fails with a conflict that is
-	// returned, and retried, by every later cleanup until the extra tags are
-	// gone.
+	// dockertest removes images by ID and never untags them, so the removal of
+	// an image with several tags conflicts and is retried by later cleanups
+	// until the extra tags are gone.
 	Tags []string
 
 	// BuildArgs are build-time variables passed to the Dockerfile.
@@ -68,21 +63,14 @@ type BuildOptions struct {
 	// It does not remove intermediate images or builder cache.
 	ForceRemove bool
 
-	// RetainImage keeps the built image after its last container is removed,
-	// across test runs, so that Docker can reuse it as a cache. Retained
-	// images carry stable ownership labels without a run ID and are never
-	// removed automatically, not even by Main's recovery of abandoned runs.
+	// RetainImage keeps the built image across test runs so that Docker can
+	// reuse it as a cache. Retained images are never removed by dockertest,
+	// not even by Main's recovery of abandoned runs.
 	//
-	// Without RetainImage, the owned final image is removed once the last
-	// container created from it has been removed, subject to removal conflicts
-	// (see Tags). While a build, or a Run creating a
-	// container from a tag, is pending on the same daemon, the removal is
-	// deferred until the last of them ends; that BuildAndRun or Run performs
-	// it, bounded by the pool's cleanup timeout, and reports failures as
-	// warnings. Failed removals are retried by Pool.Close and Main. If the
-	// built image cannot be inspected, BuildAndRun fails and the image is only
-	// removed once an inspection shows that it carries this process's
-	// ownership labels; until then, Pool.Close and Main retry.
+	// Without RetainImage, the image is removed once the last container
+	// created from it is gone. The removal is deferred while another build, or
+	// a Run from a tag, is pending on the same daemon, and failed removals are
+	// retried by Pool.Close and Main.
 	RetainImage bool
 }
 
@@ -91,10 +79,7 @@ type BuildOptions struct {
 // The name parameter is used as the image tag. buildOpts.ContextDir is required.
 // The container is created from the immutable ID of the built image, so a
 // changed build under the same tag never reuses a container of an older build.
-// The owned final image is removed once its last container is gone unless
-// BuildOptions.RetainImage is set or removal conflicts (see BuildOptions.Tags).
-// Intermediate images without complete ownership labels and builder cache may
-// remain after cleanup; see BuildOptions for the image-cleanup scope.
+// See BuildOptions.RetainImage for the lifetime of the image.
 //
 // Example:
 //
