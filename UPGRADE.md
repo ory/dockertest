@@ -385,10 +385,10 @@ resource := pool.BuildAndRunT(t, "myapp:test",
 
 Available `BuildOptions` fields: `ContextDir` (required), `Dockerfile` (defaults
 to `"Dockerfile"`), `Tags`, `BuildArgs` (`map[string]*string`), `Labels`,
-`NoCache`, `ForceRemove`, `RetainImage`.
+`NoCache`, `ForceRemove`.
 
-Built images are now removed with their last container unless `RetainImage` is
-set. See the README for image lifetime, removal conflicts, and limits.
+Built images remain available across runs. Images, builder cache, named volumes,
+and pre-existing unlabeled resources are outside automatic cleanup.
 
 ### Container Networks
 
@@ -510,6 +510,5 @@ resource.CloseT(t) // immediate removal
 - [ ] Updated error handling to use errors.Is()
 - [ ] Added WithReuseID where same image has different configs
 - [ ] Added dockertest.Main to TestMain where tests may hang or be interrupted
-- [ ] Set RetainImage where a built image must survive across runs
 - [ ] Tested all changes
 - [ ] Verified container cleanup works correctly

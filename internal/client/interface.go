@@ -31,7 +31,6 @@ type DockerClient interface {
 	ImageInspect(ctx context.Context, imageID string, inspectOpts ...mobyclient.ImageInspectOption) (mobyclient.ImageInspectResult, error)
 	ImageBuild(ctx context.Context, buildContext io.Reader, options mobyclient.ImageBuildOptions) (mobyclient.ImageBuildResult, error)
 	ImageRemove(ctx context.Context, imageID string, options mobyclient.ImageRemoveOptions) (mobyclient.ImageRemoveResult, error)
-	ImageList(ctx context.Context, options mobyclient.ImageListOptions) (mobyclient.ImageListResult, error)
 
 	NetworkCreate(ctx context.Context, name string, options mobyclient.NetworkCreateOptions) (mobyclient.NetworkCreateResult, error)
 	NetworkInspect(ctx context.Context, networkID string, options mobyclient.NetworkInspectOptions) (mobyclient.NetworkInspectResult, error)

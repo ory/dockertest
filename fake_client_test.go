@@ -52,7 +52,6 @@ type fakeClient struct {
 	imageBuild       func(ctx context.Context, opts mobyclient.ImageBuildOptions) (io.ReadCloser, error)
 	imageInspect     func(ctx context.Context, id string) (image.InspectResponse, error)
 	imageRemove      func(ctx context.Context, id string, opts mobyclient.ImageRemoveOptions) error
-	imageList        func(ctx context.Context, opts mobyclient.ImageListOptions) ([]image.Summary, error)
 	info             func(ctx context.Context) (system.Info, error)
 }
 
@@ -243,15 +242,6 @@ func (f *fakeClient) ImageRemove(ctx context.Context, id string, opts mobyclient
 	return mobyclient.ImageRemoveResult{}, nil
 }
 
-func (f *fakeClient) ImageList(ctx context.Context, opts mobyclient.ImageListOptions) (mobyclient.ImageListResult, error) {
-	f.record("ImageList")
-	if f.imageList != nil {
-		items, err := f.imageList(ctx, opts)
-		return mobyclient.ImageListResult{Items: items}, err
-	}
-	return mobyclient.ImageListResult{}, nil
-}
-
 func (f *fakeClient) Info(ctx context.Context, _ mobyclient.InfoOptions) (mobyclient.SystemInfoResult, error) {
 	f.record("Info")
 	if f.info != nil {
@@ -288,17 +278,6 @@ func testOwner(t *testing.T) (*processOwner, *bytes.Buffer) {
 		ResetRegistry()
 	})
 	return o, &stderr
-}
-
-// imageUsers reads the user count of an owned image.
-func (o *processOwner) imageUsers(daemonID, id string) (int, bool) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	img, ok := o.images[imageKey{daemon: daemonID, id: id}]
-	if !ok {
-		return 0, false
-	}
-	return img.users, true
 }
 
 // newFakePool creates a pool on a fake client without touching Docker.

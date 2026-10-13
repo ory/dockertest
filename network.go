@@ -92,7 +92,7 @@ func (p *pool) CreateNetwork(ctx context.Context, name string, opts *NetworkCrea
 		createOpts.Labels = opts.Labels
 		createOpts.Options = opts.Options
 	}
-	createOpts.Labels = owner.withOwnershipLabels(createOpts.Labels, false)
+	createOpts.Labels = owner.withOwnershipLabels(createOpts.Labels)
 
 	createResp, err := p.client.NetworkCreate(ctx, name, createOpts)
 	if err != nil {

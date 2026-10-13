@@ -83,9 +83,9 @@ func (o MainOptions) resolve() (MainOptions, error) {
 }
 
 // Main runs the tests of a package and cleans up its owned Docker resources,
-// even when a test hangs or the process is interrupted. Retained images,
-// intermediate images without complete ownership labels, and builder cache are
-// not removed. Use it from TestMain:
+// even when a test hangs or the process is interrupted. Images, builder cache,
+// named volumes, and pre-existing unlabeled resources are outside automatic
+// cleanup. Use it from TestMain:
 //
 //	func TestMain(m *testing.M) {
 //		dockertest.Main(context.Background(), m, dockertest.MainOptions{
@@ -104,8 +104,8 @@ func (o MainOptions) resolve() (MainOptions, error) {
 // resources. Invalid options, a repeated Main, or a failure to establish the
 // run lock exit with status 1 before any test runs.
 //
-// Main also recovers containers, networks, and non-retained build images left
-// behind by earlier runs of the same Scope on this host that did not shut
+// Main also recovers containers and networks left behind by earlier runs of
+// the same Scope on this host that did not shut
 // down, for example after a kill or a power loss. Recovery requires the same
 // StateDir and only covers daemons the new run connects to.
 func Main(ctx context.Context, m *testing.M, opts MainOptions) {

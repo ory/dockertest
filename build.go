@@ -24,8 +24,7 @@ import (
 // Use with Pool.BuildAndRun to build and run custom Docker images.
 //
 // Only ContextDir is required. All other fields are optional and have sensible defaults.
-// Intermediate images without complete ownership labels and builder cache are
-// never removed.
+// Built images and builder cache are not automatically removed.
 //
 //nolint:govet // field alignment traded for readability
 type BuildOptions struct {
@@ -40,10 +39,6 @@ type BuildOptions struct {
 
 	// Tags are the tags to apply to the built image.
 	// If empty, the image name from BuildAndRun will be used.
-	//
-	// dockertest removes images by ID and never untags them, so the removal of
-	// an image with several tags conflicts and is retried by later cleanups
-	// until the extra tags are gone.
 	Tags []string
 
 	// BuildArgs are build-time variables passed to the Dockerfile.
@@ -62,16 +57,6 @@ type BuildOptions struct {
 	// ForceRemove always removes intermediate containers, even on build failure.
 	// It does not remove intermediate images or builder cache.
 	ForceRemove bool
-
-	// RetainImage keeps the built image across test runs so that Docker can
-	// reuse it as a cache. Retained images are never removed by dockertest,
-	// not even by Main's recovery of abandoned runs.
-	//
-	// Without RetainImage, the image is removed once the last container
-	// created from it is gone. The removal is deferred while another build, or
-	// a Run from a tag, is pending on the same daemon, and failed removals are
-	// retried by Pool.Close and Main.
-	RetainImage bool
 }
 
 // BuildAndRun builds a Docker image from a Dockerfile and runs it as a container.
@@ -79,7 +64,7 @@ type BuildOptions struct {
 // The name parameter is used as the image tag. buildOpts.ContextDir is required.
 // The container is created from the immutable ID of the built image, so a
 // changed build under the same tag never reuses a container of an older build.
-// See BuildOptions.RetainImage for the lifetime of the image.
+// Built images remain available after container cleanup.
 //
 // Example:
 //
@@ -124,27 +109,13 @@ func (p *pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 	if err != nil {
 		return nil, err
 	}
-	// The build holds one image user until the container exists; releasing it
-	// afterwards deletes the image if the container could not be created.
-	defer func() {
-		releaseCtx, cancel := p.rollbackContext(ctx)
-		defer cancel()
-		if err := owner.releaseImage(releaseCtx, p.client, imageKey{daemon: p.daemonID, id: imageID}); err != nil {
-			owner.warn("%v", err)
-		}
-	}()
 
 	cfg.tag = tag
 	cfg.image = imageID
 	return p.run(ctx, repository, cfg)
 }
 
-// buildImage builds the image, verifies that the image reported by the daemon
-// carries this process's ownership labels, and registers it with one user
-// (the pending build). Images that are not owned, for example because a
-// pre-existing image was returned, are used but never deleted. If the image
-// cannot be inspected, a non-retained image is kept as unverified: ending the
-// build, and later cleanups, verify its labels before deleting it.
+// buildImage builds an image and resolves the returned immutable image ID.
 func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOptions) (string, error) {
 	buildContext, err := createBuildContext(buildOpts.ContextDir)
 	if err != nil {
@@ -154,13 +125,6 @@ func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOp
 		_ = buildContext.Close() //nolint:errcheck // Best effort close in defer
 	}()
 
-	endBuild, err := owner.beginImageAcquisition(ctx, p)
-	if err != nil {
-		return "", fmt.Errorf("%w: %w", ErrImageBuildFailed, err)
-	}
-	defer endBuild()
-
-	labels := owner.withOwnershipLabels(buildOpts.Labels, buildOpts.RetainImage)
 	buildResult, err := p.client.ImageBuild(ctx, buildContext, mobyclient.ImageBuildOptions{
 		Tags:        tags,
 		Dockerfile:  cmp.Or(buildOpts.Dockerfile, "Dockerfile"),
@@ -168,7 +132,7 @@ func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOp
 		NoCache:     buildOpts.NoCache,
 		Remove:      true,
 		ForceRemove: buildOpts.ForceRemove,
-		Labels:      labels,
+		Labels:      buildOpts.Labels,
 	})
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", ErrImageBuildFailed, err)
@@ -182,17 +146,14 @@ func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOp
 		return "", fmt.Errorf("%w: %w", ErrImageBuildFailed, err)
 	}
 
-	id, owned, err := inspectOwnership(ctx, p.client, imageID, labels)
+	inspect, err := p.client.ImageInspect(ctx, imageID)
 	if err != nil {
-		if !buildOpts.RetainImage {
-			owner.addUnverifiedImage(imageKey{daemon: p.daemonID, id: imageID}, p.client, labels)
-		}
 		return "", fmt.Errorf("%w: inspecting built image %s: %w", ErrImageBuildFailed, imageID, err)
 	}
-	if owned {
-		owner.addImageUser(imageKey{daemon: p.daemonID, id: id}, p.client, buildOpts.RetainImage)
+	if inspect.ID == "" {
+		return "", fmt.Errorf("%w: built image %s has no ID", ErrImageBuildFailed, imageID)
 	}
-	return id, nil
+	return inspect.ID, nil
 }
 
 // BuildAndRunT is a test helper that uses t.Context() and calls t.Fatalf on error.

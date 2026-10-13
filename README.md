@@ -374,26 +374,9 @@ resource := pool.BuildAndRunT(t, "myapp:test",
 The container is created from the immutable ID of the built image, so a
 changed build under the same tag never reuses an older container.
 
-**Image lifetime:** dockertest removes a final build image it owns once the
-last container created from it is gone. Images with `RetainImage: true` and
-images dockertest did not build are never removed, not even by `Main`'s
-recovery.
-
-- Removal is by image ID and never forced; tags are never removed one by one,
-  since another process may have moved a tag to an unrelated image. Docker
-  therefore refuses the removal while the image has several tags (for example
-  through `Tags`) or is used by a foreign container. The conflict is returned by
-  `Close`, reported by `Main`, and retried by every later cleanup.
-- While another build, or a `Run` from a tag, is pending on the same daemon,
-  removal is deferred, because that operation may resolve to the same image.
-  The last of them retries the removal when it ends and prints failures as
-  warnings; `Pool.Close` and `Main` retry again.
-- If a built image cannot be inspected, `BuildAndRun` fails and the image is
-  only removed once a later inspection shows this process's ownership labels.
-- Only images with complete ownership labels are removed. The classic builder
-  can leave intermediate images without them, and dockertest never prunes image
-  parents or builder cache, so cleanup does not bound builder disk usage.
-  `ForceRemove` only removes intermediate build containers.
+Built images remain available across runs. Images, builder cache, named volumes,
+and pre-existing unlabeled resources remain outside automatic cleanup.
+`ForceRemove` only removes intermediate build containers.
 
 ### Networks
 
@@ -457,12 +440,11 @@ Each cleanup runs under a context deadline of the pool's cleanup timeout (60
 seconds by default, see `WithCleanupTimeout`), or the caller's deadline if that
 is earlier. A failed removal is returned and retried by the next `Close`.
 Containers are force-removed together with their anonymous volumes; named
-volumes and downloaded images are left alone.
+volumes and images are left alone.
 
 **Process-wide cleanup with `Main`:** `TestMain` can hand control to
-`dockertest.Main`, which cleans up the package's owned containers, networks,
-and non-retained build images, even when a test hangs or the process is
-interrupted, with the image limits described above:
+`dockertest.Main`, which cleans up the package's owned containers and networks, even when a test hangs or the process is
+interrupted:
 
 ```go
 func TestMain(m *testing.M) {

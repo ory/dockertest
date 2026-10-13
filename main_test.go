@@ -142,7 +142,7 @@ func TestMainRunsCleanupAndPreservesStatus(t *testing.T) {
 	if got := c.callsMatching("ContainerRemove"); len(got) != 1 {
 		t.Fatalf("ContainerRemove calls = %q, want one", got)
 	}
-	if len(c.callsMatching("ContainerList")) != 1 || len(c.callsMatching("ImageList")) != 1 {
+	if len(c.callsMatching("ContainerList")) != 1 || len(c.callsMatching("ImageRemove")) != 0 {
 		t.Fatalf("calls = %q, want one reconciliation sweep", c.calls)
 	}
 	if _, err := p.Run(t.Context(), "alpine"); !errors.Is(err, ErrShuttingDown) {

@@ -143,6 +143,9 @@ func (p *pool) begin(ctx context.Context) (context.Context, func(), error) {
 }
 
 func (p *pool) recordDaemon(ctx context.Context) error {
+	if owner.scopeName() == "" {
+		return nil
+	}
 	p.daemonMu.Lock()
 	if p.daemonID == "" {
 		info, err := p.client.Info(ctx, mobyclient.InfoOptions{})
@@ -338,14 +341,6 @@ func (p *pool) run(ctx context.Context, repository string, cfg *runConfig) (*res
 
 	ref := cfg.image
 	if ref == "" {
-		// The tag may name an owned build image, which must not be deleted
-		// between resolving the tag and attaching the new container to the
-		// image (or rolling the container back).
-		end, err := owner.beginImageAcquisition(ctx, p)
-		if err != nil {
-			return nil, err
-		}
-		defer end()
 		ref = fmt.Sprintf("%s:%s", repository, cfg.tag)
 		if err := p.pullImage(ctx, ref); err != nil {
 			return nil, err
@@ -457,7 +452,7 @@ func (p *pool) createAndStartContainer(ctx context.Context, ref string, cfg *run
 	if cfg.configModifier != nil {
 		cfg.configModifier(containerConfig)
 	}
-	containerConfig.Labels = owner.withOwnershipLabels(containerConfig.Labels, false)
+	containerConfig.Labels = owner.withOwnershipLabels(containerConfig.Labels)
 
 	hostConfig := &container.HostConfig{
 		PublishAllPorts: true,
@@ -514,7 +509,6 @@ func (p *pool) inspectAndRegister(ctx context.Context, containerID, reuseID stri
 	if err != nil {
 		return nil, errors.Join(fmt.Errorf("container inspect failed: %w", err), p.rollbackContainer(ctx, containerID))
 	}
-	owner.attachImage(containerID, inspectResp.Container.Image)
 
 	r := &resource{
 		pool:      p,

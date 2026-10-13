@@ -23,6 +23,8 @@ func TestBuildAndRun(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
+	trackImage := cleanupBuildImages(t, "test-build-image")
+
 	dockertest.ResetRegistry()
 	t.Cleanup(func() {
 		dockertest.ResetRegistry()
@@ -57,6 +59,7 @@ CMD ["sleep", "300"]
 	if r.ID() == "" {
 		t.Fatal("Resource has empty container ID")
 	}
+	trackImage(r.Container().Image)
 
 }
 
@@ -64,6 +67,8 @@ func TestBuildAndRunWithBuildArgs(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+
+	trackImage := cleanupBuildImages(t, "test-build-args")
 
 	dockertest.ResetRegistry()
 	t.Cleanup(func() {
@@ -96,6 +101,8 @@ CMD ["sh", "-c", "echo TEST_ENV=$TEST_ENV && sleep 300"]
 
 	r := pool.BuildAndRunT(t, "test-build-args", buildOpts)
 
+	trackImage(r.Container().Image)
+
 	// Verify build arg was applied by checking container env via logs
 	var stdout string
 	err := pool.Retry(t.Context(), 10*time.Second, func() error {
@@ -118,6 +125,8 @@ func TestBuildAndRunWithRunOptions(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+
+	trackImage := cleanupBuildImages(t, "test-build-env")
 
 	dockertest.ResetRegistry()
 	t.Cleanup(func() {
@@ -148,6 +157,8 @@ CMD ["sh", "-c", "echo $TEST_VAR && sleep 300"]
 		dockertest.WithEnv([]string{"TEST_VAR=hello"}),
 	)
 
+	trackImage(r.Container().Image)
+
 	// Verify env var took effect via logs
 	var stdout string
 	err := pool.Retry(t.Context(), 10*time.Second, func() error {
@@ -170,6 +181,8 @@ func TestBuildAndRunWithBuildContext(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+
+	trackImage := cleanupBuildImages(t, "test-build-context")
 
 	dockertest.ResetRegistry()
 	t.Cleanup(func() {
@@ -195,6 +208,7 @@ func TestBuildAndRunWithBuildContext(t *testing.T) {
 	if r.ID() == "" {
 		t.Fatal("Resource has empty container ID")
 	}
+	trackImage(r.Container().Image)
 
 	// Poll for expected log output
 	var stdout string
@@ -220,6 +234,8 @@ func TestBuildAndRunWithTaggedName(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
+	trackImage := cleanupBuildImages(t, "dockertest-build-tagged:v1")
+
 	dockertest.ResetRegistry()
 	t.Cleanup(func() {
 		dockertest.ResetRegistry()
@@ -242,6 +258,8 @@ CMD ["sleep", "300"]
 		ContextDir: tmpDir,
 	})
 
+	trackImage(r.Container().Image)
+
 	// The caller's tag is applied, but the container is created from the
 	// immutable image ID so that a changed build can never reuse it.
 	tagged, err := pool.Client().ImageInspect(t.Context(), imageRef)
@@ -257,6 +275,8 @@ func TestRunUsesLocalImageWithoutPull(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+
+	trackImage := cleanupBuildImages(t, "example.invalid/dockertest-local-skip-pull:latest")
 
 	dockertest.ResetRegistry()
 	t.Cleanup(func() {
@@ -277,10 +297,12 @@ CMD ["sleep", "300"]
 	// If Run attempts a pull, this registry will fail DNS resolution.
 	repository := "example.invalid/dockertest-local-skip-pull"
 
-	pool.BuildAndRunT(t, repository, &dockertest.BuildOptions{
+	r := pool.BuildAndRunT(t, repository, &dockertest.BuildOptions{
 		Dockerfile: "Dockerfile",
 		ContextDir: tmpDir,
 	}, dockertest.WithoutReuse())
+
+	trackImage(r.Container().Image)
 
 	pool.RunT(t, repository,
 		dockertest.WithTag("latest"),
@@ -288,74 +310,49 @@ CMD ["sleep", "300"]
 	)
 }
 
+// cleanupBuildImages runs after the subsequently registered pool cleanup.
+// Keep both the test tag and IDs because another build can replace the tag.
+func cleanupBuildImages(t *testing.T, tag string) func(string) {
+	t.Helper()
+	var ids []string
+	t.Cleanup(func() {
+		dc, err := mobyclient.New(mobyclient.FromEnv)
+		if err != nil {
+			t.Errorf("image cleanup client: %v", err)
+			return
+		}
+		defer dc.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if _, err := dc.ImageRemove(ctx, tag, mobyclient.ImageRemoveOptions{}); err != nil && !errdefs.IsNotFound(err) {
+			t.Errorf("remove test image tag %s: %v", tag, err)
+		}
+		for _, id := range ids {
+			img, err := dc.ImageInspect(ctx, id)
+			if errdefs.IsNotFound(err) {
+				continue
+			}
+			if err != nil {
+				t.Errorf("inspect test image %s during cleanup: %v", id, err)
+				continue
+			}
+			// A cached build may also be tagged by another caller. Preserve it.
+			if len(img.RepoTags) != 0 {
+				continue
+			}
+			if _, err := dc.ImageRemove(ctx, id, mobyclient.ImageRemoveOptions{}); err != nil && !errdefs.IsNotFound(err) {
+				t.Errorf("remove test image %s: %v", id, err)
+			}
+		}
+	})
+	return func(id string) { ids = append(ids, id) }
+}
+
 func writeDockerfile(t *testing.T, dir, content string) {
 	t.Helper()
 	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(content), 0o644); err != nil {
 		t.Fatalf("Failed to write Dockerfile: %v", err)
 	}
-}
-
-func assertImageGone(t *testing.T, dc *mobyclient.Client, ref string) {
-	t.Helper()
-	_, err := dc.ImageInspect(t.Context(), ref)
-	if !errdefs.IsNotFound(err) {
-		t.Fatalf("ImageInspect(%s) error = %v, want not found", ref, err)
-	}
-}
-
-func TestBuildImageRemovedAfterLastContainer(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
-	dockertest.ResetRegistry()
-	t.Cleanup(dockertest.ResetRegistry)
-
-	dc, err := mobyclient.New(mobyclient.FromEnv)
-	if err != nil {
-		t.Fatalf("mobyclient.New() error = %v", err)
-	}
-	t.Cleanup(func() { dc.Close() })
-
-	ctx := t.Context()
-	pool, err := dockertest.NewPool(ctx, "")
-	if err != nil {
-		t.Fatalf("NewPool() error = %v", err)
-	}
-	t.Cleanup(func() { pool.Close(context.WithoutCancel(ctx)) })
-
-	tmpDir := t.TempDir()
-	writeDockerfile(t, tmpDir, "FROM alpine:latest\nCMD [\"sleep\", \"300\"]\n")
-	tag := "dockertest-build-removed:test"
-	buildOpts := &dockertest.BuildOptions{ContextDir: tmpDir}
-
-	r1, err := pool.BuildAndRun(ctx, tag, buildOpts)
-	if err != nil {
-		t.Fatalf("BuildAndRun() error = %v", err)
-	}
-	r2, err := pool.BuildAndRun(ctx, tag, buildOpts)
-	if err != nil {
-		t.Fatalf("second BuildAndRun() error = %v", err)
-	}
-	if r1.ID() != r2.ID() {
-		t.Fatalf("unchanged build did not reuse the container: %s vs %s", r1.ID(), r2.ID())
-	}
-	imageID := r1.Container().Image
-	if labels := mustInspectImage(t, dc, imageID).Config.Labels; labels["io.ory.dockertest.managed"] != "true" || labels["io.ory.dockertest.run"] == "" {
-		t.Fatalf("built image labels = %v, want ownership labels", labels)
-	}
-
-	if err := r1.Close(ctx); err != nil {
-		t.Fatalf("r1.Close() error = %v", err)
-	}
-	mustInspectImage(t, dc, imageID) // still referenced by r2
-
-	if err := r2.Close(ctx); err != nil {
-		t.Fatalf("r2.Close() error = %v", err)
-	}
-	assertImageGone(t, dc, imageID)
-	assertImageGone(t, dc, tag)
-	mustInspectImage(t, dc, "alpine:latest") // downloaded base image survives
 }
 
 func mustInspectImage(t *testing.T, dc *mobyclient.Client, ref string) mobyclient.ImageInspectResult {
@@ -367,55 +364,12 @@ func mustInspectImage(t *testing.T, dc *mobyclient.Client, ref string) mobyclien
 	return img
 }
 
-func TestBuildRetainImageSurvives(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
-	dockertest.ResetRegistry()
-	t.Cleanup(dockertest.ResetRegistry)
-
-	dc, err := mobyclient.New(mobyclient.FromEnv)
-	if err != nil {
-		t.Fatalf("mobyclient.New() error = %v", err)
-	}
-	t.Cleanup(func() { dc.Close() })
-
-	ctx := t.Context()
-	pool, err := dockertest.NewPool(ctx, "")
-	if err != nil {
-		t.Fatalf("NewPool() error = %v", err)
-	}
-	t.Cleanup(func() { pool.Close(context.WithoutCancel(ctx)) })
-
-	tmpDir := t.TempDir()
-	writeDockerfile(t, tmpDir, "FROM alpine:latest\nCMD [\"sleep\", \"300\"]\n")
-	tag := "dockertest-build-retained:test"
-	t.Cleanup(func() {
-		_, _ = dc.ImageRemove(context.WithoutCancel(ctx), tag, mobyclient.ImageRemoveOptions{})
-	})
-
-	r, err := pool.BuildAndRun(ctx, tag, &dockertest.BuildOptions{ContextDir: tmpDir, RetainImage: true}, dockertest.WithoutReuse())
-	if err != nil {
-		t.Fatalf("BuildAndRun() error = %v", err)
-	}
-	imageID := r.Container().Image
-	if err := r.Close(ctx); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-	if err := pool.Close(ctx); err != nil {
-		t.Fatalf("pool.Close() error = %v", err)
-	}
-	labels := mustInspectImage(t, dc, imageID).Config.Labels
-	if labels["io.ory.dockertest.retain"] != "true" || labels["io.ory.dockertest.run"] != "" {
-		t.Fatalf("retained image labels = %v", labels)
-	}
-}
-
 func TestBuildChangedImageUnderSameTag(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+
+	trackImage := cleanupBuildImages(t, "dockertest-build-changed:test")
 
 	dockertest.ResetRegistry()
 	t.Cleanup(dockertest.ResetRegistry)
@@ -442,11 +396,13 @@ func TestBuildChangedImageUnderSameTag(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first BuildAndRun() error = %v", err)
 	}
+	trackImage(r1.Container().Image)
 	writeDockerfile(t, tmpDir, "FROM alpine:latest\nENV VERSION=2\nCMD [\"sleep\", \"300\"]\n")
 	r2, err := pool.BuildAndRun(ctx, tag, buildOpts)
 	if err != nil {
 		t.Fatalf("second BuildAndRun() error = %v", err)
 	}
+	trackImage(r2.Container().Image)
 	if r1.ID() == r2.ID() {
 		t.Fatal("changed build reused the container of the old build")
 	}
@@ -457,20 +413,22 @@ func TestBuildChangedImageUnderSameTag(t *testing.T) {
 	if err := r1.Close(ctx); err != nil {
 		t.Fatalf("r1.Close() error = %v", err)
 	}
-	assertImageGone(t, dc, r1.Container().Image)
+	mustInspectImage(t, dc, r1.Container().Image)
 	mustInspectImage(t, dc, r2.Container().Image)
 
 	if err := r2.Close(ctx); err != nil {
 		t.Fatalf("r2.Close() error = %v", err)
 	}
-	assertImageGone(t, dc, r2.Container().Image)
-	assertImageGone(t, dc, tag)
+	mustInspectImage(t, dc, r2.Container().Image)
+	mustInspectImage(t, dc, tag)
 }
 
 func TestBuildFailureKeepsPreexistingTag(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
+
+	cleanupBuildImages(t, "dockertest-preexisting:test")
 
 	dockertest.ResetRegistry()
 	t.Cleanup(dockertest.ResetRegistry)
@@ -489,9 +447,6 @@ func TestBuildFailureKeepsPreexistingTag(t *testing.T) {
 	if _, err := dc.ImageTag(ctx, mobyclient.ImageTagOptions{Source: "alpine:latest", Target: tag}); err != nil {
 		t.Fatalf("ImageTag() error = %v", err)
 	}
-	t.Cleanup(func() {
-		_, _ = dc.ImageRemove(context.WithoutCancel(ctx), tag, mobyclient.ImageRemoveOptions{})
-	})
 	before := mustInspectImage(t, dc, tag).ID
 
 	tmpDir := t.TempDir()
@@ -503,61 +458,4 @@ func TestBuildFailureKeepsPreexistingTag(t *testing.T) {
 	if after := mustInspectImage(t, dc, tag).ID; after != before {
 		t.Fatalf("pre-existing tag changed from %s to %s", before, after)
 	}
-}
-
-func TestBuildImageWithExtraTagsIsKeptUntilUntagged(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-
-	dockertest.ResetRegistry()
-	t.Cleanup(dockertest.ResetRegistry)
-
-	dc, err := mobyclient.New(mobyclient.FromEnv)
-	if err != nil {
-		t.Fatalf("mobyclient.New() error = %v", err)
-	}
-	t.Cleanup(func() { dc.Close() })
-
-	ctx := t.Context()
-	tags := []string{"dockertest-build-multitag:a", "dockertest-build-multitag:b"}
-	t.Cleanup(func() {
-		for _, tag := range tags {
-			_, _ = dc.ImageRemove(context.WithoutCancel(ctx), tag, mobyclient.ImageRemoveOptions{})
-		}
-	})
-	pool, err := dockertest.NewPool(ctx, "")
-	if err != nil {
-		t.Fatalf("NewPool() error = %v", err)
-	}
-	t.Cleanup(func() { pool.Close(context.WithoutCancel(ctx)) })
-
-	tmpDir := t.TempDir()
-	writeDockerfile(t, tmpDir, "FROM alpine:latest\nCMD [\"sleep\", \"300\"]\n")
-	r, err := pool.BuildAndRun(ctx, tags[0], &dockertest.BuildOptions{ContextDir: tmpDir, Tags: tags}, dockertest.WithoutReuse())
-	if err != nil {
-		t.Fatalf("BuildAndRun() error = %v", err)
-	}
-	imageID := r.Container().Image
-
-	// The daemon refuses to remove an image tagged twice by its ID, and
-	// dockertest never removes tags, which other processes may have moved.
-	if err := r.Close(ctx); !errdefs.IsConflict(err) {
-		t.Fatalf("Close() error = %v, want a conflict", err)
-	}
-	for _, tag := range tags {
-		if got := mustInspectImage(t, dc, tag).ID; got != imageID {
-			t.Fatalf("tag %s points to %s, want %s", tag, got, imageID)
-		}
-	}
-
-	// Once the extra tag is gone, the pool's cleanup removes the image.
-	if _, err := dc.ImageRemove(ctx, tags[1], mobyclient.ImageRemoveOptions{}); err != nil {
-		t.Fatalf("untagging %s: %v", tags[1], err)
-	}
-	if err := pool.Close(ctx); err != nil {
-		t.Fatalf("pool.Close() error = %v", err)
-	}
-	assertImageGone(t, dc, imageID)
-	assertImageGone(t, dc, tags[0])
 }

@@ -236,6 +236,8 @@ func TestCleanupRemovesAnonymousVolumesKeepsNamed(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
+	trackImage := cleanupBuildImages(t, "dockertest-volume:test")
+
 	dockertest.ResetRegistry()
 	t.Cleanup(dockertest.ResetRegistry)
 
@@ -276,6 +278,7 @@ func TestCleanupRemovesAnonymousVolumesKeepsNamed(t *testing.T) {
 		t.Fatalf("no anonymous volume mounted at /data: %+v", r.Container().Mounts)
 	}
 	imageID := r.Container().Image
+	trackImage(imageID)
 	containerID := r.ID()
 
 	if closeErr := pool.Close(ctx); closeErr != nil {
@@ -291,8 +294,8 @@ func TestCleanupRemovesAnonymousVolumesKeepsNamed(t *testing.T) {
 	if _, err := dc.VolumeInspect(ctx, named, mobyclient.VolumeInspectOptions{}); err != nil {
 		t.Fatalf("named volume removed: %v", err)
 	}
-	if _, err := dc.ImageInspect(ctx, imageID); !errdefs.IsNotFound(err) {
-		t.Fatalf("build image still present: %v", err)
+	if _, err := dc.ImageInspect(ctx, imageID); err != nil {
+		t.Fatalf("build image removed: %v", err)
 	}
 	if _, err := dc.ImageInspect(ctx, "alpine:latest"); err != nil {
 		t.Fatalf("downloaded image removed: %v", err)
