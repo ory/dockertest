@@ -371,8 +371,8 @@ resource := pool.BuildAndRunT(t, "myapp:test",
 )
 ```
 
-The container is created from the immutable ID of the built image, so a
-changed build under the same tag never reuses an older container.
+The container is created from the immutable ID of the built image, so a changed
+build under the same tag never reuses an older container.
 
 Built images remain available across runs. Images, builder cache, named volumes,
 and pre-existing unlabeled resources remain outside automatic cleanup.
@@ -443,8 +443,8 @@ Containers are force-removed together with their anonymous volumes; named
 volumes and images are left alone.
 
 **Process-wide cleanup with `Main`:** `TestMain` can hand control to
-`dockertest.Main`, which cleans up the package's owned containers and networks, even when a test hangs or the process is
-interrupted:
+`dockertest.Main`, which cleans up the package's owned containers and networks,
+even when a test hangs or the process is interrupted:
 
 ```go
 func TestMain(m *testing.M) {

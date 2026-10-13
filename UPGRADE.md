@@ -444,8 +444,8 @@ func TestMain(m *testing.M) {
 ```
 
 `Main` never returns: it runs `m.Run`, cleans up, and exits with the test
-status; cleanup errors are only printed. Install it once per process, before
-any Docker resource is created, and use the same `Scope` in every package of a
+status; cleanup errors are only printed. Install it once per process, before any
+Docker resource is created, and use the same `Scope` in every package of a
 project. See the README for signals, timeouts, and recovery.
 
 ### Advanced: Container Registry
