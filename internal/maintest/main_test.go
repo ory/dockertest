@@ -1,9 +1,10 @@
 // Copyright © 2026 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
-// Package maintest exercises dockertest.Main in child processes: the test
-// binary re-executes itself with DOCKERTEST_MAIN_CASE set, and that child's
-// TestMain hands control to dockertest.Main.
+// Package maintest exercises dockertest.Main and dockertest.Setup in child
+// processes: the test binary re-executes itself with DOCKERTEST_MAIN_CASE set,
+// and that child's TestMain hands control to dockertest.Main or, for cases
+// prefixed with "setup-", runs a custom TestMain built on dockertest.Setup.
 package maintest
 
 import (
@@ -24,12 +25,14 @@ import (
 	mobyclient "github.com/moby/moby/client"
 	dockertest "github.com/ory/dockertest/v4"
 	"github.com/ory/dockertest/v4/internal/client"
+	"go.uber.org/goleak"
 )
 
 const (
 	envCase     = "DOCKERTEST_MAIN_CASE"
 	envOutFile  = "DOCKERTEST_MAIN_OUT"
 	readyMarker = "DOCKERTEST-READY"
+	setupPrefix = "setup-"
 
 	labelManaged = "io.ory.dockertest.managed"
 	labelRun     = "io.ory.dockertest.run"
@@ -42,7 +45,7 @@ func TestMain(m *testing.M) {
 		os.Exit(m.Run())
 	}
 	opts := dockertest.MainOptions{CleanupTimeout: 20 * time.Second}
-	switch testCase {
+	switch strings.TrimPrefix(testCase, setupPrefix) {
 	case "invalid-options":
 		opts.CleanupTimeout = -time.Second
 	case "cleanup-error":
@@ -50,19 +53,91 @@ func TestMain(m *testing.M) {
 	case "stuck-cleanup":
 		opts.CleanupTimeout = time.Minute
 		opts.Cleanup = func(context.Context) error { select {} }
+	case "signal-during-cleanup":
+		opts.CleanupTimeout = time.Minute
+		opts.Cleanup = func(ctx context.Context) error {
+			ready()
+			<-ctx.Done()
+			return ctx.Err()
+		}
+	case "signal-race":
+		opts.Cleanup = func(context.Context) error {
+			fmt.Println(callbackMarker)
+			close(released)
+			<-cleanupCalled
+			return nil
+		}
+	}
+	if strings.HasPrefix(testCase, setupPrefix) {
+		setupMain(m, opts, testCase)
+		return
 	}
 	dockertest.Main(context.Background(), m, opts)
+}
+
+const (
+	beforeRunMarker    = "DOCKERTEST-BEFORE-RUN"
+	afterRunMarker     = "DOCKERTEST-AFTER-RUN"
+	afterCleanupMarker = "DOCKERTEST-AFTER-CLEANUP"
+	callbackMarker     = "DOCKERTEST-CLEANUP-CALLBACK"
+)
+
+var (
+	// released is closed by the signal-race Cleanup callback to let the test
+	// body return while the signal shutdown is still running.
+	released = make(chan struct{})
+	// cleanupCalled is closed right before the custom TestMain calls cleanup.
+	cleanupCalled = make(chan struct{})
+	// callerClients are Docker clients a test body created itself; like any
+	// caller-owned client they are closed after cleanup, before the leak check.
+	callerClients []io.Closer
+)
+
+// setupMain is a custom TestMain built on Setup, shaped like Keto's: it keeps
+// control of m.Run, its own teardown, the goleak check, and the exit status.
+func setupMain(m *testing.M, opts dockertest.MainOptions, testCase string) {
+	cleanup, err := dockertest.Setup(context.Background(), opts)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Println(beforeRunMarker)
+	code := m.Run()
+	fmt.Println(afterRunMarker)
+	close(cleanupCalled)
+	if err := cleanup(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	}
+	for _, c := range callerClients {
+		_ = c.Close() //nolint:errcheck // best effort
+	}
+	fmt.Println(afterCleanupMarker)
+	if code == 0 {
+		if err := goleak.Find(); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			code = 1
+		}
+	}
+	if testCase == setupPrefix+"exit-code" {
+		code = 42
+	}
+	os.Exit(code)
 }
 
 // TestHelperProcess is the body of every child process.
 func TestHelperProcess(t *testing.T) {
 	testCase := os.Getenv(envCase)
-	switch testCase {
+	switch strings.TrimPrefix(testCase, setupPrefix) {
 	case "":
 		t.Skip("not a child process")
-	case "pass", "cleanup-error":
+	case "pass", "cleanup-error", "exit-code", "signal-during-cleanup":
 	case "fail":
 		t.Fatal("intended failure")
+	case "leak":
+		go func() { select {} }()
+	case "signal-race":
+		ready()
+		<-released
 	case "stuck", "stuck-cleanup":
 		ready()
 		select {}
@@ -83,16 +158,31 @@ func TestHelperProcess(t *testing.T) {
 		}
 		os.Exit(0) // simulates a run that dies without cleanup
 	case "creating":
-		dc, err := client.NewMobyClient(t.Context())
-		if err != nil {
-			t.Fatal(err)
-		}
-		pool := dockertest.NewPoolT(t, "", dockertest.WithMobyClient(lostCreateClient{DockerClient: dc, t: t}))
+		pool := dockertest.NewPoolT(t, "", dockertest.WithMobyClient(lostCreateClient{DockerClient: callerClient(t), t: t}))
 		_, _ = pool.Run(t.Context(), "alpine", dockertest.WithCmd([]string{"sleep", "300"}), dockertest.WithoutReuse()) //nolint:errcheck // the interrupt fails it
 		select {}
+	case "lost-pass":
+		pool := dockertest.NewPoolT(t, "", dockertest.WithMobyClient(lostCreateClient{DockerClient: callerClient(t), t: t, immediate: true}))
+		if _, err := pool.Run(t.Context(), "alpine", dockertest.WithCmd([]string{"sleep", "300"}), dockertest.WithoutReuse()); err == nil {
+			t.Fatal("Run() succeeded despite the lost create response")
+		}
+	case "network-pass":
+		pool := dockertest.NewPoolT(t, "")
+		writeOut(t, pool.CreateNetworkT(t, fmt.Sprintf("dockertest-setup-%d", os.Getpid()), nil).ID())
 	default:
 		t.Fatalf("unknown case %q", testCase)
 	}
+}
+
+// callerClient creates a Docker client owned by the test body.
+func callerClient(t *testing.T) client.DockerClient {
+	t.Helper()
+	dc, err := client.NewMobyClient(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	callerClients = append(callerClients, dc)
+	return dc
 }
 
 func ready() {
@@ -117,9 +207,13 @@ func runContainer(t *testing.T) string {
 // lostCreateClient is a Docker client whose ContainerCreate creates the
 // container, reports it as ready, and then waits until its context is canceled
 // and returns without the create response, as if the request was interrupted.
+// With immediate set, it returns without the response right away.
+//
+//nolint:govet // field alignment traded for readability
 type lostCreateClient struct {
 	client.DockerClient
-	t *testing.T
+	t         *testing.T
+	immediate bool
 }
 
 func (c lostCreateClient) ContainerCreate(ctx context.Context, opts mobyclient.ContainerCreateOptions) (mobyclient.ContainerCreateResult, error) { //nolint:gocritic // mirrors the client interface
@@ -128,6 +222,9 @@ func (c lostCreateClient) ContainerCreate(ctx context.Context, opts mobyclient.C
 		return resp, err
 	}
 	writeOut(c.t, resp.ID)
+	if c.immediate {
+		return mobyclient.ContainerCreateResult{}, errors.New("create response lost")
+	}
 	ready()
 	<-ctx.Done()
 	return mobyclient.ContainerCreateResult{}, ctx.Err()
@@ -137,11 +234,12 @@ func (c lostCreateClient) ContainerCreate(ctx context.Context, opts mobyclient.C
 //
 //nolint:govet // field alignment traded for readability
 type child struct {
-	cmd    *exec.Cmd
-	stdout <-chan string
-	stderr *strings.Builder
-	errCh  <-chan string
-	out    string
+	cmd        *exec.Cmd
+	stdout     <-chan string
+	stdoutText *strings.Builder
+	stderr     *strings.Builder
+	errCh      <-chan string
+	out        string
 }
 
 // startChild starts a child process. Like go test, it passes a test timeout,
@@ -163,22 +261,11 @@ func startChild(t *testing.T, testCase string) *child {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("starting child: %v", err)
 	}
-	c := &child{cmd: cmd, stdout: lines(stdout), stderr: &strings.Builder{}, out: out}
+	c := &child{cmd: cmd, stdoutText: &strings.Builder{}, stderr: &strings.Builder{}, out: out}
+	c.stdout = teeLines(stdout, c.stdoutText)
 	c.errCh = teeLines(stderr, c.stderr)
 	t.Cleanup(func() { _ = cmd.Process.Kill() }) //nolint:errcheck // Best effort cleanup if the test failed early
 	return c
-}
-
-func lines(r io.Reader) <-chan string {
-	ch := make(chan string, 64)
-	go func() {
-		defer close(ch)
-		scanner := bufio.NewScanner(r)
-		for scanner.Scan() {
-			ch <- scanner.Text()
-		}
-	}()
-	return ch
 }
 
 func teeLines(r io.Reader, sink *strings.Builder) <-chan string {

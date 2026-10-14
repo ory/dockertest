@@ -9,6 +9,7 @@ require (
 	github.com/moby/docker-image-spec v1.3.1
 	github.com/moby/moby/api v1.54.1
 	github.com/moby/moby/client v0.4.0
+	go.uber.org/goleak v1.3.0
 	golang.org/x/sys v0.47.0
 )
 

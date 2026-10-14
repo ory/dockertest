@@ -446,6 +446,37 @@ status; cleanup errors are only printed. Install it once per process, before any
 Docker resource is created. See the README for signals, timeouts, and how
 resources of killed runs are removed once they expire.
 
+An existing `TestMain` with its own setup, teardown, or leak check keeps its
+shape with `dockertest.Setup`. Call the returned cleanup after `m.Run` and your
+teardown, then run leak checks, then `os.Exit`:
+
+```go
+func TestMain(m *testing.M) {
+    cleanup, err := dockertest.Setup(context.Background(), dockertest.MainOptions{})
+    if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+    }
+    code := m.Run()
+    if err := cleanup(); err != nil {
+        fmt.Fprintln(os.Stderr, err)
+    }
+    if code == 0 {
+        if err := goleak.Find(); err != nil {
+            fmt.Fprintln(os.Stderr, err)
+            code = 1
+        }
+    }
+    os.Exit(code)
+}
+```
+
+Replace `goleak.VerifyTestMain(m)` this way: it calls `os.Exit` itself, so
+cleanup would never run. The cleanup error is returned, so you decide whether it
+fails the run. Signals are handled as under `Main`. Unlike `Main`, resources
+get no expiry label, so leftovers of a `SIGKILL` or crash are not removed by
+later runs.
+
 ### Advanced: Container Registry
 
 v4 maintains a global in-memory registry for container reuse. You typically do
@@ -507,6 +538,7 @@ resource.CloseT(t) // immediate removal
 - [ ] Updated pool.Retry(fn) to pool.Retry(ctx, timeout, fn)
 - [ ] Updated error handling to use errors.Is()
 - [ ] Added WithReuseID where same image has different configs
-- [ ] Added dockertest.Main to TestMain where tests may hang or be interrupted
+- [ ] Added dockertest.Main (or dockertest.Setup in a custom TestMain) where
+      tests may hang or be interrupted
 - [ ] Tested all changes
 - [ ] Verified container cleanup works correctly

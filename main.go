@@ -19,19 +19,19 @@ import (
 	"time"
 )
 
-// MainOptions configures Main.
+// MainOptions configures Main and Setup.
 //
 //nolint:govet // field alignment traded for readability
 type MainOptions struct {
 	// CleanupTimeout is the deadline of the whole shutdown, including the
-	// Cleanup callback. Main exits shortly after it even if a callback or
-	// client ignores its context; what remains is swept by a later run once
-	// it expires. Defaults to 60 seconds; negative values are rejected.
+	// Cleanup callback. Shutdown ends shortly after it even if a callback or
+	// client ignores its context. Defaults to 60 seconds; negative values are
+	// rejected.
 	CleanupTimeout time.Duration
 
 	// Cleanup is an optional package teardown that runs once, before Docker
-	// resources are removed, under the same deadline. Its error is reported
-	// but does not change the exit status.
+	// resources are removed, under the same deadline. Its error is part of
+	// the cleanup error; under Main it does not change the exit status.
 	Cleanup func(context.Context) error
 }
 
@@ -100,6 +100,8 @@ func expiry(now time.Time, testTimeout, cleanupTimeout time.Duration) string {
 // on the daemons it used, for example after a kill or a power loss. With
 // -test.timeout=0, -test.bench, or -test.fuzz resources get no expiry and are
 // never removed by other runs.
+//
+// Use Setup instead to keep control of m.Run and the exit status.
 func Main(ctx context.Context, m *testing.M, opts MainOptions) {
 	if !flag.Parsed() {
 		flag.Parse()
@@ -122,61 +124,129 @@ func Main(ctx context.Context, m *testing.M, opts MainOptions) {
 // runMain is Main with the test runner, test timeout, output, and exit
 // injected for tests.
 func runMain(ctx context.Context, run func() int, opts MainOptions, testTimeout time.Duration, stderr io.Writer, exit func(int)) {
-	opts, err := opts.resolve()
+	cleanup, err := setup(ctx, opts, testTimeout, stderr, exit)
 	if err != nil {
 		report(stderr, "%v", err)
 		exit(1)
 		return
 	}
+	code := run()
+	if err := cleanup(); err != nil {
+		report(stderr, "cleanup failed: %v", err)
+	}
+	exit(code)
+}
+
+// Setup installs dockertest's process cleanup for a custom TestMain that keeps
+// control of m.Run, its own teardown, leak checks, and the exit status:
+//
+//	func TestMain(m *testing.M) {
+//		cleanup, err := dockertest.Setup(context.Background(), dockertest.MainOptions{})
+//		if err != nil {
+//			fmt.Fprintln(os.Stderr, err)
+//			os.Exit(1)
+//		}
+//		code := m.Run()
+//		if err := cleanup(); err != nil {
+//			fmt.Fprintln(os.Stderr, err)
+//		}
+//		os.Exit(code)
+//	}
+//
+// Call Setup before any Docker resource is created. Invalid options, a
+// repeated Setup or Main, or resources created earlier return an error
+// wrapping ErrInvalidOption.
+//
+// The returned cleanup runs the same shutdown as Main under the same deadline:
+// it rejects new operations, drains in-flight ones, runs MainOptions.Cleanup,
+// removes the owned containers and networks, and closes the Docker clients that
+// pools created. It returns all failures, including a missed deadline, and
+// never exits. Before it returns, Setup's signal handling has stopped, so leak
+// checks such as goleak.Find run after it see no dockertest goroutines. It is
+// safe to call repeatedly and concurrently; the shutdown runs once and every
+// caller receives its result. Call it before os.Exit.
+//
+// On SIGINT or SIGTERM before cleanup is called, Setup shuts down like Main,
+// prints failures to stderr, and exits with 130 or 143; a second signal
+// terminates immediately.
+//
+// Unlike Main, Setup does not read testing flags, so resources get no expiry
+// label and are never removed by other runs: leftovers of a crash or SIGKILL
+// remain. At cleanup, Setup removes resources of this run whose creation
+// response was lost and expired resources that earlier Main runs left behind.
+func Setup(ctx context.Context, opts MainOptions) (cleanup func() error, err error) {
+	return setup(ctx, opts, 0, os.Stderr, os.Exit)
+}
+
+// setup is Setup with the test timeout, which determines the expiry label,
+// output, and exit injected.
+func setup(ctx context.Context, opts MainOptions, testTimeout time.Duration, stderr io.Writer, exit func(int)) (func() error, error) {
+	opts, err := opts.resolve()
+	if err != nil {
+		return nil, err
+	}
 	o := owner
 	if err := o.install(expiry(time.Now(), testTimeout, opts.CleanupTimeout)); err != nil {
-		report(stderr, "%v", err)
-		exit(1)
-		return
+		return nil, err
+	}
+
+	var (
+		once   sync.Once
+		result error
+	)
+	shutdown := func(sig os.Signal) error {
+		once.Do(func() { result = o.shutdownProcess(ctx, opts, sig) })
+		return result
 	}
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
-	var once sync.Once
-	finish := func(code int, sig os.Signal) {
-		once.Do(func() {
-			signal.Stop(sigs)
-			o.shutdownProcess(ctx, opts, sig, stderr)
-			exit(code)
-		})
-	}
+	stop := make(chan struct{})
+	watcher := make(chan struct{})
 	go func() {
-		sig := <-sigs
-		code := 130
-		if sig == syscall.SIGTERM {
-			code = 143
+		defer close(watcher)
+		select {
+		case sig := <-sigs:
+			// Restore the default behavior so that a second signal terminates
+			// the process immediately.
+			signal.Stop(sigs)
+			report(stderr, "received %v, cleaning up", sig)
+			if err := shutdown(sig); err != nil {
+				report(stderr, "cleanup failed: %v", err)
+			}
+			code := 130
+			if sig == syscall.SIGTERM {
+				code = 143
+			}
+			exit(code)
+		case <-stop:
 		}
-		finish(code, sig)
 	}()
 
-	finish(run(), nil)
+	return sync.OnceValue(func() error {
+		signal.Stop(sigs)
+		close(stop)
+		// A signal shutdown that won the race exits the process here.
+		<-watcher
+		return shutdown(nil)
+	}), nil
 }
 
 // shutdownProcess runs the whole shutdown under the cleanup deadline: stop
 // admitting resources, drain in-flight operations, run the package Cleanup,
 // and remove Docker resources. The deadline is also enforced with a timer so
 // that a callback ignoring its context cannot hold the process.
-func (o *processOwner) shutdownProcess(ctx context.Context, opts MainOptions, sig os.Signal, stderr io.Writer) {
+func (o *processOwner) shutdownProcess(ctx context.Context, opts MainOptions, sig os.Signal) error {
 	timeout := opts.CleanupTimeout
 	if sig == syscall.SIGTERM && runtime.GOOS == "windows" {
 		timeout = min(timeout, windowsConsoleCloseTimeout)
-	}
-	if sig != nil {
-		report(stderr, "received %v, cleaning up", sig)
 	}
 
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
 	defer cancel()
 
-	done := make(chan struct{})
+	result := make(chan error, 1)
 	go func() {
-		defer close(done)
 		drain := o.beginShutdown()
 		errs := []error{drain(cleanupCtx)}
 		if opts.Cleanup != nil {
@@ -185,19 +255,17 @@ func (o *processOwner) shutdownProcess(ctx context.Context, opts MainOptions, si
 			}
 		}
 		errs = append(errs, o.cleanup(cleanupCtx, time.Now()))
-		leftovers := o.leftovers()
+		for _, id := range o.leftovers() {
+			errs = append(errs, fmt.Errorf("leftover %s", id))
+		}
 		errs = append(errs, o.closeClients())
-		if err := errors.Join(errs...); err != nil {
-			report(stderr, "cleanup failed: %v", err)
-		}
-		for _, id := range leftovers {
-			report(stderr, "leftover %s", id)
-		}
+		result <- errors.Join(errs...)
 	}()
 
 	select {
-	case <-done:
+	case err := <-result:
+		return err
 	case <-time.After(timeout + shutdownGrace):
-		report(stderr, "cleanup did not finish within %v; remaining resources are removed by a later run once they expire", timeout)
+		return fmt.Errorf("cleanup did not finish within %v: %w", timeout, context.DeadlineExceeded)
 	}
 }

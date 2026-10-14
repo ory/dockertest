@@ -22,8 +22,8 @@ var ErrContainerStartFailed = errors.New("container start failed")
 var ErrClientClosed = errors.New("client is closed")
 
 // ErrShuttingDown is returned when a new Docker resource is requested after
-// Main has started process shutdown.
+// Main or Setup has started process shutdown.
 var ErrShuttingDown = errors.New("dockertest is shutting down")
 
-// ErrInvalidOption is returned for invalid pool, build, or Main options.
+// ErrInvalidOption is returned for invalid pool, build, Main, or Setup options.
 var ErrInvalidOption = errors.New("invalid option")

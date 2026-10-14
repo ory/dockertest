@@ -475,8 +475,52 @@ func TestMain(m *testing.M) {
 - Pools may be created before `Main` as long as no container, network, or image
   was created yet. `Main` must be installed once per process.
 
-`NewPoolT` and `RunT` keep working without `Main`; `Main` adds the guarantees
-above for abnormal exits.
+**Custom `TestMain` with `Setup`:** when the package needs its own setup and
+teardown around `m.Run`, a leak check, or control over the exit status, install
+the same cleanup with `dockertest.Setup` and keep `TestMain` in charge:
+
+```go
+func TestMain(m *testing.M) {
+    cleanup, err := dockertest.Setup(context.Background(), dockertest.MainOptions{})
+    if err != nil {
+        fmt.Fprintln(os.Stderr, err)
+        os.Exit(1)
+    }
+
+    // Existing package setup.
+    code := m.Run()
+    // Existing package teardown.
+
+    if err := cleanup(); err != nil {
+        fmt.Fprintln(os.Stderr, err) // or fail the run: code = 1
+    }
+    if code == 0 {
+        if err := goleak.Find(); err != nil {
+            fmt.Fprintln(os.Stderr, err)
+            code = 1
+        }
+    }
+    os.Exit(code)
+}
+```
+
+- Call `cleanup` before `os.Exit`, and run leak checks after it: it stops
+  dockertest's signal handling and closes the Docker clients pools created, so
+  no dockertest goroutine is reported as a leak.
+- `cleanup` runs the same shutdown as `Main` under `MainOptions.CleanupTimeout`
+  and returns every failure, including a missed deadline, instead of printing
+  it. It never exits; it is safe to call more than once or concurrently.
+- `Setup` returns an error wrapping `ErrInvalidOption` for invalid options, a
+  second `Setup` or `Main`, or Docker resources created before it.
+- Signals behave as under `Main`: cleanup, then exit with 130 or 143, and a
+  second signal terminates immediately.
+- `Setup` does not read testing flags, so its resources carry no expiry and are
+  never removed by other runs. Leftovers of a `SIGKILL` or a crash stay until
+  removed by hand. At cleanup, `Setup` still removes expired resources of
+  earlier `Main` runs on the daemons its pools used.
+
+`NewPoolT` and `RunT` keep working without `Main` or `Setup`, which add the
+guarantees above for abnormal exits.
 
 ### Error handling
 
