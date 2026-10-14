@@ -17,7 +17,6 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/api/types/system"
 	mobyclient "github.com/moby/moby/client"
 	"github.com/ory/dockertest/v4/internal/client"
 )
@@ -38,7 +37,7 @@ type fakeClient struct {
 	tags       map[string]string            // tag -> image ID, set by buildStream
 	containers map[string]string            // container ID -> image reference it was created from
 	closed     bool
-	daemonID   string
+	host       string
 
 	containerCreate  func(ctx context.Context, opts mobyclient.ContainerCreateOptions) (string, error)
 	containerStart   func(ctx context.Context, id string) error
@@ -52,11 +51,10 @@ type fakeClient struct {
 	imageBuild       func(ctx context.Context, opts mobyclient.ImageBuildOptions) (io.ReadCloser, error)
 	imageInspect     func(ctx context.Context, id string) (image.InspectResponse, error)
 	imageRemove      func(ctx context.Context, id string, opts mobyclient.ImageRemoveOptions) error
-	info             func(ctx context.Context) (system.Info, error)
 }
 
 func newFakeClient() *fakeClient {
-	return &fakeClient{images: map[string]map[string]string{}, tags: map[string]string{}, containers: map[string]string{}, daemonID: "daemon-1"}
+	return &fakeClient{images: map[string]map[string]string{}, tags: map[string]string{}, containers: map[string]string{}, host: "daemon-1"}
 }
 
 func (f *fakeClient) record(format string, args ...any) {
@@ -242,20 +240,11 @@ func (f *fakeClient) ImageRemove(ctx context.Context, id string, opts mobyclient
 	return mobyclient.ImageRemoveResult{}, nil
 }
 
-func (f *fakeClient) Info(ctx context.Context, _ mobyclient.InfoOptions) (mobyclient.SystemInfoResult, error) {
-	f.record("Info")
-	if f.info != nil {
-		info, err := f.info(ctx)
-		return mobyclient.SystemInfoResult{Info: info}, err
-	}
-	return mobyclient.SystemInfoResult{Info: system.Info{ID: f.daemonID}}, nil
-}
-
 func (f *fakeClient) Ping(context.Context, mobyclient.PingOptions) (mobyclient.PingResult, error) {
 	return mobyclient.PingResult{}, nil
 }
 
-func (f *fakeClient) DaemonHost() string { return "fake://" + f.daemonID }
+func (f *fakeClient) DaemonHost() string { return "fake://" + f.host }
 
 func (f *fakeClient) Close() error {
 	f.mu.Lock()
@@ -265,12 +254,12 @@ func (f *fakeClient) Close() error {
 }
 
 // testOwner swaps the process owner for an isolated instance with injected
-// identities and a captured stderr, and restores the original afterwards.
+// run ID and a captured stderr, and restores the original afterwards.
 func testOwner(t *testing.T) (*processOwner, *bytes.Buffer) {
 	t.Helper()
 	ResetRegistry()
 	var stderr bytes.Buffer
-	o := newProcessOwner("run-test", "host-test", &stderr)
+	o := newProcessOwner("run-test", &stderr)
 	previous := owner
 	owner = o
 	t.Cleanup(func() {

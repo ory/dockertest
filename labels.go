@@ -5,45 +5,45 @@ package dockertest
 
 import (
 	"maps"
+	"strconv"
+	"time"
 )
 
 // Ownership labels are reserved under the io.ory.dockertest namespace. They
 // are added to every container and network so that resources can
-// be attributed to a process run and recovered after that run has died.
+// be attributed to a process run and swept once that run is provably gone.
 const (
 	labelTrue    = "true"
 	labelManaged = "io.ory.dockertest.managed" // "true" for every resource dockertest created
 	labelRun     = "io.ory.dockertest.run"     // unique ID of the creating process run
-	labelHost    = "io.ory.dockertest.host"    // local host identity of the creating process
-	labelScope   = "io.ory.dockertest.scope"   // project scope passed to Main; absent without Main
+	labelExpires = "io.ory.dockertest.expires" // unix seconds after which the run is dead; only under Main
 )
 
-// withOwnershipLabels copies user labels and adds this process's ownership tuple.
+// withOwnershipLabels copies user labels and adds this process's ownership labels.
 func (o *processOwner) withOwnershipLabels(user map[string]string) map[string]string {
-	labels := make(map[string]string, len(user)+4)
+	labels := make(map[string]string, len(user)+3)
 	maps.Copy(labels, user)
-	maps.Copy(labels, runLabels(o.scopeName(), o.hostID, o.runID))
-	return labels
-}
-
-// runLabels is the ownership tuple that identifies the resources of one run.
-// The scope label is only present under Main.
-func runLabels(scope, host, runID string) map[string]string {
-	labels := map[string]string{labelManaged: labelTrue, labelHost: host, labelRun: runID}
-	if scope != "" {
-		labels[labelScope] = scope
+	labels[labelManaged] = labelTrue
+	labels[labelRun] = o.runID
+	o.mu.Lock()
+	expires := o.expires
+	o.mu.Unlock()
+	if expires != "" {
+		labels[labelExpires] = expires
 	}
 	return labels
 }
 
-// ownershipMatches reports whether every label in want is present with the same
-// value in have. It is the only test used before deleting a resource that
-// dockertest did not create in this process.
-func ownershipMatches(have, want map[string]string) bool {
-	for k, v := range want {
-		if have[k] != v {
-			return false
-		}
+// orphaned reports whether a resource with the given labels belongs to
+// dockertest and was created either by this run or by a run whose expiry has
+// passed at now. A run past its expiry has been killed by the test timeout.
+func orphaned(labels map[string]string, runID string, now time.Time) bool {
+	if labels[labelManaged] != labelTrue {
+		return false
 	}
-	return true
+	if labels[labelRun] == runID {
+		return true
+	}
+	expires, err := strconv.ParseInt(labels[labelExpires], 10, 64)
+	return err == nil && expires < now.Unix()
 }

@@ -448,9 +448,7 @@ even when a test hangs or the process is interrupted:
 
 ```go
 func TestMain(m *testing.M) {
-    dockertest.Main(context.Background(), m, dockertest.MainOptions{
-        Scope: "ory/my-project",
-    })
+    dockertest.Main(context.Background(), m, dockertest.MainOptions{})
 }
 ```
 
@@ -464,14 +462,14 @@ func TestMain(m *testing.M) {
   whole shutdown, including the optional `MainOptions.Cleanup` teardown that
   runs before Docker resources are removed. `Main` exits shortly after the
   deadline even if a callback or a custom client ignores its context; whatever
-  is left then is recorded for recovery.
-- `Scope` is required and should be the same for every package of a project.
-  Each run records its identity in `StateDir` (`os.UserCacheDir()/dockertest/v4`
-  by default). When a later run of the same scope connects to a Docker daemon,
-  it recovers attributable resources an earlier run on the same machine left
-  behind after a kill or power loss. Runs on other machines or with other state
-  directories are not swept. Processes that should recover each other must share
-  one local state directory.
+  is left then is removed by a later run once it expires.
+- Under `Main`, containers and networks carry an `io.ory.dockertest.expires`
+  label: the start time plus `-test.timeout`, the cleanup timeout, and a minute
+  of margin. Once it has passed, `go test` has killed the process. At shutdown,
+  `Main` also removes expired resources on every Docker daemon its pools used,
+  so leftovers of a kill, a `-timeout` panic, or a power loss disappear with a
+  later run. With `-test.timeout=0` resources get no expiry and are never
+  removed by other runs.
 - Pools may be created before `Main` as long as no container, network, or image
   was created yet. `Main` must be installed once per process.
 

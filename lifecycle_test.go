@@ -19,9 +19,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/api/types/system"
 	mobyclient "github.com/moby/moby/client"
-	"github.com/ory/dockertest/v4/internal/client"
 )
 
 func TestRunStartFailureRollsBackWithCanceledContext(t *testing.T) {
@@ -33,7 +31,10 @@ func TestRunStartFailureRollsBackWithCanceledContext(t *testing.T) {
 	c.containerStart = func(context.Context, string) error { cancel(); return startErr }
 	p := newFakePool(t, c)
 
-	_, err := p.Run(ctx, "alpine", WithoutReuse())
+	r, err := p.Run(ctx, "alpine", WithoutReuse())
+	if r != nil {
+		t.Fatalf("resource = %#v, want nil on failure", r)
+	}
 	if !errors.Is(err, ErrContainerStartFailed) || !errors.Is(err, startErr) {
 		t.Fatalf("Run() error = %v, want ErrContainerStartFailed wrapping %v", err, startErr)
 	}
@@ -85,7 +86,10 @@ func TestRunInspectFailureRollsBack(t *testing.T) {
 	}
 	p := newFakePool(t, c)
 
-	_, err := p.Run(t.Context(), "alpine")
+	r, err := p.Run(t.Context(), "alpine")
+	if r != nil {
+		t.Fatalf("resource = %#v, want nil on failure", r)
+	}
 	if !errors.Is(err, inspectErr) {
 		t.Fatalf("Run() error = %v, want %v", err, inspectErr)
 	}
@@ -328,11 +332,11 @@ func TestOwnershipLabelsDoNotModifyCallerMap(t *testing.T) {
 	if len(user) != 1 {
 		t.Fatalf("caller map modified: %v", user)
 	}
-	if labels["team"] != "a" || labels[labelManaged] != "true" || labels[labelRun] != "run-test" || labels[labelHost] != "host-test" {
+	if labels["team"] != "a" || labels[labelManaged] != "true" || labels[labelRun] != "run-test" {
 		t.Fatalf("labels = %v", labels)
 	}
-	if _, ok := labels[labelScope]; ok {
-		t.Fatal("scope label present without Main")
+	if _, ok := labels[labelExpires]; ok {
+		t.Fatal("expires label present without Main")
 	}
 }
 
@@ -502,7 +506,10 @@ func TestBuildRunFailurePreservesFreshImage(t *testing.T) {
 		return "", errors.New("no space")
 	}
 	p := newFakePool(t, c)
-	_, err := p.BuildAndRun(t.Context(), "myapp:test", &BuildOptions{ContextDir: t.TempDir()})
+	r, err := p.BuildAndRun(t.Context(), "myapp:test", &BuildOptions{ContextDir: t.TempDir()})
+	if r != nil {
+		t.Fatalf("resource = %#v, want nil on failure", r)
+	}
 	if !errors.Is(err, ErrContainerCreateFailed) {
 		t.Fatalf("BuildAndRun() error = %v, want ErrContainerCreateFailed", err)
 	}
@@ -511,20 +518,20 @@ func TestBuildRunFailurePreservesFreshImage(t *testing.T) {
 	}
 }
 
-func TestSweepRunOnlyRemovesFullyMatchingResources(t *testing.T) {
-	want := map[string]string{labelManaged: "true", labelScope: "s", labelHost: "h", labelRun: "r1"}
+func TestSweepRemovesExpiredAndOwnRun(t *testing.T) {
+	now := time.Unix(1000, 0)
 	variants := []struct {
 		labels map[string]string
 		name   string
 	}{
-		{labels: map[string]string{labelManaged: "true", labelScope: "s", labelHost: "h", labelRun: "r1"}, name: "owned"},
-		{labels: map[string]string{labelScope: "s", labelHost: "h", labelRun: "r1"}, name: "unmanaged"},
-		{labels: map[string]string{labelManaged: "true", labelHost: "h", labelRun: "r1"}, name: "no-scope"},
-		{labels: map[string]string{labelManaged: "true", labelScope: "other", labelHost: "h", labelRun: "r1"}, name: "other-scope"},
-		{labels: map[string]string{labelManaged: "true", labelScope: "s", labelRun: "r1"}, name: "no-host"},
-		{labels: map[string]string{labelManaged: "true", labelScope: "s", labelHost: "other", labelRun: "r1"}, name: "other-host"},
-		{labels: map[string]string{labelManaged: "true", labelScope: "s", labelHost: "h"}, name: "no-run"},
-		{labels: map[string]string{labelManaged: "true", labelScope: "s", labelHost: "h", labelRun: "r2"}, name: "other-run"},
+		{labels: map[string]string{labelManaged: "true", labelRun: "r1"}, name: "own-run"},
+		{labels: map[string]string{labelManaged: "true", labelRun: "r2", labelExpires: "999"}, name: "expired"},
+		{labels: map[string]string{labelManaged: "true", labelRun: "r2", labelExpires: "1000"}, name: "expires-now"},
+		{labels: map[string]string{labelManaged: "true", labelRun: "r2", labelExpires: "1001"}, name: "future"},
+		{labels: map[string]string{labelManaged: "true", labelRun: "r2"}, name: "no-expiry"},
+		{labels: map[string]string{labelManaged: "true", labelRun: "r2", labelExpires: "soon"}, name: "malformed"},
+		{labels: map[string]string{labelRun: "r1"}, name: "unmanaged-own-run"},
+		{labels: map[string]string{labelRun: "r2", labelExpires: "999"}, name: "unmanaged-expired"},
 	}
 	c := newFakeClient()
 	var filters mobyclient.Filters
@@ -546,19 +553,20 @@ func TestSweepRunOnlyRemovesFullyMatchingResources(t *testing.T) {
 		return items, nil
 	}
 
-	if err := sweepRun(t.Context(), c, want); err != nil {
-		t.Fatalf("sweepRun() error = %v", err)
+	if err := sweep(t.Context(), c, "r1", now); err != nil {
+		t.Fatalf("sweep() error = %v", err)
 	}
-	for _, k := range []string{labelManaged + "=true", labelScope + "=s", labelHost + "=h", labelRun + "=r1"} {
-		if !filters["label"][k] {
-			t.Fatalf("list filters %v miss label %q", filters, k)
-		}
+	if !filters["label"][labelManaged+"=true"] {
+		t.Fatalf("list filters %v miss the managed label", filters)
 	}
 	got := slices.Concat(c.callsMatching("ContainerRemove"), c.callsMatching("NetworkRemove"), c.callsMatching("ImageRemove"))
 	wantCalls := []string{
-		"ContainerRemove running-owned force=true volumes=true canceled=false",
-		"ContainerRemove stopped-owned force=true volumes=true canceled=false",
-		"NetworkRemove network-owned canceled=false",
+		"ContainerRemove running-own-run force=true volumes=true canceled=false",
+		"ContainerRemove stopped-own-run force=true volumes=true canceled=false",
+		"ContainerRemove running-expired force=true volumes=true canceled=false",
+		"ContainerRemove stopped-expired force=true volumes=true canceled=false",
+		"NetworkRemove network-own-run canceled=false",
+		"NetworkRemove network-expired canceled=false",
 	}
 	if !slices.Equal(got, wantCalls) {
 		t.Fatalf("removals = %q\nwant       %q", got, wantCalls)
@@ -568,20 +576,20 @@ func TestSweepRunOnlyRemovesFullyMatchingResources(t *testing.T) {
 func TestOwnerCleanupReconcilesLostCreations(t *testing.T) {
 	o, _ := testOwner(t)
 	c := newFakeClient()
-	if err := o.install("scope", nil); err != nil {
+	if err := o.install(""); err != nil {
 		t.Fatalf("install() error = %v", err)
 	}
 	// A container whose create response was lost: it exists on the daemon with
 	// this run's labels but was never tracked.
 	c.containerList = func(context.Context, mobyclient.ContainerListOptions) ([]container.Summary, error) {
-		return []container.Summary{{ID: "lost", Labels: map[string]string{labelManaged: "true", labelRun: "run-test", labelHost: "host-test", labelScope: "scope"}}}, nil
+		return []container.Summary{{ID: "lost", Labels: map[string]string{labelManaged: "true", labelRun: "run-test"}}}, nil
 	}
 	p := newFakePool(t, c)
 	r, err := p.Run(t.Context(), "alpine", WithoutReuse())
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
-	if err := o.cleanup(t.Context()); err != nil {
+	if err := o.cleanup(t.Context(), time.Unix(1000, 0)); err != nil {
 		t.Fatalf("cleanup() error = %v", err)
 	}
 	got := c.callsMatching("ContainerRemove")
@@ -623,7 +631,7 @@ func TestPoolCloseKeepsClientAfterFailedCleanup(t *testing.T) {
 
 func TestPoolCloseKeepsOwnedClientUnderMain(t *testing.T) {
 	o, _ := testOwner(t)
-	if err := o.install("scope", nil); err != nil {
+	if err := o.install(""); err != nil {
 		t.Fatalf("install() error = %v", err)
 	}
 	c := newFakeClient()
@@ -689,74 +697,12 @@ func TestPoolCloseHonorsDeadlineWhileRemovalInFlight(t *testing.T) {
 	}
 }
 
-func TestDaemonRegistrationWaitsForHook(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		o, _ := testOwner(t)
-		c := newFakeClient()
-		proceed := make(chan struct{})
-		hookErr := errors.New("manifest write failed")
-		var calls int
-		err := o.install("scope", func(context.Context, string, client.DockerClient) error {
-			calls++
-			if calls == 1 {
-				<-proceed
-				return hookErr
-			}
-			return nil
-		})
-		if err != nil {
-			t.Fatalf("install() error = %v", err)
-		}
-		a, b := newFakePool(t, c), newFakePool(t, c)
-
-		run := func(ctx context.Context, p *pool) <-chan error {
-			result := make(chan error, 1)
-			go func() {
-				_, runErr := p.Run(ctx, "alpine", WithoutReuse())
-				result <- runErr
-			}()
-			return result
-		}
-		first := run(t.Context(), a)
-		synctest.Wait()
-
-		// The daemon is not registered while the hook is pending: other
-		// callers wait for it instead of creating resources.
-		ctx, cancel := context.WithCancel(t.Context())
-		canceled := run(ctx, b)
-		waiting := run(t.Context(), b)
-		synctest.Wait()
-		if got := c.callsMatching("ContainerCreate"); len(got) != 0 {
-			t.Fatalf("container created before the daemon hook finished: %q", got)
-		}
-		cancel()
-		if err := <-canceled; !errors.Is(err, context.Canceled) {
-			t.Fatalf("canceled Run() error = %v, want context.Canceled", err)
-		}
-
-		close(proceed)
-		if err := <-first; !errors.Is(err, hookErr) {
-			t.Fatalf("first Run() error = %v, want the hook error", err)
-		}
-		// The waiting caller runs the failed hook again.
-		if err := <-waiting; err != nil {
-			t.Fatalf("waiting Run() error = %v", err)
-		}
-		if calls != 2 {
-			t.Fatalf("hook calls = %d, want the failed hook retried", calls)
-		}
-		if got := c.callsMatching("ContainerCreate"); len(got) != 1 {
-			t.Fatalf("ContainerCreate calls = %q, want only the retried caller's", got)
-		}
-	})
-}
-
 func TestSharedContainerRemovalRetriedByLastReleasingPool(t *testing.T) {
 	o, _ := testOwner(t)
 	// Two clients for the same daemon, and one for an unrelated daemon.
-	newClient := func(daemonID string) *fakeClient {
+	newClient := func(host string) *fakeClient {
 		c := newFakeClient()
-		c.daemonID = daemonID
+		c.host = host
 		c.imageBuild = c.buildStream("sha256:img")
 		return c
 	}
@@ -918,7 +864,7 @@ func TestBuildCleanupKeepsImagesAndCallerLabels(t *testing.T) {
 	if err := p.Close(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	if err := o.cleanup(t.Context()); err != nil {
+	if err := o.cleanup(t.Context(), time.Unix(1000, 0)); err != nil {
 		t.Fatal(err)
 	}
 	if calls := c.callsMatching("ImageRemove"); len(calls) != 0 {
@@ -929,20 +875,5 @@ func TestBuildCleanupKeepsImagesAndCallerLabels(t *testing.T) {
 	}
 	if left := o.leftovers(); len(left) != 0 {
 		t.Fatalf("leftovers = %v, want none", left)
-	}
-}
-
-func TestDaemonIdentityOnlyResolvedUnderMain(t *testing.T) {
-	testOwner(t)
-	c := newFakeClient()
-	c.info = func(context.Context) (system.Info, error) {
-		return system.Info{}, errors.New("daemon identity unavailable")
-	}
-	p := newFakePool(t, c)
-	if _, err := p.Run(t.Context(), "alpine", WithoutReuse()); err != nil {
-		t.Fatalf("Run without Main: %v", err)
-	}
-	if calls := c.callsMatching("Info"); len(calls) != 0 {
-		t.Fatalf("Info without Main: %v", calls)
 	}
 }

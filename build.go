@@ -112,7 +112,11 @@ func (p *pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 
 	cfg.tag = tag
 	cfg.image = imageID
-	return p.run(ctx, repository, cfg)
+	r, err := p.run(ctx, repository, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
 }
 
 // buildImage builds an image and resolves the returned immutable image ID.

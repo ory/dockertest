@@ -6,39 +6,27 @@ package dockertest
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"runtime"
+	"strconv"
 	"sync"
 	"syscall"
 	"testing"
 	"time"
-
-	"github.com/ory/dockertest/v4/internal/client"
 )
 
 // MainOptions configures Main.
 //
 //nolint:govet // field alignment traded for readability
 type MainOptions struct {
-	// Scope identifies the project. It is required and must be identical
-	// across all test packages of the project so that a later run can recover
-	// resources that an earlier, abandoned run of the same project left
-	// behind. Runs with different scopes never touch each other's resources.
-	Scope string
-
-	// StateDir is a local directory shared by all processes that should
-	// recover each other's resources. It holds per-run lock and manifest
-	// files but never credentials. Defaults to os.UserCacheDir()/dockertest/v4.
-	StateDir string
-
 	// CleanupTimeout is the deadline of the whole shutdown, including the
 	// Cleanup callback. Main exits shortly after it even if a callback or
-	// client ignores its context, and keeps the run's record for recovery.
-	// Defaults to 60 seconds; negative values are rejected.
+	// client ignores its context; what remains is swept by a later run once
+	// it expires. Defaults to 60 seconds; negative values are rejected.
 	CleanupTimeout time.Duration
 
 	// Cleanup is an optional package teardown that runs once, before Docker
@@ -55,6 +43,9 @@ const (
 	// shutdownGrace is how much longer than the cleanup timeout Main waits for
 	// a callback that ignores its context before exiting anyway.
 	shutdownGrace = time.Second
+	// expiryMargin absorbs the time between computing the expiry and m.Run
+	// starting the test timer, and clock skew between host and daemon.
+	expiryMargin = time.Minute
 )
 
 // report writes a dockertest-prefixed line to w; output is best effort.
@@ -63,23 +54,23 @@ func report(w io.Writer, format string, args ...any) {
 }
 
 func (o MainOptions) resolve() (MainOptions, error) {
-	if o.Scope == "" {
-		return o, fmt.Errorf("%w: MainOptions.Scope is required", ErrInvalidOption)
-	}
 	if o.CleanupTimeout < 0 {
 		return o, fmt.Errorf("%w: MainOptions.CleanupTimeout must not be negative, got %v", ErrInvalidOption, o.CleanupTimeout)
 	}
 	if o.CleanupTimeout == 0 {
 		o.CleanupTimeout = defaultCleanupTimeout
 	}
-	if o.StateDir == "" {
-		dir, err := os.UserCacheDir()
-		if err != nil {
-			return o, fmt.Errorf("%w: resolving default state directory: %w", ErrInvalidOption, err)
-		}
-		o.StateDir = filepath.Join(dir, "dockertest", "v4")
-	}
 	return o, nil
+}
+
+// expiry returns the expiry label value for a run that starts at now: the
+// moment by which go test has killed the process for exceeding testTimeout and
+// its shutdown has ended. It is empty when the test timeout is disabled.
+func expiry(now time.Time, testTimeout, cleanupTimeout time.Duration) string {
+	if testTimeout <= 0 {
+		return ""
+	}
+	return strconv.FormatInt(now.Add(testTimeout+cleanupTimeout+shutdownGrace+expiryMargin).Unix(), 10)
 }
 
 // Main runs the tests of a package and cleans up its owned Docker resources,
@@ -88,9 +79,7 @@ func (o MainOptions) resolve() (MainOptions, error) {
 // cleanup. Use it from TestMain:
 //
 //	func TestMain(m *testing.M) {
-//		dockertest.Main(context.Background(), m, dockertest.MainOptions{
-//			Scope: "ory/my-project",
-//		})
+//		dockertest.Main(context.Background(), m, dockertest.MainOptions{})
 //	}
 //
 // Main owns process exit and never returns. It calls m.Run on the calling
@@ -101,19 +90,30 @@ func (o MainOptions) resolve() (MainOptions, error) {
 // restored, so a second signal terminates the process immediately.
 //
 // Pools may be constructed before Main as long as they have created no Docker
-// resources. Invalid options, a repeated Main, or a failure to establish the
-// run lock exit with status 1 before any test runs.
+// resources. Invalid options or a repeated Main exit with status 1 before any
+// test runs.
 //
-// Main also recovers containers and networks left behind by earlier runs of
-// the same Scope on this host that did not shut
-// down, for example after a kill or a power loss. Recovery requires the same
-// StateDir and only covers daemons the new run connects to.
+// Under Main, containers and networks are labeled with an expiry derived from
+// -test.timeout: once it has passed, go test has killed the process. At
+// shutdown, Main also removes expired resources that earlier runs left behind
+// on the daemons it used, for example after a kill or a power loss. With
+// -test.timeout=0 resources get no expiry and are never removed by other runs.
 func Main(ctx context.Context, m *testing.M, opts MainOptions) {
-	runMain(ctx, m.Run, opts, os.Stderr, os.Exit)
+	if !flag.Parsed() {
+		flag.Parse()
+	}
+	var timeout time.Duration
+	if f := flag.Lookup("test.timeout"); f != nil {
+		if d, ok := f.Value.(flag.Getter).Get().(time.Duration); ok {
+			timeout = d
+		}
+	}
+	runMain(ctx, m.Run, opts, timeout, os.Stderr, os.Exit)
 }
 
-// runMain is Main with the test runner, output, and exit injected for tests.
-func runMain(ctx context.Context, run func() int, opts MainOptions, stderr io.Writer, exit func(int)) {
+// runMain is Main with the test runner, test timeout, output, and exit
+// injected for tests.
+func runMain(ctx context.Context, run func() int, opts MainOptions, testTimeout time.Duration, stderr io.Writer, exit func(int)) {
 	opts, err := opts.resolve()
 	if err != nil {
 		report(stderr, "%v", err)
@@ -121,8 +121,7 @@ func runMain(ctx context.Context, run func() int, opts MainOptions, stderr io.Wr
 		return
 	}
 	o := owner
-	state, err := o.attachMain(opts)
-	if err != nil {
+	if err := o.install(expiry(time.Now(), testTimeout, opts.CleanupTimeout)); err != nil {
 		report(stderr, "%v", err)
 		exit(1)
 		return
@@ -135,7 +134,7 @@ func runMain(ctx context.Context, run func() int, opts MainOptions, stderr io.Wr
 	finish := func(code int, sig os.Signal) {
 		once.Do(func() {
 			signal.Stop(sigs)
-			o.shutdownProcess(ctx, opts, state, sig, stderr)
+			o.shutdownProcess(ctx, opts, sig, stderr)
 			exit(code)
 		})
 	}
@@ -151,29 +150,11 @@ func runMain(ctx context.Context, run func() int, opts MainOptions, stderr io.Wr
 	finish(run(), nil)
 }
 
-// attachMain installs Main into the owner: it takes the run lock, publishes
-// the manifest, and arranges recovery for every daemon the run connects to.
-func (o *processOwner) attachMain(opts MainOptions) (*runState, error) {
-	state, err := openRunState(opts.StateDir, opts.Scope, o.hostID, o.runID)
-	if err != nil {
-		return nil, err
-	}
-	err = o.install(opts.Scope, func(ctx context.Context, daemonID string, c client.DockerClient) error {
-		recoverAbandoned(ctx, opts.StateDir, opts.Scope, o.hostID, daemonID, o.runID, c, o.warn)
-		return state.addDaemon(daemonID)
-	})
-	if err != nil {
-		return nil, errors.Join(err, state.close(true))
-	}
-	return state, nil
-}
-
 // shutdownProcess runs the whole shutdown under the cleanup deadline: stop
 // admitting resources, drain in-flight operations, run the package Cleanup,
-// remove Docker resources, and release the run record. The deadline is also
-// enforced with a timer so that a callback ignoring its context cannot hold
-// the process; in that case the ownership record is kept for recovery.
-func (o *processOwner) shutdownProcess(ctx context.Context, opts MainOptions, state *runState, sig os.Signal, stderr io.Writer) {
+// and remove Docker resources. The deadline is also enforced with a timer so
+// that a callback ignoring its context cannot hold the process.
+func (o *processOwner) shutdownProcess(ctx context.Context, opts MainOptions, sig os.Signal, stderr io.Writer) {
 	timeout := opts.CleanupTimeout
 	if sig == syscall.SIGTERM && runtime.GOOS == "windows" {
 		timeout = min(timeout, windowsConsoleCloseTimeout)
@@ -189,22 +170,15 @@ func (o *processOwner) shutdownProcess(ctx context.Context, opts MainOptions, st
 	go func() {
 		defer close(done)
 		drain := o.beginShutdown()
-		var errs []error
-		drainErr := drain(cleanupCtx)
-		errs = append(errs, drainErr)
+		errs := []error{drain(cleanupCtx)}
 		if opts.Cleanup != nil {
 			if err := opts.Cleanup(cleanupCtx); err != nil {
 				errs = append(errs, fmt.Errorf("cleanup callback: %w", err))
 			}
 		}
-		dockerErr := o.cleanup(cleanupCtx)
-		errs = append(errs, dockerErr)
+		errs = append(errs, o.cleanup(cleanupCtx, time.Now()))
 		leftovers := o.leftovers()
 		errs = append(errs, o.closeClients())
-		// The record is only dropped when every Docker resource of this run
-		// is known to be gone; a failing callback does not keep it.
-		clean := len(leftovers) == 0 && drainErr == nil && dockerErr == nil
-		errs = append(errs, state.close(clean))
 		if err := errors.Join(errs...); err != nil {
 			report(stderr, "cleanup failed: %v", err)
 		}
@@ -216,6 +190,6 @@ func (o *processOwner) shutdownProcess(ctx context.Context, opts MainOptions, st
 	select {
 	case <-done:
 	case <-time.After(timeout + shutdownGrace):
-		report(stderr, "cleanup did not finish within %v; remaining resources are recorded for recovery", timeout)
+		report(stderr, "cleanup did not finish within %v; remaining resources are removed by a later run once they expire", timeout)
 	}
 }

@@ -6,11 +6,12 @@ package dockertest
 import (
 	"context"
 	"errors"
-	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/moby/moby/api/types/container"
 	mobyclient "github.com/moby/moby/client"
 )
 
@@ -18,48 +19,29 @@ import (
 // the exit code and stderr.
 func runMainForTest(ctx context.Context, t *testing.T, run func() int, opts MainOptions) (code int, stderr string) {
 	t.Helper()
-	if opts.StateDir == "" {
-		opts.StateDir = t.TempDir()
-	}
 	_, out := testOwner(t)
 	code = -1
-	runMain(ctx, run, opts, out, func(c int) { code = c })
+	runMain(ctx, run, opts, 0, out, func(c int) { code = c })
 	return code, out.String()
 }
 
-func TestMainRejectsInvalidOptions(t *testing.T) {
-	cases := []struct {
-		name string
-		opts MainOptions
-		want string
-	}{
-		{name: "missing scope", opts: MainOptions{}, want: "Scope is required"},
-		{name: "negative timeout", opts: MainOptions{Scope: "s", CleanupTimeout: -time.Second}, want: "must not be negative"},
+func TestMainRejectsNegativeCleanupTimeout(t *testing.T) {
+	ran := false
+	code, stderr := runMainForTest(t.Context(), t, func() int { ran = true; return 0 }, MainOptions{CleanupTimeout: -time.Second})
+	if want := "must not be negative"; code != 1 || !strings.Contains(stderr, want) {
+		t.Fatalf("exit = %d, stderr = %q; want 1 and %q", code, stderr, want)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			ran := false
-			code, stderr := runMainForTest(t.Context(), t, func() int { ran = true; return 0 }, tc.opts)
-			if code != 1 || !strings.Contains(stderr, tc.want) {
-				t.Fatalf("exit = %d, stderr = %q; want 1 and %q", code, stderr, tc.want)
-			}
-			if ran {
-				t.Fatal("tests ran despite invalid options")
-			}
-		})
+	if ran {
+		t.Fatal("tests ran despite invalid options")
 	}
 }
 
 func TestMainResolvesDefaults(t *testing.T) {
-	opts, err := MainOptions{Scope: "s"}.resolve()
+	opts, err := MainOptions{}.resolve()
 	if err != nil {
 		t.Fatalf("resolve() error = %v", err)
 	}
-	cache, err := os.UserCacheDir()
-	if err != nil {
-		t.Skip("no user cache dir")
-	}
-	if opts.CleanupTimeout != defaultCleanupTimeout || !strings.HasPrefix(opts.StateDir, cache) || !strings.HasSuffix(opts.StateDir, "v4") {
+	if opts.CleanupTimeout != defaultCleanupTimeout {
 		t.Fatalf("resolved options = %+v", opts)
 	}
 }
@@ -67,15 +49,14 @@ func TestMainResolvesDefaults(t *testing.T) {
 func TestMainRejectsRepeatedInstallAndEarlyResources(t *testing.T) {
 	t.Run("repeated", func(t *testing.T) {
 		o, stderr := testOwner(t)
-		dir := t.TempDir()
 		code := -1
-		runMain(t.Context(), func() int { return 0 }, MainOptions{Scope: "s", StateDir: dir}, stderr, func(c int) { code = c })
+		runMain(t.Context(), func() int { return 0 }, MainOptions{}, 0, stderr, func(c int) { code = c })
 		if code != 0 {
 			t.Fatalf("first run exit = %d, stderr = %s", code, stderr.String())
 		}
 		// Main must refuse to run twice in the same process even though the
-		// first run's lock was released.
-		runMain(t.Context(), func() int { t.Fatal("tests ran"); return 0 }, MainOptions{Scope: "s", StateDir: dir}, stderr, func(c int) { code = c })
+		// first run has shut down.
+		runMain(t.Context(), func() int { t.Fatal("tests ran"); return 0 }, MainOptions{}, 0, stderr, func(c int) { code = c })
 		if code != 1 || !strings.Contains(stderr.String(), "already installed") {
 			t.Fatalf("second run exit = %d, stderr = %s", code, stderr.String())
 		}
@@ -89,20 +70,9 @@ func TestMainRejectsRepeatedInstallAndEarlyResources(t *testing.T) {
 			t.Fatal(err)
 		}
 		code := -1
-		runMain(t.Context(), func() int { t.Fatal("tests ran"); return 0 }, MainOptions{Scope: "s", StateDir: t.TempDir()}, stderr, func(c int) { code = c })
+		runMain(t.Context(), func() int { t.Fatal("tests ran"); return 0 }, MainOptions{}, 0, stderr, func(c int) { code = c })
 		if code != 1 || !strings.Contains(stderr.String(), "created before Main") {
 			t.Fatalf("exit = %d, stderr = %s", code, stderr.String())
-		}
-	})
-
-	t.Run("unlockable state directory", func(t *testing.T) {
-		file := t.TempDir() + "/file"
-		if err := os.WriteFile(file, nil, 0o600); err != nil {
-			t.Fatal(err)
-		}
-		code, stderr := runMainForTest(t.Context(), t, func() int { t.Fatal("tests ran"); return 0 }, MainOptions{Scope: "s", StateDir: file + "/dir"})
-		if code != 1 || !strings.Contains(stderr, "state directory") {
-			t.Fatalf("exit = %d, stderr = %q", code, stderr)
 		}
 	})
 }
@@ -119,7 +89,7 @@ func TestMainRunsCleanupAndPreservesStatus(t *testing.T) {
 		}
 		order = append(order, "tests")
 		return 7
-	}, MainOptions{Scope: "s", Cleanup: func(ctx context.Context) error {
+	}, MainOptions{Cleanup: func(ctx context.Context) error {
 		if _, ok := ctx.Deadline(); !ok {
 			t.Error("cleanup callback context has no deadline")
 		}
@@ -150,40 +120,31 @@ func TestMainRunsCleanupAndPreservesStatus(t *testing.T) {
 	}
 }
 
-func TestMainReportsLeftoversAndKeepsRecord(t *testing.T) {
+func TestMainReportsLeftovers(t *testing.T) {
 	c := newFakeClient()
 	c.containerRemove = func(context.Context, string, mobyclient.ContainerRemoveOptions) error { return errors.New("busy") }
-	dir := t.TempDir()
-	var runID string
 	code, stderr := runMainForTest(t.Context(), t, func() int {
-		runID = owner.runID
 		p := newFakePool(t, c)
 		if _, err := p.Run(t.Context(), "alpine", WithoutReuse()); err != nil {
 			t.Fatal(err)
 		}
 		return 0
-	}, MainOptions{Scope: "s", StateDir: dir})
+	}, MainOptions{})
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0 (cleanup failures are warnings)", code)
 	}
 	if !strings.Contains(stderr, "leftover container container-1") || !strings.Contains(stderr, "busy") {
 		t.Fatalf("stderr = %q", stderr)
 	}
-	m, ok := readTestManifest(t, dir, runID)
-	if !ok || len(m.Daemons) != 1 || m.Daemons[0] != "daemon-1" {
-		t.Fatalf("manifest = %+v, %t; want it kept with the daemon for recovery", m, ok)
-	}
 }
 
 func TestMainEnforcesDeadlineOnStuckCleanup(t *testing.T) {
-	dir := t.TempDir()
-	var runID string
 	block := make(chan struct{})
 	t.Cleanup(func() { close(block) })
 	start := time.Now()
-	code, stderr := runMainForTest(t.Context(), t, func() int { runID = owner.runID; return 0 }, MainOptions{
-		Scope: "s", StateDir: dir, CleanupTimeout: 50 * time.Millisecond,
-		Cleanup: func(context.Context) error { <-block; return nil },
+	code, stderr := runMainForTest(t.Context(), t, func() int { return 0 }, MainOptions{
+		CleanupTimeout: 50 * time.Millisecond,
+		Cleanup:        func(context.Context) error { <-block; return nil },
 	})
 	if code != 0 {
 		t.Fatalf("exit = %d", code)
@@ -194,32 +155,72 @@ func TestMainEnforcesDeadlineOnStuckCleanup(t *testing.T) {
 	if elapsed := time.Since(start); elapsed > 10*time.Second {
 		t.Fatalf("shutdown took %v, want it bounded by the deadline", elapsed)
 	}
-	if _, ok := readTestManifest(t, dir, runID); !ok {
-		t.Fatal("manifest removed although cleanup did not finish")
-	}
 }
 
-func TestMainRecoversAbandonedRunOnFirstDaemonUse(t *testing.T) {
-	dir := t.TempDir()
+func TestMainSweepsExpiredOnShutdown(t *testing.T) {
 	c := newFakeClient()
-	writeTestManifest(t, dir, runManifest{Scope: "s", Host: "host-test", RunID: "dead", Daemons: []string{"daemon-1"}})
-	abandonedContainers(c, "host-test", "dead")
-
+	c.containerList = func(_ context.Context, opts mobyclient.ContainerListOptions) ([]container.Summary, error) {
+		return listedContainers(opts,
+			container.Summary{ID: "expired", State: container.StateExited, Labels: map[string]string{labelManaged: "true", labelRun: "dead", labelExpires: "1"}},
+			container.Summary{ID: "active", State: container.StateRunning, Labels: map[string]string{labelManaged: "true", labelRun: "alive", labelExpires: "99999999999"}},
+		), nil
+	}
 	code, stderr := runMainForTest(t.Context(), t, func() int {
 		p := newFakePool(t, c)
 		if _, err := p.Run(t.Context(), "alpine", WithoutReuse()); err != nil {
 			t.Fatal(err)
 		}
-		calls := c.callsMatching("ContainerRemove")
-		if len(calls) != 1 || !strings.HasPrefix(calls[0], "ContainerRemove container-of-dead") {
-			t.Errorf("recovery did not run before the first creation: %q", c.calls)
+		if got := c.callsMatching("ContainerRemove"); len(got) != 0 {
+			t.Errorf("containers removed before shutdown: %q", got)
 		}
 		return 0
-	}, MainOptions{Scope: "s", StateDir: dir})
+	}, MainOptions{})
 	if code != 0 || stderr != "" {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
-	if _, ok := readTestManifest(t, dir, "dead"); ok {
-		t.Fatal("recovered manifest still present")
+	want := []string{
+		"ContainerRemove container-1 force=true volumes=true canceled=false",
+		"ContainerRemove expired force=true volumes=true canceled=false",
+	}
+	if got := c.callsMatching("ContainerRemove"); !slices.Equal(got, want) {
+		t.Fatalf("ContainerRemove calls = %q\nwant                    %q", got, want)
+	}
+}
+
+func TestMainStampsExpiry(t *testing.T) {
+	now := time.Unix(1000, 0)
+	if got, want := expiry(now, 10*time.Minute, time.Minute), "1721"; got != want {
+		t.Fatalf("expiry() = %q, want %q (now + test timeout + cleanup timeout + grace + margin)", got, want)
+	}
+	if got := expiry(now, 0, time.Minute); got != "" {
+		t.Fatalf("expiry() with disabled test timeout = %q, want none", got)
+	}
+
+	for _, tc := range []struct {
+		name        string
+		testTimeout time.Duration
+		want        bool
+	}{
+		{name: "timeout", testTimeout: 10 * time.Minute, want: true},
+		{name: "no timeout", testTimeout: 0, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, stderr := testOwner(t)
+			c := newFakeClient()
+			var labels map[string]string
+			c.containerCreate = func(_ context.Context, opts mobyclient.ContainerCreateOptions) (string, error) {
+				labels = opts.Config.Labels
+				return "c1", nil
+			}
+			runMain(t.Context(), func() int {
+				if _, err := newFakePool(t, c).Run(t.Context(), "alpine", WithoutReuse()); err != nil {
+					t.Fatal(err)
+				}
+				return 0
+			}, MainOptions{}, tc.testTimeout, stderr, func(int) {})
+			if _, ok := labels[labelExpires]; ok != tc.want {
+				t.Fatalf("labels = %v, want expires label: %t", labels, tc.want)
+			}
+		})
 	}
 }

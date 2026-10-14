@@ -437,16 +437,14 @@ v3 left containers behind when a test hung or the process was killed. v4 adds
 
 ```go
 func TestMain(m *testing.M) {
-    dockertest.Main(context.Background(), m, dockertest.MainOptions{
-        Scope: "ory/my-project",
-    })
+    dockertest.Main(context.Background(), m, dockertest.MainOptions{})
 }
 ```
 
 `Main` never returns: it runs `m.Run`, cleans up, and exits with the test
 status; cleanup errors are only printed. Install it once per process, before any
-Docker resource is created, and use the same `Scope` in every package of a
-project. See the README for signals, timeouts, and recovery.
+Docker resource is created. See the README for signals, timeouts, and how
+resources of killed runs are removed once they expire.
 
 ### Advanced: Container Registry
 

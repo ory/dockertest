@@ -13,6 +13,7 @@ import (
 	"os"
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/containerd/errdefs"
 	mobyclient "github.com/moby/moby/client"
@@ -32,21 +33,18 @@ import (
 type processOwner struct {
 	mu sync.Mutex
 
-	runID  string
-	hostID string
-	scope  string // set by Main; empty otherwise
-	stderr io.Writer
+	runID   string
+	main    bool   // set when Main is installed
+	expires string // expiry label value; set by Main unless the test timeout is disabled
+	stderr  io.Writer
 
 	shutdown chan struct{}  // closed when process shutdown starts
 	pending  sync.WaitGroup // in-flight create/build operations
 
-	pools       []*pool
-	containers  map[string]*containerRecord
-	networks    map[string]*networkRecord
-	daemons     map[string]client.DockerClient // daemon ID -> a client for reconciliation
-	registering map[string]chan struct{}       // daemon ID -> closed when its pending hook returns
-	onDaemon    func(ctx context.Context, daemonID string, c client.DockerClient) error
-	created     int // total resources ever tracked; Main refuses to install after the fact
+	pools      []*pool
+	containers map[string]*containerRecord
+	networks   map[string]*networkRecord
+	created    int // total resources ever tracked; Main refuses to install after the fact
 }
 
 //nolint:govet // field alignment traded for readability
@@ -101,57 +99,43 @@ func (r *removal) wait(ctx context.Context) error {
 	}
 }
 
-func newProcessOwner(runID, hostID string, stderr io.Writer) *processOwner {
+func newProcessOwner(runID string, stderr io.Writer) *processOwner {
 	return &processOwner{
-		runID:       runID,
-		hostID:      hostID,
-		stderr:      stderr,
-		shutdown:    make(chan struct{}),
-		containers:  map[string]*containerRecord{},
-		networks:    map[string]*networkRecord{},
-		daemons:     map[string]client.DockerClient{},
-		registering: map[string]chan struct{}{},
+		runID:      runID,
+		stderr:     stderr,
+		shutdown:   make(chan struct{}),
+		containers: map[string]*containerRecord{},
+		networks:   map[string]*networkRecord{},
 	}
 }
 
 // owner is the process-wide owner. Tests swap it for an isolated instance.
-var owner = newProcessOwner(newRunID(), localHostID(), os.Stderr)
-
-func newRunID() string {
-	return rand.Text()
-}
-
-func localHostID() string {
-	host, err := os.Hostname()
-	if err != nil || host == "" {
-		return "unknown-host"
-	}
-	return host
-}
+var owner = newProcessOwner(rand.Text(), os.Stderr)
 
 func (o *processOwner) warn(format string, args ...any) {
 	_, _ = fmt.Fprintf(o.stderr, "dockertest: "+format+"\n", args...) //nolint:errcheck // warnings are best effort
 }
 
-func (o *processOwner) scopeName() string {
+func (o *processOwner) installed() bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return o.scope
+	return o.main
 }
 
 // install attaches Main to the owner. It fails when Main was already installed
-// or when Docker resources were created before Main could take ownership.
-func (o *processOwner) install(scope string, onDaemon func(context.Context, string, client.DockerClient) error) error {
+// or when Docker resources were created before Main could take ownership, as
+// those would lack the expiry label.
+func (o *processOwner) install(expires string) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	if o.scope != "" {
-		return fmt.Errorf("%w: Main is already installed with scope %q", ErrInvalidOption, o.scope)
+	if o.main {
+		return fmt.Errorf("%w: Main is already installed", ErrInvalidOption)
 	}
 	if o.created > 0 {
 		return fmt.Errorf("%w: Docker resources were created before Main was installed", ErrInvalidOption)
 	}
-	o.scope = scope
-	o.onDaemon = onDaemon
+	o.main = true
+	o.expires = expires
 	return nil
 }
 
@@ -185,47 +169,6 @@ func (o *processOwner) beginOperation(ctx context.Context) (context.Context, fun
 		cancel()
 		o.pending.Done()
 	}, nil
-}
-
-// registerDaemon records, under Main, the daemon a pool talks to. The first
-// time a daemon is seen, Main's hook runs recovery for abandoned runs on that
-// daemon and adds it to the run's manifest. The daemon is published only after
-// the hook succeeded: concurrent callers wait for the pending hook and run it
-// again if it failed, so no resource is created on a daemon the manifest lacks.
-func (o *processOwner) registerDaemon(ctx context.Context, daemonID string, c client.DockerClient) error {
-	for {
-		o.mu.Lock()
-		hook := o.onDaemon
-		if _, ok := o.daemons[daemonID]; ok || o.scope == "" {
-			o.mu.Unlock()
-			return nil
-		}
-		if pending, ok := o.registering[daemonID]; ok {
-			o.mu.Unlock()
-			select {
-			case <-pending:
-				continue
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}
-		done := make(chan struct{})
-		o.registering[daemonID] = done
-		o.mu.Unlock()
-
-		var err error
-		if hook != nil {
-			err = hook(ctx, daemonID, c)
-		}
-		o.mu.Lock()
-		delete(o.registering, daemonID)
-		if err == nil {
-			o.daemons[daemonID] = c
-		}
-		o.mu.Unlock()
-		close(done)
-		return err
-	}
 }
 
 func (o *processOwner) trackContainer(id string, p *pool, reuseID string) {
@@ -366,10 +309,11 @@ func (o *processOwner) beginShutdown() (drain func(context.Context) error) {
 }
 
 // cleanup removes everything the process still owns: pool handles first (so
-// reuse references are released in order), then any remaining containers,
-// and networks, and finally anything on the known daemons that
-// carries this run's labels but whose creation response was lost.
-func (o *processOwner) cleanup(ctx context.Context) error {
+// reuse references are released in order), then any remaining containers and
+// networks, and finally, on every daemon a pool talks to, anything that carries
+// this run's label but whose creation response was lost, or that an expired
+// run left behind.
+func (o *processOwner) cleanup(ctx context.Context, now time.Time) error {
 	o.mu.Lock()
 	pools := slices.Clone(o.pools)
 	o.mu.Unlock()
@@ -383,12 +327,14 @@ func (o *processOwner) cleanup(ctx context.Context) error {
 	// can remove it; a pool without a client leaves its records as leftovers.
 	errs = append(errs, o.retry(ctx, nil))
 
-	o.mu.Lock()
-	daemons := slices.Collect(maps.Values(o.daemons))
-	o.mu.Unlock()
-	want := runLabels(o.scopeName(), o.hostID, o.runID)
-	for _, c := range daemons {
-		errs = append(errs, sweepRun(ctx, c, want))
+	daemons := map[string]client.DockerClient{}
+	for _, p := range pools {
+		if p.client != nil {
+			daemons[p.daemonHost] = p.client
+		}
+	}
+	for _, host := range slices.Sorted(maps.Keys(daemons)) {
+		errs = append(errs, sweep(ctx, daemons[host], o.runID, now))
 	}
 	return errors.Join(errs...)
 }
@@ -421,14 +367,10 @@ func (o *processOwner) closeClients() error {
 	return errors.Join(errs...)
 }
 
-// sweepRun removes every container and network on the
-// daemon behind c whose labels fully match want. It is used both to reconcile
-// this run's own leftovers and to recover resources of abandoned runs.
-func sweepRun(ctx context.Context, c client.DockerClient, want map[string]string) error {
-	filters := mobyclient.Filters{}
-	for k, v := range want {
-		filters.Add("label", k+"="+v)
-	}
+// sweep removes every container and network on the daemon behind c that is
+// orphaned for runID at now.
+func sweep(ctx context.Context, c client.DockerClient, runID string, now time.Time) error {
+	filters := mobyclient.Filters{}.Add("label", labelManaged+"="+labelTrue)
 
 	var errs []error
 	containers, err := c.ContainerList(ctx, mobyclient.ContainerListOptions{All: true, Filters: filters})
@@ -437,7 +379,7 @@ func sweepRun(ctx context.Context, c client.DockerClient, want map[string]string
 	}
 	for i := range containers.Items {
 		ct := &containers.Items[i]
-		if !ownershipMatches(ct.Labels, want) {
+		if !orphaned(ct.Labels, runID, now) {
 			continue
 		}
 		if _, removeErr := c.ContainerRemove(ctx, ct.ID, mobyclient.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); removeErr != nil && !errdefs.IsNotFound(removeErr) {
@@ -451,7 +393,7 @@ func sweepRun(ctx context.Context, c client.DockerClient, want map[string]string
 	}
 	for i := range networks.Items {
 		n := &networks.Items[i]
-		if !ownershipMatches(n.Labels, want) {
+		if !orphaned(n.Labels, runID, now) {
 			continue
 		}
 		if _, removeErr := c.NetworkRemove(ctx, n.ID, mobyclient.NetworkRemoveOptions{}); removeErr != nil && !errdefs.IsNotFound(removeErr) {

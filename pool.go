@@ -60,9 +60,6 @@ type pool struct {
 	maxWait        time.Duration
 	cleanupTimeout time.Duration
 
-	daemonMu sync.Mutex
-	daemonID string // resolved on the first resource-creating operation
-
 	mu        sync.Mutex
 	resources []*resource // each entry is one handle; reused containers appear once per acquisition
 	networks  map[string]*dockerNetwork
@@ -124,40 +121,12 @@ func (p *pool) Client() client.DockerClient {
 	return p.client
 }
 
-// begin admits a resource-creating operation with the process owner and
-// resolves the daemon identity. Under Main, the daemon is registered so that
-// abandoned runs are recovered before the first resource is created on it.
+// begin admits a resource-creating operation with the process owner.
 func (p *pool) begin(ctx context.Context) (context.Context, func(), error) {
 	if p.client == nil {
 		return nil, nil, ErrClientClosed
 	}
-	ctx, done, err := owner.beginOperation(ctx)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := p.recordDaemon(ctx); err != nil {
-		done()
-		return nil, nil, err
-	}
-	return ctx, done, nil
-}
-
-func (p *pool) recordDaemon(ctx context.Context) error {
-	if owner.scopeName() == "" {
-		return nil
-	}
-	p.daemonMu.Lock()
-	if p.daemonID == "" {
-		info, err := p.client.Info(ctx, mobyclient.InfoOptions{})
-		if err != nil {
-			p.daemonMu.Unlock()
-			return fmt.Errorf("docker info failed: %w", err)
-		}
-		p.daemonID = info.Info.ID
-	}
-	daemonID := p.daemonID
-	p.daemonMu.Unlock()
-	return owner.registerDaemon(ctx, daemonID, p.client)
+	return owner.beginOperation(ctx)
 }
 
 // cleanupContext bounds a cleanup by the pool's cleanup timeout. Deriving from
@@ -254,7 +223,7 @@ func (p *pool) Close(ctx context.Context) error {
 	if err := p.cleanup(ctx); err != nil {
 		return err
 	}
-	if owner.scopeName() != "" {
+	if owner.installed() {
 		return nil
 	}
 	return p.closeOwnedClient()
@@ -327,7 +296,11 @@ func (p *pool) Run(ctx context.Context, repository string, opts ...RunOption) (C
 	}
 	defer done()
 
-	return p.run(ctx, repository, cfg)
+	r, err := p.run(ctx, repository, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
 }
 
 // run creates or reuses a container for an admitted operation.

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/containerd/errdefs"
+	"github.com/moby/moby/api/types/container"
 	mobyclient "github.com/moby/moby/client"
 	dockertest "github.com/ory/dockertest/v4"
 	"github.com/ory/dockertest/v4/internal/client"
@@ -27,10 +28,12 @@ import (
 
 const (
 	envCase     = "DOCKERTEST_MAIN_CASE"
-	envStateDir = "DOCKERTEST_MAIN_STATE_DIR"
-	envScope    = "DOCKERTEST_MAIN_SCOPE"
 	envOutFile  = "DOCKERTEST_MAIN_OUT"
 	readyMarker = "DOCKERTEST-READY"
+
+	labelManaged = "io.ory.dockertest.managed"
+	labelRun     = "io.ory.dockertest.run"
+	labelExpires = "io.ory.dockertest.expires"
 )
 
 func TestMain(m *testing.M) {
@@ -38,12 +41,10 @@ func TestMain(m *testing.M) {
 	if testCase == "" {
 		os.Exit(m.Run())
 	}
-	opts := dockertest.MainOptions{
-		Scope:          os.Getenv(envScope),
-		StateDir:       os.Getenv(envStateDir),
-		CleanupTimeout: 20 * time.Second,
-	}
+	opts := dockertest.MainOptions{CleanupTimeout: 20 * time.Second}
 	switch testCase {
+	case "invalid-options":
+		opts.CleanupTimeout = -time.Second
 	case "cleanup-error":
 		opts.Cleanup = func(context.Context) error { return errors.New("teardown failed") }
 	case "stuck-cleanup":
@@ -143,11 +144,13 @@ type child struct {
 	out    string
 }
 
-func startChild(t *testing.T, testCase, stateDir, scope string) *child {
+// startChild starts a child process. Like go test, it passes a test timeout,
+// so the child's resources carry an expiry, here one hour in the future.
+func startChild(t *testing.T, testCase string) *child {
 	t.Helper()
 	out := filepath.Join(t.TempDir(), "out")
-	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$", "-test.count=1") // #nosec G204 -- re-executes the test binary
-	cmd.Env = append(os.Environ(), envCase+"="+testCase, envStateDir+"="+stateDir, envScope+"="+scope, envOutFile+"="+out)
+	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$", "-test.count=1", "-test.timeout=1h") // #nosec G204 -- re-executes the test binary
+	cmd.Env = append(os.Environ(), envCase+"="+testCase, envOutFile+"="+out)
 	setupProcessGroup(cmd)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -230,14 +233,13 @@ func (c *child) containerID(t *testing.T) string {
 	return string(id)
 }
 
-func run(t *testing.T, testCase, stateDir, scope string) (code int, stderr string) {
+func run(t *testing.T, testCase string) (code int, stderr string) {
 	t.Helper()
-	c := startChild(t, testCase, stateDir, scope)
+	c := startChild(t, testCase)
 	return c.wait(t), c.stderr.String()
 }
 
 func TestMainExitStatus(t *testing.T) {
-	stateDir := t.TempDir()
 	cases := []struct {
 		name     string
 		testCase string
@@ -250,7 +252,7 @@ func TestMainExitStatus(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			code, stderr := run(t, tc.testCase, stateDir, "maintest")
+			code, stderr := run(t, tc.testCase)
 			if code != tc.wantCode {
 				t.Fatalf("exit = %d, want %d; stderr:\n%s", code, tc.wantCode, stderr)
 			}
@@ -259,20 +261,17 @@ func TestMainExitStatus(t *testing.T) {
 			}
 		})
 	}
-	if entries, _ := os.ReadDir(stateDir); len(entries) != 3 {
-		t.Fatalf("state dir after clean runs has %d entries, want only the 3 lock files", len(entries))
-	}
 }
 
-func TestMainMissingScopeExits1(t *testing.T) {
-	code, stderr := run(t, "pass", t.TempDir(), "")
-	if code != 1 || !strings.Contains(stderr, "Scope is required") {
+func TestMainInvalidOptionsExits1(t *testing.T) {
+	code, stderr := run(t, "invalid-options")
+	if code != 1 || !strings.Contains(stderr, "must not be negative") {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
 }
 
 func TestMainInterruptOfStuckTest(t *testing.T) {
-	c := startChild(t, "stuck", t.TempDir(), "maintest")
+	c := startChild(t, "stuck")
 	waitFor(t, c.stdout, readyMarker)
 	interrupt(t, c.cmd)
 	if code := c.wait(t); code != 130 {
@@ -284,7 +283,7 @@ func TestMainInterruptOfStuckTest(t *testing.T) {
 }
 
 func TestMainTerminateOfStuckTest(t *testing.T) {
-	c := startChild(t, "stuck", t.TempDir(), "maintest")
+	c := startChild(t, "stuck")
 	waitFor(t, c.stdout, readyMarker)
 	terminate(t, c.cmd)
 	if code := c.wait(t); code != 143 {
@@ -293,7 +292,7 @@ func TestMainTerminateOfStuckTest(t *testing.T) {
 }
 
 func TestMainSecondSignalTerminatesImmediately(t *testing.T) {
-	c := startChild(t, "stuck-cleanup", t.TempDir(), "maintest")
+	c := startChild(t, "stuck-cleanup")
 	waitFor(t, c.stdout, readyMarker)
 	interrupt(t, c.cmd)
 	waitFor(t, c.errCh, "cleaning up")
@@ -324,6 +323,39 @@ func assertContainerGone(t *testing.T, dc *mobyclient.Client, id string) {
 	}
 }
 
+// removeAfter force-removes the container when the test ends; it belongs to a
+// run that died, so nothing else removes it before it expires.
+func removeAfter(t *testing.T, dc *mobyclient.Client, id string) {
+	t.Cleanup(func() {
+		_, _ = dc.ContainerRemove(context.WithoutCancel(t.Context()), id, mobyclient.ContainerRemoveOptions{Force: true}) //nolint:errcheck // Best effort cleanup
+	})
+}
+
+// plant creates a container as a dead run would have left it: managed by
+// dockertest and labeled with the given expiry. It is started if running is
+// set. The alpine image must already be present.
+func plant(t *testing.T, dc *mobyclient.Client, expires string, running bool) string {
+	t.Helper()
+	resp, err := dc.ContainerCreate(t.Context(), mobyclient.ContainerCreateOptions{Config: &container.Config{
+		Image:  "alpine",
+		Cmd:    []string{"sleep", "300"},
+		Labels: map[string]string{labelManaged: "true", labelRun: "planted", labelExpires: expires},
+	}})
+	if err != nil {
+		t.Fatalf("ContainerCreate() error = %v", err)
+	}
+	removeAfter(t, dc, resp.ID)
+	if running {
+		if _, err := dc.ContainerStart(t.Context(), resp.ID, mobyclient.ContainerStartOptions{}); err != nil {
+			t.Fatalf("ContainerStart() error = %v", err)
+		}
+	}
+	return resp.ID
+}
+
+// farFuture is an expiry no run reaches.
+const farFuture = "99999999999"
+
 func assertContainerAlive(t *testing.T, dc *mobyclient.Client, id string) {
 	t.Helper()
 	if _, err := dc.ContainerInspect(t.Context(), id, mobyclient.ContainerInspectOptions{}); err != nil {
@@ -333,7 +365,7 @@ func assertContainerAlive(t *testing.T, dc *mobyclient.Client, id string) {
 
 func TestMainInterruptRemovesContainers(t *testing.T) {
 	dc := dockerClient(t)
-	c := startChild(t, "container-stuck", t.TempDir(), "maintest")
+	c := startChild(t, "container-stuck")
 	waitFor(t, c.stdout, readyMarker)
 	id := c.containerID(t)
 	assertContainerAlive(t, dc, id)
@@ -346,21 +378,26 @@ func TestMainInterruptRemovesContainers(t *testing.T) {
 
 func TestMainInterruptDuringCreation(t *testing.T) {
 	dc := dockerClient(t)
-	// A scope of its own: other tests leave containers in "maintest" on
-	// purpose, and the child's run ID is unknown here.
-	const scope = "maintest-creating"
-	c := startChild(t, "creating", t.TempDir(), scope)
+	c := startChild(t, "creating")
 	waitFor(t, c.stdout, readyMarker)
 	// The container exists, but the child has not received its ID.
 	id := c.containerID(t)
 	assertContainerAlive(t, dc, id)
+	inspect, err := dc.ContainerInspect(t.Context(), id, mobyclient.ContainerInspectOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := inspect.Container.Config.Labels
+	if labels[labelExpires] == "" {
+		t.Fatalf("labels = %v, want an expiry under Main", labels)
+	}
 	interrupt(t, c.cmd)
 	if code := c.wait(t); code != 130 {
 		t.Fatalf("exit = %d, want 130; stderr:\n%s", code, c.stderr.String())
 	}
 	assertContainerGone(t, dc, id)
 	filters := mobyclient.Filters{}
-	filters.Add("label", "io.ory.dockertest.scope="+scope)
+	filters.Add("label", labelRun+"="+labels[labelRun])
 	list, err := dc.ContainerList(t.Context(), mobyclient.ContainerListOptions{All: true, Filters: filters})
 	if err != nil {
 		t.Fatal(err)
@@ -372,95 +409,75 @@ func TestMainInterruptDuringCreation(t *testing.T) {
 
 func TestMainRecoversAfterExit(t *testing.T) {
 	dc := dockerClient(t)
-	stateDir := t.TempDir()
-	code, stderr := run(t, "container-exit", stateDir, "maintest")
-	if code != 0 {
+	c := startChild(t, "container-exit")
+	if code := c.wait(t); code != 0 {
+		t.Fatalf("exit = %d, stderr:\n%s", code, c.stderr.String())
+	}
+	dead := c.containerID(t)
+	removeAfter(t, dc, dead)
+	expired := plant(t, dc, "1", true)
+	active := plant(t, dc, farFuture, true)
+
+	if code, stderr := run(t, "container-pass"); code != 0 || stderr != "" {
 		t.Fatalf("exit = %d, stderr:\n%s", code, stderr)
 	}
-	c := startChild(t, "container-exit", stateDir, "maintest")
-	_ = c.wait(t)
-	id := c.containerID(t)
-	assertContainerAlive(t, dc, id)
-
-	t.Run("different scope leaves it alone", func(t *testing.T) {
-		if code, stderr := run(t, "container-pass", stateDir, "other-scope"); code != 0 {
-			t.Fatalf("exit = %d, stderr:\n%s", code, stderr)
-		}
-		assertContainerAlive(t, dc, id)
-	})
-
-	t.Run("same scope recovers", func(t *testing.T) {
-		if code, stderr := run(t, "container-pass", stateDir, "maintest"); code != 0 || stderr != "" {
-			t.Fatalf("exit = %d, stderr:\n%s", code, stderr)
-		}
-		assertContainerGone(t, dc, id)
-	})
-
-	entries, err := os.ReadDir(stateDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range entries {
-		if strings.HasSuffix(e.Name(), ".json") {
-			t.Fatalf("manifest %s left after recovery", e.Name())
-		}
-	}
+	assertContainerGone(t, dc, expired)
+	assertContainerAlive(t, dc, active)
+	// The exited run's expiry has not passed yet, so it is not provably dead.
+	assertContainerAlive(t, dc, dead)
 }
 
 func TestMainRecoversStoppedContainer(t *testing.T) {
 	dc := dockerClient(t)
-	stateDir := t.TempDir()
-	c := startChild(t, "container-stopped-exit", stateDir, "maintest")
+	c := startChild(t, "container-stopped-exit")
 	if code := c.wait(t); code != 0 {
 		t.Fatalf("exit = %d, stderr:\n%s", code, c.stderr.String())
 	}
-	id := c.containerID(t)
-	inspect, err := dc.ContainerInspect(t.Context(), id, mobyclient.ContainerInspectOptions{})
-	if err != nil {
-		t.Fatalf("ContainerInspect(%s) error = %v", id, err)
-	}
-	if inspect.Container.State.Running {
-		t.Fatal("container still running, want it stopped")
-	}
+	stopped := c.containerID(t)
+	removeAfter(t, dc, stopped)
+	expired := plant(t, dc, "1", false)
 
-	if code, stderr := run(t, "container-pass", stateDir, "maintest"); code != 0 || stderr != "" {
+	if code, stderr := run(t, "container-pass"); code != 0 || stderr != "" {
 		t.Fatalf("exit = %d, stderr:\n%s", code, stderr)
 	}
-	assertContainerGone(t, dc, id)
+	assertContainerGone(t, dc, expired)
+	assertContainerAlive(t, dc, stopped)
 }
 
 func TestMainRecoversAfterKill(t *testing.T) {
 	dc := dockerClient(t)
-	stateDir := t.TempDir()
-	c := startChild(t, "container-stuck", stateDir, "maintest")
+	c := startChild(t, "container-stuck")
 	waitFor(t, c.stdout, readyMarker)
-	id := c.containerID(t)
+	killed := c.containerID(t)
+	removeAfter(t, dc, killed)
 	if err := c.cmd.Process.Kill(); err != nil {
 		t.Fatal(err)
 	}
 	_ = c.wait(t)
-	assertContainerAlive(t, dc, id)
+	assertContainerAlive(t, dc, killed)
+	expired := plant(t, dc, "1", true)
 
-	if code, stderr := run(t, "pass", stateDir, "maintest"); code != 0 || stderr != "" {
+	if code, stderr := run(t, "pass"); code != 0 || stderr != "" {
 		t.Fatalf("exit = %d, stderr:\n%s", code, stderr)
 	}
-	// Recovery only runs once a pool talks to the daemon; "pass" creates none.
-	assertContainerAlive(t, dc, id)
+	// The sweep only covers daemons a pool talks to; "pass" creates none.
+	assertContainerAlive(t, dc, expired)
 
-	if code, stderr := run(t, "container-pass", stateDir, "maintest"); code != 0 || stderr != "" {
+	if code, stderr := run(t, "container-pass"); code != 0 || stderr != "" {
 		t.Fatalf("exit = %d, stderr:\n%s", code, stderr)
 	}
-	assertContainerGone(t, dc, id)
+	assertContainerGone(t, dc, expired)
+	// The killed run's expiry has not passed yet, so it is not provably dead.
+	assertContainerAlive(t, dc, killed)
 }
 
 func TestMainActiveRunIsProtected(t *testing.T) {
 	dc := dockerClient(t)
-	stateDir := t.TempDir()
-	active := startChild(t, "container-stuck", stateDir, "maintest")
+	active := startChild(t, "container-stuck")
 	waitFor(t, active.stdout, readyMarker)
 	id := active.containerID(t)
 
-	if code, stderr := run(t, "container-pass", stateDir, "maintest"); code != 0 || stderr != "" {
+	if code, stderr := run(t, "container-pass"); code != 0 || stderr != "" {
 		t.Fatalf("exit = %d, stderr:\n%s", code, stderr)
 	}
 	assertContainerAlive(t, dc, id)

@@ -40,7 +40,6 @@ type DockerClient interface {
 	NetworkList(ctx context.Context, options mobyclient.NetworkListOptions) (mobyclient.NetworkListResult, error)
 
 	Ping(ctx context.Context, options mobyclient.PingOptions) (mobyclient.PingResult, error)
-	Info(ctx context.Context, options mobyclient.InfoOptions) (mobyclient.SystemInfoResult, error)
 	DaemonHost() string
 	Close() error
 }
