@@ -75,12 +75,13 @@ func Get(reuseID string) (ClosableResource, bool) {
 // referenced; it is not an inventory of everything dockertest created. Use
 // Main for process-wide cleanup.
 func GetAll() []ClosableResource {
-	internal := getAll()
-	result := make([]ClosableResource, len(internal))
-	for i, r := range internal {
-		result[i] = r
+	globalRegistry.Lock()
+	defer globalRegistry.Unlock()
+	resources := make([]ClosableResource, 0, len(globalRegistry.entries))
+	for _, entry := range globalRegistry.entries {
+		resources = append(resources, entry.resource)
 	}
-	return result
+	return resources
 }
 
 // register stores r under reuseID with one reference, or adds a reference to
@@ -137,16 +138,6 @@ func get(reuseID string) (*resource, bool) {
 		return nil, false
 	}
 	return entry.resource, true
-}
-
-func getAll() []*resource {
-	globalRegistry.Lock()
-	defer globalRegistry.Unlock()
-	resources := make([]*resource, 0, len(globalRegistry.entries))
-	for _, entry := range globalRegistry.entries {
-		resources = append(resources, entry.resource)
-	}
-	return resources
 }
 
 // ResetRegistry clears all resources from the global registry.

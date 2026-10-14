@@ -85,7 +85,6 @@ func NewPool(ctx context.Context, endpoint string, opts ...PoolOption) (Closable
 	p := &pool{
 		maxWait:        60 * time.Second,
 		cleanupTimeout: 60 * time.Second,
-		ownedClient:    true,
 		networks:       map[string]*dockerNetwork{},
 	}
 
@@ -177,18 +176,6 @@ func (p *pool) untrackNetwork(networkID string) {
 	p.mu.Unlock()
 }
 
-func (p *pool) trackedNetworks() []*dockerNetwork {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return slices.Collect(maps.Values(p.networks))
-}
-
-func (p *pool) trackedResources() []*resource {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return slices.Clone(p.resources)
-}
-
 // NewPoolT creates a new pool using t.Context() and registers cleanup with t.Cleanup().
 // The returned Pool does not expose Close or CloseT; the pool is automatically
 // cleaned up when the test finishes.
@@ -255,11 +242,16 @@ func (p *pool) cleanup(ctx context.Context) error {
 		return nil
 	}
 
+	p.mu.Lock()
+	resources := slices.Clone(p.resources)
+	networks := slices.Collect(maps.Values(p.networks))
+	p.mu.Unlock()
+
 	var errs []error
-	for _, r := range p.trackedResources() {
+	for _, r := range resources {
 		errs = append(errs, r.Close(ctx))
 	}
-	for _, net := range p.trackedNetworks() {
+	for _, net := range networks {
 		errs = append(errs, net.Close(ctx))
 	}
 	errs = append(errs, owner.retry(ctx, p))
@@ -444,13 +436,11 @@ func (p *pool) createAndStartContainer(ctx context.Context, ref string, cfg *run
 		cfg.hostConfigModifier(hostConfig)
 	}
 
-	createOpts := mobyclient.ContainerCreateOptions{
+	createResp, err := p.client.ContainerCreate(ctx, mobyclient.ContainerCreateOptions{
 		Name:       cfg.name,
 		Config:     containerConfig,
 		HostConfig: hostConfig,
-	}
-
-	createResp, err := p.client.ContainerCreate(ctx, createOpts)
+	})
 	if err != nil {
 		return "", fmt.Errorf("%w from %s: %w", ErrContainerCreateFailed, ref, err)
 	}
@@ -494,7 +484,7 @@ func (p *pool) inspectAndRegister(ctx context.Context, containerID, reuseID stri
 		if loaded {
 			// Another caller registered the same reuse ID first; drop ours.
 			if err := p.rollbackContainer(ctx, containerID); err != nil {
-				owner.warn("removing duplicate container: %v", err)
+				report(owner.stderr, "removing duplicate container: %v", err)
 			}
 			r = canonical.handle(p)
 		}

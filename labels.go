@@ -28,6 +28,8 @@ func (o *processOwner) withOwnershipLabels(user map[string]string) map[string]st
 	o.mu.Lock()
 	expires := o.expires
 	o.mu.Unlock()
+	// A caller-supplied expiry must not make this run's resources sweepable.
+	delete(labels, labelExpires)
 	if expires != "" {
 		labels[labelExpires] = expires
 	}

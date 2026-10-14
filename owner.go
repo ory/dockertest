@@ -112,10 +112,6 @@ func newProcessOwner(runID string, stderr io.Writer) *processOwner {
 // owner is the process-wide owner. Tests swap it for an isolated instance.
 var owner = newProcessOwner(rand.Text(), os.Stderr)
 
-func (o *processOwner) warn(format string, args ...any) {
-	_, _ = fmt.Fprintf(o.stderr, "dockertest: "+format+"\n", args...) //nolint:errcheck // warnings are best effort
-}
-
 func (o *processOwner) installed() bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -327,14 +323,15 @@ func (o *processOwner) cleanup(ctx context.Context, now time.Time) error {
 	// can remove it; a pool without a client leaves its records as leftovers.
 	errs = append(errs, o.retry(ctx, nil))
 
-	daemons := map[string]client.DockerClient{}
+	// Clients are deduplicated by identity, not by DaemonHost: clients with a
+	// custom dialer report the default host while talking to another daemon.
+	// Sweeping one daemon through two clients is harmless.
+	swept := map[client.DockerClient]bool{}
 	for _, p := range pools {
-		if p.client != nil {
-			daemons[p.daemonHost] = p.client
+		if p.client != nil && !swept[p.client] {
+			swept[p.client] = true
+			errs = append(errs, o.sweep(ctx, p.client, now))
 		}
-	}
-	for _, host := range slices.Sorted(maps.Keys(daemons)) {
-		errs = append(errs, sweep(ctx, daemons[host], o.runID, now))
 	}
 	return errors.Join(errs...)
 }
@@ -368,22 +365,33 @@ func (o *processOwner) closeClients() error {
 }
 
 // sweep removes every container and network on the daemon behind c that is
-// orphaned for runID at now.
-func sweep(ctx context.Context, c client.DockerClient, runID string, now time.Time) error {
+// orphaned for this run at now. Failing to remove this run's own resources is
+// an error; failing to remove an expired run's resources is only reported, as
+// they are not this run's to clean up.
+func (o *processOwner) sweep(ctx context.Context, c client.DockerClient, now time.Time) error {
 	filters := mobyclient.Filters{}.Add("label", labelManaged+"="+labelTrue)
 
 	var errs []error
+	failed := func(labels map[string]string, err error) {
+		if labels[labelRun] == o.runID {
+			errs = append(errs, err)
+		} else {
+			report(o.stderr, "%v of expired run %s", err, labels[labelRun])
+		}
+	}
+
 	containers, err := c.ContainerList(ctx, mobyclient.ContainerListOptions{All: true, Filters: filters})
 	if err != nil {
 		return fmt.Errorf("listing containers: %w", err)
 	}
 	for i := range containers.Items {
 		ct := &containers.Items[i]
-		if !orphaned(ct.Labels, runID, now) {
+		if !orphaned(ct.Labels, o.runID, now) {
 			continue
 		}
-		if _, removeErr := c.ContainerRemove(ctx, ct.ID, mobyclient.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); removeErr != nil && !errdefs.IsNotFound(removeErr) {
-			errs = append(errs, fmt.Errorf("removing container %s: %w", ct.ID, removeErr))
+		// A conflict means another run's sweep is already removing it.
+		if _, removeErr := c.ContainerRemove(ctx, ct.ID, mobyclient.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); removeErr != nil && !errdefs.IsNotFound(removeErr) && !errdefs.IsConflict(removeErr) {
+			failed(ct.Labels, fmt.Errorf("removing container %s: %w", ct.ID, removeErr))
 		}
 	}
 
@@ -393,11 +401,11 @@ func sweep(ctx context.Context, c client.DockerClient, runID string, now time.Ti
 	}
 	for i := range networks.Items {
 		n := &networks.Items[i]
-		if !orphaned(n.Labels, runID, now) {
+		if !orphaned(n.Labels, o.runID, now) {
 			continue
 		}
 		if _, removeErr := c.NetworkRemove(ctx, n.ID, mobyclient.NetworkRemoveOptions{}); removeErr != nil && !errdefs.IsNotFound(removeErr) {
-			errs = append(errs, fmt.Errorf("removing network %s: %w", n.ID, removeErr))
+			failed(n.Labels, fmt.Errorf("removing network %s: %w", n.ID, removeErr))
 		}
 	}
 

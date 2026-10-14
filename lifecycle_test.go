@@ -4,6 +4,7 @@
 package dockertest
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -327,16 +328,16 @@ func TestShutdownRejectsNewResourcesAndCancelsOperations(t *testing.T) {
 
 func TestOwnershipLabelsDoNotModifyCallerMap(t *testing.T) {
 	o, _ := testOwner(t)
-	user := map[string]string{"team": "a"}
+	user := map[string]string{"team": "a", labelExpires: "1"}
 	labels := o.withOwnershipLabels(user)
-	if len(user) != 1 {
+	if len(user) != 2 {
 		t.Fatalf("caller map modified: %v", user)
 	}
 	if labels["team"] != "a" || labels[labelManaged] != "true" || labels[labelRun] != "run-test" {
 		t.Fatalf("labels = %v", labels)
 	}
 	if _, ok := labels[labelExpires]; ok {
-		t.Fatal("expires label present without Main")
+		t.Fatal("caller-supplied expires label kept without Main")
 	}
 }
 
@@ -534,6 +535,20 @@ func TestSweepRemovesExpiredAndOwnRun(t *testing.T) {
 		{labels: map[string]string{labelRun: "r2", labelExpires: "999"}, name: "unmanaged-expired"},
 	}
 	c := newFakeClient()
+	// Another run's sweep is already removing a container: not an error.
+	c.containerRemove = func(_ context.Context, id string, _ mobyclient.ContainerRemoveOptions) error {
+		if id == "stopped-expired" {
+			return errdefs.ErrConflict
+		}
+		return nil
+	}
+	// Another run's expired network cannot be removed: reported, not an error.
+	c.networkRemove = func(_ context.Context, id string) error {
+		if id == "network-expired" {
+			return errors.New("in use")
+		}
+		return nil
+	}
 	var filters mobyclient.Filters
 	c.containerList = func(_ context.Context, opts mobyclient.ContainerListOptions) ([]container.Summary, error) {
 		filters = opts.Filters
@@ -553,8 +568,13 @@ func TestSweepRemovesExpiredAndOwnRun(t *testing.T) {
 		return items, nil
 	}
 
-	if err := sweep(t.Context(), c, "r1", now); err != nil {
+	var stderr bytes.Buffer
+	o := newProcessOwner("r1", &stderr)
+	if err := o.sweep(t.Context(), c, now); err != nil {
 		t.Fatalf("sweep() error = %v", err)
+	}
+	if want := "dockertest: removing network network-expired: in use of expired run r2\n"; stderr.String() != want {
+		t.Fatalf("stderr = %q, want %q", stderr.String(), want)
 	}
 	if !filters["label"][labelManaged+"=true"] {
 		t.Fatalf("list filters %v miss the managed label", filters)
@@ -570,6 +590,59 @@ func TestSweepRemovesExpiredAndOwnRun(t *testing.T) {
 	}
 	if !slices.Equal(got, wantCalls) {
 		t.Fatalf("removals = %q\nwant       %q", got, wantCalls)
+	}
+}
+
+func TestSweepFailsOnOwnRunRemovalFailure(t *testing.T) {
+	removeErr := errors.New("busy")
+	c := newFakeClient()
+	c.containerRemove = func(context.Context, string, mobyclient.ContainerRemoveOptions) error { return removeErr }
+	c.containerList = func(_ context.Context, opts mobyclient.ContainerListOptions) ([]container.Summary, error) {
+		return listedContainers(opts, container.Summary{ID: "own", Labels: map[string]string{labelManaged: "true", labelRun: "r1"}}), nil
+	}
+	var stderr bytes.Buffer
+	o := newProcessOwner("r1", &stderr)
+	if err := o.sweep(t.Context(), c, time.Unix(1000, 0)); !errors.Is(err, removeErr) {
+		t.Fatalf("sweep() error = %v, want %v", err, removeErr)
+	}
+	if stderr.Len() != 0 {
+		t.Fatalf("stderr = %q, want the failure returned instead", stderr.String())
+	}
+}
+
+func TestOwnerCleanupSweepsEachClientOnce(t *testing.T) {
+	o, _ := testOwner(t)
+	if err := o.install(""); err != nil {
+		t.Fatalf("install() error = %v", err)
+	}
+	// Both clients report the same host, as clients with a custom dialer do,
+	// but may talk to different daemons: each must be swept.
+	shared, other := newFakeClient(), newFakeClient()
+	newFakePool(t, shared)
+	newFakePool(t, shared)
+	newFakePool(t, other)
+	if err := o.cleanup(t.Context(), time.Unix(1000, 0)); err != nil {
+		t.Fatalf("cleanup() error = %v", err)
+	}
+	for name, c := range map[string]*fakeClient{"shared": shared, "other": other} {
+		if got := c.callsMatching("ContainerList"); len(got) != 1 {
+			t.Fatalf("%s client ContainerList calls = %q, want one sweep", name, got)
+		}
+	}
+}
+
+func TestNoSweepWithoutMain(t *testing.T) {
+	testOwner(t)
+	c := newFakeClient()
+	p := newFakePool(t, c)
+	if _, err := p.Run(t.Context(), "alpine", WithoutReuse()); err != nil {
+		t.Fatalf("Run without Main: %v", err)
+	}
+	if err := p.Close(t.Context()); err != nil {
+		t.Fatalf("Close without Main: %v", err)
+	}
+	if calls := slices.Concat(c.callsMatching("ContainerList"), c.callsMatching("NetworkList")); len(calls) != 0 {
+		t.Fatalf("daemon swept without Main: %v", calls)
 	}
 }
 

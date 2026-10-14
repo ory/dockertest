@@ -468,8 +468,10 @@ func TestMain(m *testing.M) {
   of margin. Once it has passed, `go test` has killed the process. At shutdown,
   `Main` also removes expired resources on every Docker daemon its pools used,
   so leftovers of a kill, a `-timeout` panic, or a power loss disappear with a
-  later run. With `-test.timeout=0` resources get no expiry and are never
-  removed by other runs.
+  later run. A failure to remove another run's expired resource is printed but
+  is not reported as this run's cleanup failure. With `-test.timeout=0`, `-test.bench`, or `-test.fuzz` (which run
+  after the test timeout stops) resources get no expiry and are never removed
+  by other runs.
 - Pools may be created before `Main` as long as no container, network, or image
   was created yet. `Main` must be installed once per process.
 

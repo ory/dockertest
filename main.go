@@ -44,7 +44,8 @@ const (
 	// a callback that ignores its context before exiting anyway.
 	shutdownGrace = time.Second
 	// expiryMargin absorbs the time between computing the expiry and m.Run
-	// starting the test timer, and clock skew between host and daemon.
+	// starting the test timer, and clock skew between the hosts of runs that
+	// share a daemon: the expiry is compared against the sweeping host's clock.
 	expiryMargin = time.Minute
 )
 
@@ -97,16 +98,23 @@ func expiry(now time.Time, testTimeout, cleanupTimeout time.Duration) string {
 // -test.timeout: once it has passed, go test has killed the process. At
 // shutdown, Main also removes expired resources that earlier runs left behind
 // on the daemons it used, for example after a kill or a power loss. With
-// -test.timeout=0 resources get no expiry and are never removed by other runs.
+// -test.timeout=0, -test.bench, or -test.fuzz resources get no expiry and are
+// never removed by other runs.
 func Main(ctx context.Context, m *testing.M, opts MainOptions) {
 	if !flag.Parsed() {
 		flag.Parse()
 	}
-	var timeout time.Duration
-	if f := flag.Lookup("test.timeout"); f != nil {
-		if d, ok := f.Value.(flag.Getter).Get().(time.Duration); ok {
-			timeout = d
+	value := func(name string) string {
+		if f := flag.Lookup(name); f != nil {
+			return f.Value.String()
 		}
+		return ""
+	}
+	// Benchmarks and fuzzing run after the test alarm has stopped, so
+	// -test.timeout only bounds the lifetime of a process that runs neither.
+	var timeout time.Duration
+	if value("test.bench") == "" && value("test.fuzz") == "" {
+		timeout, _ = time.ParseDuration(value("test.timeout")) //nolint:errcheck // an unparsable timeout means no expiry
 	}
 	runMain(ctx, m.Run, opts, timeout, os.Stderr, os.Exit)
 }
