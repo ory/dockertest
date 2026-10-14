@@ -271,6 +271,42 @@ CMD ["sleep", "300"]
 	}
 }
 
+func TestBuildAndRunWithBuildKit(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	trackImage := cleanupBuildImages(t, "test-build-buildkit")
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
+
+	pool := dockertest.NewPoolT(t, "")
+	tmpDir := t.TempDir()
+
+	dockerfile := `FROM alpine:latest
+CMD ["sleep", "300"]
+`
+	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
+	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0o644); err != nil {
+		t.Fatalf("Failed to write Dockerfile: %v", err)
+	}
+
+	buildOpts := &dockertest.BuildOptions{
+		Dockerfile: "Dockerfile",
+		ContextDir: tmpDir,
+		Version:    "2", // BuildKit
+	}
+
+	r := pool.BuildAndRunT(t, "test-build-buildkit", buildOpts)
+	if r == nil {
+		t.Fatal("BuildAndRunT returned nil resource")
+	}
+	trackImage(r.Container().Image)
+}
+
 func TestRunUsesLocalImageWithoutPull(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")

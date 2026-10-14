@@ -57,6 +57,10 @@ type BuildOptions struct {
 	// ForceRemove always removes intermediate containers, even on build failure.
 	// It does not remove intermediate images or builder cache.
 	ForceRemove bool
+
+	// Version specifies the builder to use. "1" for classic, "2" for BuildKit.
+	// Defaults to the daemon's configured default if empty.
+	Version string
 }
 
 // BuildAndRun builds a Docker image from a Dockerfile and runs it as a container.
@@ -137,6 +141,7 @@ func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOp
 		Remove:      true,
 		ForceRemove: buildOpts.ForceRemove,
 		Labels:      buildOpts.Labels,
+		Version:     build.BuilderVersion(buildOpts.Version),
 	})
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", ErrImageBuildFailed, err)
