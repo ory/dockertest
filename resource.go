@@ -137,7 +137,8 @@ func (r *resource) GetHostPort(portID string) string {
 //
 // Close releases the handle exactly once: repeated or concurrent calls return
 // nil. The removal honors ctx and is bounded by the pool's cleanup timeout. A
-// failed removal is reported and retried by the pool's Close and by Main.
+// failed removal is reported and retried by the pool's Close and by Main or
+// Setup.
 func (r *resource) Close(ctx context.Context) error {
 	if !r.closed.CompareAndSwap(false, true) {
 		return nil

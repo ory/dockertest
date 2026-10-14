@@ -473,9 +473,9 @@ func TestMain(m *testing.M) {
 
 Replace `goleak.VerifyTestMain(m)` this way: it calls `os.Exit` itself, so
 cleanup would never run. The cleanup error is returned, so you decide whether it
-fails the run. Signals are handled as under `Main`. Unlike `Main`, resources
-get no expiry label, so leftovers of a `SIGKILL` or crash are not removed by
-later runs.
+fails the run. Signals are handled as under `Main`. Unlike `Main`, resources get
+no expiry label, so leftovers of a `SIGKILL` or crash are not removed by later
+runs.
 
 ### Advanced: Container Registry
 

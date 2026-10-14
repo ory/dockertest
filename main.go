@@ -205,22 +205,30 @@ func setup(ctx context.Context, opts MainOptions, testTimeout time.Duration, std
 	watcher := make(chan struct{})
 	go func() {
 		defer close(watcher)
+		var sig os.Signal
 		select {
-		case sig := <-sigs:
-			// Restore the default behavior so that a second signal terminates
-			// the process immediately.
-			signal.Stop(sigs)
-			report(stderr, "received %v, cleaning up", sig)
-			if err := shutdown(sig); err != nil {
-				report(stderr, "cleanup failed: %v", err)
-			}
-			code := 130
-			if sig == syscall.SIGTERM {
-				code = 143
-			}
-			exit(code)
+		case sig = <-sigs:
 		case <-stop:
+			// cleanup stops notifications before closing stop, so a signal
+			// that arrived earlier is buffered and still wins.
+			select {
+			case sig = <-sigs:
+			default:
+				return
+			}
 		}
+		// Restore the default behavior so that a second signal terminates
+		// the process immediately.
+		signal.Stop(sigs)
+		report(stderr, "received %v, cleaning up", sig)
+		if err := shutdown(sig); err != nil {
+			report(stderr, "cleanup failed: %v", err)
+		}
+		code := 130
+		if sig == syscall.SIGTERM {
+			code = 143
+		}
+		exit(code)
 	}()
 
 	return sync.OnceValue(func() error {

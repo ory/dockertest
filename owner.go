@@ -59,9 +59,9 @@ type networkRecord struct {
 	inflight *removal
 }
 
-// removal is one removal attempt. Concurrent removers of the same resource
-// (a handle's Close, the pool's Close, and Main) share the attempt instead of
-// issuing a second request; err is written before done is closed.
+// removal is one removal attempt. Concurrent removers of the same resource (a
+// handle's Close, the pool's Close, and process shutdown) share the attempt
+// instead of issuing a second request; err is written before done is closed.
 type removal struct {
 	done chan struct{}
 	err  error
