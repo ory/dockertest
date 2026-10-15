@@ -198,7 +198,7 @@ func NewPoolT(t TestingTB, endpoint string, opts ...PoolOption) Pool {
 
 // Close cleans up all tracked containers and networks, bounded by the pool's
 // cleanup timeout and the supplied context. If cleanup succeeds and the pool
-// created its own Docker client, the client is closed unless Main or Setup is
+// created its own Docker client, the client is closed unless TestMain or Wrap is
 // installed, which close it at process shutdown. After a failed cleanup the
 // client stays open so that Close can be called again to retry. A custom client
 // provided via WithMobyClient is never closed.

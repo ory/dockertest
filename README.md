@@ -442,84 +442,71 @@ is earlier. A failed removal is returned and retried by the next `Close`.
 Containers are force-removed together with their anonymous volumes; named
 volumes and images are left alone.
 
-**Process-wide cleanup with `Main`:** `TestMain` can hand control to
-`dockertest.Main`, which cleans up the package's owned containers and networks,
-even when a test hangs or the process is interrupted:
+**Process-wide cleanup with `TestMain`:** a package's `TestMain` can hand
+control to `dockertest.TestMain`, which cleans up the package's owned containers
+and networks, even when a test hangs or the process is interrupted:
 
 ```go
 func TestMain(m *testing.M) {
-    dockertest.Main(context.Background(), m, dockertest.MainOptions{})
+    dockertest.TestMain(context.Background(), m)
 }
 ```
 
-- `Main` owns process exit: it runs `m.Run` and exits with its status after
+- `TestMain` owns process exit: it runs `m.Run` and exits with its status after
   cleanup. Cleanup failures and leftover resource IDs are printed to stderr but
   never change a passing or failing status.
 - On `SIGINT` or `SIGTERM` (Ctrl+C or Ctrl+Break on Windows), cleanup starts
   even if a test is stuck and the process exits with 130 or 143. A second signal
   terminates immediately.
-- `MainOptions.CleanupTimeout` (60 seconds by default) is the deadline of the
-  whole shutdown, including the optional `MainOptions.Cleanup` teardown that
-  runs before Docker resources are removed. `Main` exits shortly after the
-  deadline even if a callback or a custom client ignores its context; whatever
-  is left then is removed by a later run once it expires.
-- Under `Main`, containers and networks carry an `io.ory.dockertest.expires`
-  label: the start time plus `-test.timeout`, the cleanup timeout, and a minute
-  of margin. Once it has passed, `go test` has killed the process. At shutdown,
-  `Main` also removes expired resources on every Docker daemon its pools used,
-  so leftovers of a kill, a `-timeout` panic, or a power loss disappear with a
-  later run. A failure to remove another run's expired resource is printed but
-  is not reported as this run's cleanup failure. With `-test.timeout=0`,
-  `-test.bench`, or `-test.fuzz` (which run after the test timeout stops)
-  resources get no expiry and are never removed by other runs.
-- Pools may be created before `Main` as long as no container, network, or image
-  was created yet. `Main` must be installed once per process.
+- `WithShutdownTimeout` (60 seconds by default) is the deadline of the whole
+  shutdown, including the optional `WithTeardown` callback that runs before
+  Docker resources are removed. `TestMain` exits shortly after the deadline even
+  if a callback or a custom client ignores its context; whatever is left then is
+  removed by a later run once it expires.
+- `WithTeardown` is only for state dockertest does not own. Pools, containers,
+  and networks created through dockertest, including package-wide ones started
+  before `m.Run`, are removed and their clients closed without it.
+- Containers and networks carry an `io.ory.dockertest.expires` label: the start
+  time plus `-test.timeout`, the shutdown timeout, and a minute of margin. Once
+  it has passed, `go test` has killed the process. At shutdown, `TestMain` also
+  removes expired resources on every Docker daemon its pools used, so leftovers
+  of a kill, a `-timeout` panic, or a power loss disappear with a later run. A
+  failure to remove another run's expired resource is printed but is not
+  reported as this run's cleanup failure. With `-test.timeout=0`, `-test.bench`,
+  or `-test.fuzz` (which run after the test timeout stops) resources get no
+  expiry and are never removed by other runs.
+- Pools may be created before `TestMain` as long as no container, network, or
+  image was created yet. `TestMain` must be installed once per process.
 
-**Custom `TestMain` with `Setup`:** when the package needs its own setup and
-teardown around `m.Run`, a leak check, or control over the exit status, install
-the same cleanup with `dockertest.Setup` and keep `TestMain` in charge:
+**Composing with `Wrap`:** when the package needs code around `m.Run`, a leak
+check, or control over the exit status, `dockertest.Wrap` returns the same
+cleanup around any `func() int`. Its `Run` method returns the exit status
+instead of exiting, so it plugs into helpers such as `goleak.VerifyTestMain`:
 
 ```go
 func TestMain(m *testing.M) {
-    cleanup, err := dockertest.Setup(context.Background(), dockertest.MainOptions{})
-    if err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        os.Exit(1)
-    }
-
-    // Existing package setup.
-    code := m.Run()
-    // Existing package teardown.
-
-    if err := cleanup(); err != nil {
-        fmt.Fprintln(os.Stderr, err) // or fail the run: code = 1
-    }
-    if code == 0 {
-        if err := goleak.Find(); err != nil {
-            fmt.Fprintln(os.Stderr, err)
-            code = 1
-        }
-    }
-    os.Exit(code)
+    goleak.VerifyTestMain(dockertest.Wrap(context.Background(), m.Run))
 }
 ```
 
-- Call `cleanup` before `os.Exit`, and run leak checks after it: it stops
-  dockertest's signal handling and closes the Docker clients pools created, so
-  no dockertest goroutine is reported as a leak.
-- `cleanup` runs the same shutdown as `Main` under `MainOptions.CleanupTimeout`
-  and returns every failure, including a missed deadline, instead of printing
-  it. It never exits; it is safe to call more than once or concurrently.
-- `Setup` returns an error wrapping `ErrInvalidOption` for invalid options, a
-  second `Setup` or `Main`, or Docker resources created before it.
-- Signals behave as under `Main`: cleanup, then exit with 130 or 143, and a
-  second signal terminates immediately.
-- `Setup` does not read testing flags, so its resources carry no expiry and are
-  never removed by other runs. Leftovers of a `SIGKILL` or a crash stay until
-  removed by hand. At cleanup, `Setup` still removes expired resources of
-  earlier `Main` runs on the daemons its pools used.
+```go
+func TestMain(m *testing.M) {
+    os.Exit(dockertest.Wrap(context.Background(), func() int {
+        // Package setup, for example shared containers.
+        return m.Run()
+    }).Run())
+}
+```
 
-`NewPoolT` and `RunT` keep working without `Main` or `Setup`, which add the
+- `Run` installs the cleanup, calls the function, shuts down as `TestMain` does,
+  and returns the function's status. Cleanup failures are printed, not returned.
+- Invalid options, a second `TestMain` or `Wrap`, or Docker resources created
+  before it are printed and make `Run` return 1 without running the tests.
+- When `Run` returns, signal handling has stopped and the clients pools created
+  are closed, so a leak check after it sees no dockertest goroutine.
+- Signals and expiry labels behave as under `TestMain`.
+
+`NewPoolT` and `RunT` keep working without `TestMain` or `Wrap`, which add the
 guarantees above for abnormal exits.
 
 ### Error handling

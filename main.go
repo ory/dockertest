@@ -19,20 +19,32 @@ import (
 	"time"
 )
 
-// MainOptions configures Main and Setup.
-//
-//nolint:govet // field alignment traded for readability
-type MainOptions struct {
-	// CleanupTimeout is the deadline of the whole shutdown, including the
-	// Cleanup callback. Shutdown ends shortly after it even if a callback or
-	// client ignores its context. Defaults to 60 seconds; negative values are
-	// rejected.
-	CleanupTimeout time.Duration
+// TestMainOption configures TestMain and Wrap.
+type TestMainOption func(*mainOptions)
 
-	// Cleanup is an optional package teardown that runs once, before Docker
-	// resources are removed, under the same deadline. Its error is part of
-	// the cleanup error; under Main it does not change the exit status.
-	Cleanup func(context.Context) error
+// WithShutdownTimeout sets the deadline of the whole shutdown, including the
+// teardown set with WithTeardown. Shutdown ends shortly after it even if a
+// teardown or client ignores its context. Defaults to 60 seconds; negative
+// values are rejected.
+func WithShutdownTimeout(d time.Duration) TestMainOption {
+	return func(o *mainOptions) { o.timeout = d }
+}
+
+// WithTeardown sets a package teardown that runs once, before Docker resources
+// are removed, under the shutdown deadline. Its error is reported but does not
+// change the exit status.
+//
+// It is not needed for pools, containers, and networks created through
+// dockertest: shutdown removes them and closes the Docker clients pools
+// created. Use it only for state dockertest does not own.
+func WithTeardown(fn func(context.Context) error) TestMainOption {
+	return func(o *mainOptions) { o.teardown = fn }
+}
+
+//nolint:govet // field alignment traded for readability
+type mainOptions struct {
+	timeout  time.Duration
+	teardown func(context.Context) error
 }
 
 const (
@@ -40,8 +52,8 @@ const (
 	// windowsConsoleCloseTimeout caps cleanup when Windows closes the console:
 	// the OS terminates the process shortly after, so a longer budget is moot.
 	windowsConsoleCloseTimeout = 4 * time.Second
-	// shutdownGrace is how much longer than the cleanup timeout Main waits for
-	// a callback that ignores its context before exiting anyway.
+	// shutdownGrace is how much longer than the shutdown timeout shutdown
+	// waits for a teardown that ignores its context before exiting anyway.
 	shutdownGrace = time.Second
 	// expiryMargin absorbs the time between computing the expiry and m.Run
 	// starting the test timer, and clock skew between the hosts of runs that
@@ -54,12 +66,16 @@ func report(w io.Writer, format string, args ...any) {
 	_, _ = fmt.Fprintf(w, "dockertest: "+format+"\n", args...) //nolint:errcheck // stderr reporting is best effort
 }
 
-func (o MainOptions) resolve() (MainOptions, error) {
-	if o.CleanupTimeout < 0 {
-		return o, fmt.Errorf("%w: MainOptions.CleanupTimeout must not be negative, got %v", ErrInvalidOption, o.CleanupTimeout)
+func resolve(opts []TestMainOption) (mainOptions, error) {
+	o := mainOptions{timeout: defaultCleanupTimeout}
+	for _, opt := range opts {
+		opt(&o)
 	}
-	if o.CleanupTimeout == 0 {
-		o.CleanupTimeout = defaultCleanupTimeout
+	if o.timeout < 0 {
+		return o, fmt.Errorf("%w: WithShutdownTimeout must not be negative, got %v", ErrInvalidOption, o.timeout)
+	}
+	if o.timeout == 0 {
+		o.timeout = defaultCleanupTimeout
 	}
 	return o, nil
 }
@@ -74,35 +90,69 @@ func expiry(now time.Time, testTimeout, cleanupTimeout time.Duration) string {
 	return strconv.FormatInt(now.Add(testTimeout+cleanupTimeout+shutdownGrace+expiryMargin).Unix(), 10)
 }
 
-// Main runs the tests of a package and cleans up its owned Docker resources,
-// even when a test hangs or the process is interrupted. Images, builder cache,
-// named volumes, and pre-existing unlabeled resources are outside automatic
-// cleanup. Use it from TestMain:
+// TestMain runs the tests of a package and cleans up its owned Docker
+// resources, even when a test hangs or the process is interrupted. Images,
+// builder cache, named volumes, and pre-existing unlabeled resources are
+// outside automatic cleanup. Use it from the package's TestMain:
 //
 //	func TestMain(m *testing.M) {
-//		dockertest.Main(context.Background(), m, dockertest.MainOptions{})
+//		dockertest.TestMain(context.Background(), m)
 //	}
 //
-// Main owns process exit and never returns. It calls m.Run on the calling
+// TestMain owns process exit and never returns. It calls m.Run on the calling
 // goroutine and exits with its status after cleanup; cleanup failures are
 // printed to stderr but do not change the status. On SIGINT or SIGTERM,
 // shutdown starts even if m.Run is stuck, and the process exits with 130 or
 // 143 after cleanup. After the first signal the default signal behavior is
 // restored, so a second signal terminates the process immediately.
 //
-// Pools may be constructed before Main as long as they have created no Docker
-// resources. Invalid options or a repeated Main exit with status 1 before any
-// test runs.
+// Pools may be constructed before TestMain as long as they have created no
+// Docker resources. Invalid options or a repeated TestMain or Wrap exit with
+// status 1 before any test runs.
 //
-// Under Main, containers and networks are labeled with an expiry derived from
+// Containers and networks are labeled with an expiry derived from
 // -test.timeout: once it has passed, go test has killed the process. At
-// shutdown, Main also removes expired resources that earlier runs left behind
-// on the daemons it used, for example after a kill or a power loss. With
-// -test.timeout=0, -test.bench, or -test.fuzz resources get no expiry and are
-// never removed by other runs.
+// shutdown, TestMain also removes expired resources that earlier runs left
+// behind on the daemons it used, for example after a kill or a power loss.
+// With -test.timeout=0, -test.bench, or -test.fuzz resources get no expiry and
+// are never removed by other runs.
 //
-// Use Setup instead to keep control of m.Run and the exit status.
-func Main(ctx context.Context, m *testing.M, opts MainOptions) {
+// Use Wrap to compose with other TestMain helpers or to keep control of the
+// exit status.
+func TestMain(ctx context.Context, m *testing.M, opts ...TestMainOption) {
+	os.Exit(Wrap(ctx, m.Run, opts...).Run())
+}
+
+// RunFunc runs tests and returns their exit code. It satisfies
+// goleak.TestingM.
+type RunFunc func() int
+
+// Run calls f.
+func (f RunFunc) Run() int { return f() }
+
+// Wrap returns run wrapped in the cleanup of TestMain, for a TestMain that
+// composes with other helpers or keeps control of its exit status:
+//
+//	func TestMain(m *testing.M) {
+//		goleak.VerifyTestMain(dockertest.Wrap(context.Background(), m.Run))
+//	}
+//
+// The returned Run installs the cleanup, calls run, shuts down as TestMain
+// does, and returns the status of run. Invalid options, a repeated TestMain or
+// Wrap, or resources created earlier are printed to stderr and return 1
+// without calling run. Cleanup failures are printed but do not change the
+// status. Before Run returns, signal handling has stopped and the Docker
+// clients pools created are closed, so leak checks after it see no dockertest
+// goroutines. Signals and expiry labels behave as under TestMain.
+func Wrap(ctx context.Context, run func() int, opts ...TestMainOption) RunFunc {
+	return func() int {
+		return runMain(ctx, run, opts, testTimeout(), os.Stderr, os.Exit)
+	}
+}
+
+// testTimeout returns -test.timeout, or zero when it does not bound the
+// lifetime of the process.
+func testTimeout() time.Duration {
 	if !flag.Parsed() {
 		flag.Parse()
 	}
@@ -114,79 +164,42 @@ func Main(ctx context.Context, m *testing.M, opts MainOptions) {
 	}
 	// Benchmarks and fuzzing run after the test alarm has stopped, so
 	// -test.timeout only bounds the lifetime of a process that runs neither.
-	var timeout time.Duration
-	if value("test.bench") == "" && value("test.fuzz") == "" {
-		timeout, _ = time.ParseDuration(value("test.timeout")) //nolint:errcheck // an unparsable timeout means no expiry
+	if value("test.bench") != "" || value("test.fuzz") != "" {
+		return 0
 	}
-	runMain(ctx, m.Run, opts, timeout, os.Stderr, os.Exit)
+	timeout, _ := time.ParseDuration(value("test.timeout")) //nolint:errcheck // an unparsable timeout means no expiry
+	return timeout
 }
 
-// runMain is Main with the test runner, test timeout, output, and exit
-// injected for tests.
-func runMain(ctx context.Context, run func() int, opts MainOptions, testTimeout time.Duration, stderr io.Writer, exit func(int)) {
+// runMain is Wrap with the test timeout, output, and signal exit injected for
+// tests.
+func runMain(ctx context.Context, run func() int, opts []TestMainOption, testTimeout time.Duration, stderr io.Writer, exit func(int)) int {
 	cleanup, err := setup(ctx, opts, testTimeout, stderr, exit)
 	if err != nil {
 		report(stderr, "%v", err)
-		exit(1)
-		return
+		return 1
 	}
 	code := run()
 	if err := cleanup(); err != nil {
 		report(stderr, "cleanup failed: %v", err)
 	}
-	exit(code)
+	return code
 }
 
-// Setup installs dockertest's process cleanup for a custom TestMain that keeps
-// control of m.Run, its own teardown, leak checks, and the exit status:
-//
-//	func TestMain(m *testing.M) {
-//		cleanup, err := dockertest.Setup(context.Background(), dockertest.MainOptions{})
-//		if err != nil {
-//			fmt.Fprintln(os.Stderr, err)
-//			os.Exit(1)
-//		}
-//		code := m.Run()
-//		if err := cleanup(); err != nil {
-//			fmt.Fprintln(os.Stderr, err)
-//		}
-//		os.Exit(code)
-//	}
-//
-// Call Setup before any Docker resource is created. Invalid options, a
-// repeated Setup or Main, or resources created earlier return an error
-// wrapping ErrInvalidOption.
-//
-// The returned cleanup runs the same shutdown as Main under the same deadline:
-// it rejects new operations, drains in-flight ones, runs MainOptions.Cleanup,
-// removes the owned containers and networks, and closes the Docker clients that
-// pools created. It returns all failures, including a missed deadline, and
-// never exits. Before it returns, Setup's signal handling has stopped, so leak
-// checks such as goleak.Find run after it see no dockertest goroutines. It is
-// safe to call repeatedly and concurrently; the shutdown runs once and every
-// caller receives its result. Call it before os.Exit.
-//
-// On SIGINT or SIGTERM before cleanup is called, Setup shuts down like Main,
-// prints failures to stderr, and exits with 130 or 143; a second signal
-// terminates immediately.
-//
-// Unlike Main, Setup does not read testing flags, so resources get no expiry
-// label and are never removed by other runs: leftovers of a crash or SIGKILL
-// remain. At cleanup, Setup removes resources of this run whose creation
-// response was lost and expired resources that earlier Main runs left behind.
-func Setup(ctx context.Context, opts MainOptions) (cleanup func() error, err error) {
-	return setup(ctx, opts, 0, os.Stderr, os.Exit)
-}
-
-// setup is Setup with the test timeout, which determines the expiry label,
-// output, and exit injected.
-func setup(ctx context.Context, opts MainOptions, testTimeout time.Duration, stderr io.Writer, exit func(int)) (func() error, error) {
-	opts, err := opts.resolve()
+// setup installs the process cleanup and returns the shutdown. The shutdown
+// rejects new operations, drains in-flight ones, runs the teardown, removes the
+// owned containers and networks, closes the Docker clients that pools created,
+// and returns all failures, including a missed deadline. It runs once however
+// often it is called, and stops signal handling before it starts. On SIGINT or
+// SIGTERM before it is called, the shutdown runs, failures are printed, and
+// exit is called with 130 or 143. The test timeout determines the expiry label.
+func setup(ctx context.Context, opts []TestMainOption, testTimeout time.Duration, stderr io.Writer, exit func(int)) (func() error, error) {
+	cfg, err := resolve(opts)
 	if err != nil {
 		return nil, err
 	}
 	o := owner
-	if err := o.install(expiry(time.Now(), testTimeout, opts.CleanupTimeout)); err != nil {
+	if err := o.install(expiry(time.Now(), testTimeout, cfg.timeout)); err != nil {
 		return nil, err
 	}
 
@@ -195,7 +208,7 @@ func setup(ctx context.Context, opts MainOptions, testTimeout time.Duration, std
 		result error
 	)
 	shutdown := func(sig os.Signal) error {
-		once.Do(func() { result = o.shutdownProcess(ctx, opts, sig) })
+		once.Do(func() { result = o.shutdownProcess(ctx, cfg, sig) })
 		return result
 	}
 
@@ -241,11 +254,11 @@ func setup(ctx context.Context, opts MainOptions, testTimeout time.Duration, std
 }
 
 // shutdownProcess runs the whole shutdown under the cleanup deadline: stop
-// admitting resources, drain in-flight operations, run the package Cleanup,
-// and remove Docker resources. The deadline is also enforced with a timer so
-// that a callback ignoring its context cannot hold the process.
-func (o *processOwner) shutdownProcess(ctx context.Context, opts MainOptions, sig os.Signal) error {
-	timeout := opts.CleanupTimeout
+// admitting resources, drain in-flight operations, run the teardown, and
+// remove Docker resources. The deadline is also enforced with a timer so that
+// a teardown ignoring its context cannot hold the process.
+func (o *processOwner) shutdownProcess(ctx context.Context, cfg mainOptions, sig os.Signal) error {
+	timeout := cfg.timeout
 	if sig == syscall.SIGTERM && runtime.GOOS == "windows" {
 		timeout = min(timeout, windowsConsoleCloseTimeout)
 	}
@@ -257,9 +270,9 @@ func (o *processOwner) shutdownProcess(ctx context.Context, opts MainOptions, si
 	go func() {
 		drain := o.beginShutdown()
 		errs := []error{drain(cleanupCtx)}
-		if opts.Cleanup != nil {
-			if err := opts.Cleanup(cleanupCtx); err != nil {
-				errs = append(errs, fmt.Errorf("cleanup callback: %w", err))
+		if cfg.teardown != nil {
+			if err := cfg.teardown(cleanupCtx); err != nil {
+				errs = append(errs, fmt.Errorf("teardown: %w", err))
 			}
 		}
 		errs = append(errs, o.cleanup(cleanupCtx, time.Now()))

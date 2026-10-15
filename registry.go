@@ -73,7 +73,7 @@ func Get(reuseID string) (ClosableResource, bool) {
 //
 // The registry only contains reusable containers that are currently
 // referenced; it is not an inventory of everything dockertest created. Use
-// Main for process-wide cleanup.
+// TestMain for process-wide cleanup.
 func GetAll() []ClosableResource {
 	globalRegistry.Lock()
 	defer globalRegistry.Unlock()

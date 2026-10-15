@@ -19,19 +19,18 @@ import (
 	"go.uber.org/goleak"
 )
 
-// runMainForTest runs runMain in-process with an injected exit and returns
-// the exit code and stderr.
-func runMainForTest(ctx context.Context, t *testing.T, run func() int, opts MainOptions) (code int, stderr string) {
+// runMainForTest runs runMain in-process, fails the test if it exits, and
+// returns the exit code and stderr.
+func runMainForTest(ctx context.Context, t *testing.T, run func() int, opts ...TestMainOption) (code int, stderr string) {
 	t.Helper()
 	_, out := testOwner(t)
-	code = -1
-	runMain(ctx, run, opts, 0, out, func(c int) { code = c })
+	code = runMain(ctx, run, opts, 0, out, func(c int) { t.Errorf("exited with %d", c) })
 	return code, out.String()
 }
 
 func TestMainRejectsNegativeCleanupTimeout(t *testing.T) {
 	ran := false
-	code, stderr := runMainForTest(t.Context(), t, func() int { ran = true; return 0 }, MainOptions{CleanupTimeout: -time.Second})
+	code, stderr := runMainForTest(t.Context(), t, func() int { ran = true; return 0 }, WithShutdownTimeout(-time.Second))
 	if want := "must not be negative"; code != 1 || !strings.Contains(stderr, want) {
 		t.Fatalf("exit = %d, stderr = %q; want 1 and %q", code, stderr, want)
 	}
@@ -41,11 +40,11 @@ func TestMainRejectsNegativeCleanupTimeout(t *testing.T) {
 }
 
 func TestMainResolvesDefaults(t *testing.T) {
-	opts, err := MainOptions{}.resolve()
+	opts, err := resolve(nil)
 	if err != nil {
 		t.Fatalf("resolve() error = %v", err)
 	}
-	if opts.CleanupTimeout != defaultCleanupTimeout {
+	if opts.timeout != defaultCleanupTimeout {
 		t.Fatalf("resolved options = %+v", opts)
 	}
 }
@@ -53,29 +52,27 @@ func TestMainResolvesDefaults(t *testing.T) {
 func TestMainRejectsRepeatedInstallAndEarlyResources(t *testing.T) {
 	t.Run("repeated", func(t *testing.T) {
 		o, stderr := testOwner(t)
-		code := -1
-		runMain(t.Context(), func() int { return 0 }, MainOptions{}, 0, stderr, func(c int) { code = c })
+		code := runMain(t.Context(), func() int { return 0 }, nil, 0, stderr, func(int) {})
 		if code != 0 {
 			t.Fatalf("first run exit = %d, stderr = %s", code, stderr.String())
 		}
-		// Main must refuse to run twice in the same process even though the
+		// runMain must refuse to run twice in the same process even though the
 		// first run has shut down.
-		runMain(t.Context(), func() int { t.Fatal("tests ran"); return 0 }, MainOptions{}, 0, stderr, func(c int) { code = c })
+		code = runMain(t.Context(), func() int { t.Fatal("tests ran"); return 0 }, nil, 0, stderr, func(int) {})
 		if code != 1 || !strings.Contains(stderr.String(), "already installed") {
 			t.Fatalf("second run exit = %d, stderr = %s", code, stderr.String())
 		}
 		_ = o
 	})
 
-	t.Run("resources before Main", func(t *testing.T) {
+	t.Run("resources before TestMain", func(t *testing.T) {
 		_, stderr := testOwner(t)
 		p := newFakePool(t, newFakeClient())
 		if _, err := p.Run(t.Context(), "alpine", WithoutReuse()); err != nil {
 			t.Fatal(err)
 		}
-		code := -1
-		runMain(t.Context(), func() int { t.Fatal("tests ran"); return 0 }, MainOptions{}, 0, stderr, func(c int) { code = c })
-		if code != 1 || !strings.Contains(stderr.String(), "created before Main") {
+		code := runMain(t.Context(), func() int { t.Fatal("tests ran"); return 0 }, nil, 0, stderr, func(int) {})
+		if code != 1 || !strings.Contains(stderr.String(), "created before TestMain") {
 			t.Fatalf("exit = %d, stderr = %s", code, stderr.String())
 		}
 	})
@@ -93,16 +90,16 @@ func TestMainRunsCleanupAndPreservesStatus(t *testing.T) {
 		}
 		order = append(order, "tests")
 		return 7
-	}, MainOptions{Cleanup: func(ctx context.Context) error {
+	}, WithTeardown(func(ctx context.Context) error {
 		if _, ok := ctx.Deadline(); !ok {
-			t.Error("cleanup callback context has no deadline")
+			t.Error("teardown context has no deadline")
 		}
 		order = append(order, "cleanup")
 		if got := c.callsMatching("ContainerRemove"); len(got) != 0 {
-			t.Errorf("containers removed before the cleanup callback: %q", got)
+			t.Errorf("containers removed before the teardown: %q", got)
 		}
 		return cleanupErr
-	}})
+	}))
 
 	if code != 7 {
 		t.Fatalf("exit = %d, want the test status 7", code)
@@ -120,7 +117,7 @@ func TestMainRunsCleanupAndPreservesStatus(t *testing.T) {
 		t.Fatalf("calls = %q, want one reconciliation sweep", c.calls)
 	}
 	if _, err := p.Run(t.Context(), "alpine"); !errors.Is(err, ErrShuttingDown) {
-		t.Fatalf("Run() after Main error = %v, want ErrShuttingDown", err)
+		t.Fatalf("Run() after TestMain error = %v, want ErrShuttingDown", err)
 	}
 }
 
@@ -133,7 +130,7 @@ func TestMainReportsLeftovers(t *testing.T) {
 			t.Fatal(err)
 		}
 		return 0
-	}, MainOptions{})
+	})
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0 (cleanup failures are warnings)", code)
 	}
@@ -146,10 +143,10 @@ func TestMainEnforcesDeadlineOnStuckCleanup(t *testing.T) {
 	block := make(chan struct{})
 	t.Cleanup(func() { close(block) })
 	start := time.Now()
-	code, stderr := runMainForTest(t.Context(), t, func() int { return 0 }, MainOptions{
-		CleanupTimeout: 50 * time.Millisecond,
-		Cleanup:        func(context.Context) error { <-block; return nil },
-	})
+	code, stderr := runMainForTest(t.Context(), t, func() int { return 0 },
+		WithShutdownTimeout(50*time.Millisecond),
+		WithTeardown(func(context.Context) error { <-block; return nil }),
+	)
 	if code != 0 {
 		t.Fatalf("exit = %d", code)
 	}
@@ -178,7 +175,7 @@ func TestMainSweepsExpiredOnShutdown(t *testing.T) {
 			t.Errorf("containers removed before shutdown: %q", got)
 		}
 		return 0
-	}, MainOptions{})
+	})
 	if code != 0 || stderr != "" {
 		t.Fatalf("exit = %d, stderr = %q", code, stderr)
 	}
@@ -221,7 +218,7 @@ func TestMainStampsExpiry(t *testing.T) {
 					t.Fatal(err)
 				}
 				return 0
-			}, MainOptions{}, tc.testTimeout, stderr, func(int) {})
+			}, nil, tc.testTimeout, stderr, func(int) {})
 			if _, ok := labels[labelExpires]; ok != tc.want {
 				t.Fatalf("labels = %v, want expires label: %t", labels, tc.want)
 			}
@@ -229,12 +226,12 @@ func TestMainStampsExpiry(t *testing.T) {
 	}
 }
 
-// setupForTest installs Setup on an isolated owner and fails the test if
-// Setup tries to exit the process.
-func setupForTest(t *testing.T, opts MainOptions) (cleanup func() error, stderr *bytes.Buffer) {
+// setupForTest installs setup on an isolated owner and fails the test if
+// setup tries to exit the process.
+func setupForTest(t *testing.T, opts ...TestMainOption) (cleanup func() error, stderr *bytes.Buffer) {
 	t.Helper()
 	_, stderr = testOwner(t)
-	cleanup, err := setup(t.Context(), opts, 0, stderr, func(code int) { t.Errorf("Setup exited with %d", code) })
+	cleanup, err := setup(t.Context(), opts, 0, stderr, func(code int) { t.Errorf("setup exited with %d", code) })
 	if err != nil {
 		t.Fatalf("setup() error = %v", err)
 	}
@@ -242,43 +239,43 @@ func setupForTest(t *testing.T, opts MainOptions) (cleanup func() error, stderr 
 }
 
 func TestSetupRejectsInvalidInstall(t *testing.T) {
-	noExit := func(code int) { t.Errorf("Setup exited with %d", code) }
+	noExit := func(code int) { t.Errorf("setup exited with %d", code) }
 
 	t.Run("invalid options", func(t *testing.T) {
 		_, stderr := testOwner(t)
-		_, err := setup(t.Context(), MainOptions{CleanupTimeout: -time.Second}, 0, stderr, noExit)
+		_, err := setup(t.Context(), []TestMainOption{WithShutdownTimeout(-time.Second)}, 0, stderr, noExit)
 		if !errors.Is(err, ErrInvalidOption) || !strings.Contains(err.Error(), "must not be negative") {
 			t.Fatalf("setup() error = %v, want ErrInvalidOption", err)
 		}
 	})
 
-	t.Run("repeated Setup", func(t *testing.T) {
-		cleanup, stderr := setupForTest(t, MainOptions{})
+	t.Run("repeated setup", func(t *testing.T) {
+		cleanup, stderr := setupForTest(t)
 		if err := cleanup(); err != nil {
 			t.Fatal(err)
 		}
-		_, err := setup(t.Context(), MainOptions{}, 0, stderr, noExit)
+		_, err := setup(t.Context(), nil, 0, stderr, noExit)
 		if !errors.Is(err, ErrInvalidOption) || !strings.Contains(err.Error(), "already installed") {
 			t.Fatalf("setup() error = %v, want already installed", err)
 		}
 	})
 
-	t.Run("Setup after Main", func(t *testing.T) {
+	t.Run("setup after TestMain", func(t *testing.T) {
 		_, stderr := testOwner(t)
-		runMain(t.Context(), func() int { return 0 }, MainOptions{}, 0, stderr, func(int) {})
-		_, err := setup(t.Context(), MainOptions{}, 0, stderr, noExit)
+		runMain(t.Context(), func() int { return 0 }, nil, 0, stderr, func(int) {})
+		_, err := setup(t.Context(), nil, 0, stderr, noExit)
 		if !errors.Is(err, ErrInvalidOption) || !strings.Contains(err.Error(), "already installed") {
 			t.Fatalf("setup() error = %v, want already installed", err)
 		}
 	})
 
-	t.Run("resources before Setup", func(t *testing.T) {
+	t.Run("resources before setup", func(t *testing.T) {
 		_, stderr := testOwner(t)
 		if _, err := newFakePool(t, newFakeClient()).Run(t.Context(), "alpine", WithoutReuse()); err != nil {
 			t.Fatal(err)
 		}
-		_, err := setup(t.Context(), MainOptions{}, 0, stderr, noExit)
-		if !errors.Is(err, ErrInvalidOption) || !strings.Contains(err.Error(), "created before Main or Setup") {
+		_, err := setup(t.Context(), nil, 0, stderr, noExit)
+		if !errors.Is(err, ErrInvalidOption) || !strings.Contains(err.Error(), "created before TestMain or Wrap") {
 			t.Fatalf("setup() error = %v, want created before", err)
 		}
 	})
@@ -287,10 +284,10 @@ func TestSetupRejectsInvalidInstall(t *testing.T) {
 func TestSetupCleanupRunsOnce(t *testing.T) {
 	cleanupErr := errors.New("teardown failed")
 	var calls atomic.Int32
-	cleanup, stderr := setupForTest(t, MainOptions{Cleanup: func(context.Context) error {
+	cleanup, stderr := setupForTest(t, WithTeardown(func(context.Context) error {
 		calls.Add(1)
 		return cleanupErr
-	}})
+	}))
 	c := newFakeClient()
 	p := newFakePool(t, c)
 	if _, err := p.Run(t.Context(), "alpine", WithoutReuse()); err != nil {
@@ -312,7 +309,7 @@ func TestSetupCleanupRunsOnce(t *testing.T) {
 		t.Fatalf("repeated cleanup() error = %v, want %v", err, cleanupErr)
 	}
 	if got := calls.Load(); got != 1 {
-		t.Fatalf("Cleanup callback ran %d times, want once", got)
+		t.Fatalf("teardown ran %d times, want once", got)
 	}
 	if got := c.callsMatching("ContainerRemove"); len(got) != 1 {
 		t.Fatalf("ContainerRemove calls = %q, want one", got)
@@ -329,7 +326,7 @@ func TestSetupCleanupRunsOnce(t *testing.T) {
 }
 
 func TestSetupCleanupReturnsRemovalErrors(t *testing.T) {
-	cleanup, _ := setupForTest(t, MainOptions{})
+	cleanup, _ := setupForTest(t)
 	busy := errors.New("busy")
 	c := newFakeClient()
 	c.containerRemove = func(context.Context, string, mobyclient.ContainerRemoveOptions) error { return busy }
@@ -345,10 +342,10 @@ func TestSetupCleanupReturnsRemovalErrors(t *testing.T) {
 func TestSetupCleanupReturnsDeadline(t *testing.T) {
 	block := make(chan struct{})
 	t.Cleanup(func() { close(block) })
-	cleanup, _ := setupForTest(t, MainOptions{
-		CleanupTimeout: 50 * time.Millisecond,
-		Cleanup:        func(context.Context) error { <-block; return nil },
-	})
+	cleanup, _ := setupForTest(t,
+		WithShutdownTimeout(50*time.Millisecond),
+		WithTeardown(func(context.Context) error { <-block; return nil }),
+	)
 	start := time.Now()
 	if err := cleanup(); !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "did not finish") {
 		t.Fatalf("cleanup() error = %v, want deadline exceeded", err)
@@ -360,7 +357,7 @@ func TestSetupCleanupReturnsDeadline(t *testing.T) {
 
 func TestSetupCleanupStopsWatcher(t *testing.T) {
 	ignore := goleak.IgnoreCurrent()
-	cleanup, _ := setupForTest(t, MainOptions{})
+	cleanup, _ := setupForTest(t)
 	if _, err := newFakePool(t, newFakeClient()).Run(t.Context(), "alpine", WithoutReuse()); err != nil {
 		t.Fatal(err)
 	}
@@ -371,7 +368,7 @@ func TestSetupCleanupStopsWatcher(t *testing.T) {
 }
 
 func TestSetupRemovesOwnedResourcesWithoutExpiry(t *testing.T) {
-	cleanup, _ := setupForTest(t, MainOptions{})
+	cleanup, _ := setupForTest(t)
 	c := newFakeClient()
 	var labels []map[string]string
 	c.containerCreate = func(_ context.Context, opts mobyclient.ContainerCreateOptions) (string, error) {
@@ -397,7 +394,7 @@ func TestSetupRemovesOwnedResourcesWithoutExpiry(t *testing.T) {
 
 	for _, l := range labels {
 		if _, ok := l[labelExpires]; ok {
-			t.Fatalf("labels = %v, want no expiry under Setup", l)
+			t.Fatalf("labels = %v, want no expiry without a test timeout", l)
 		}
 		// Another run's sweep, even far in the future, must leave it alone.
 		if orphaned(l, "other-run", time.Unix(1<<40, 0)) {
@@ -424,7 +421,7 @@ func TestSetupRemovesOwnedResourcesWithoutExpiry(t *testing.T) {
 }
 
 func TestSetupClosesOwnedClients(t *testing.T) {
-	cleanup, _ := setupForTest(t, MainOptions{})
+	cleanup, _ := setupForTest(t)
 	c := newFakeClient()
 	p := newFakePool(t, c)
 	p.ownedClient = true
@@ -432,7 +429,7 @@ func TestSetupClosesOwnedClients(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.closed {
-		t.Fatal("pool.Close closed the client under Setup, want it kept for shutdown")
+		t.Fatal("pool.Close closed the client under setup, want it kept for shutdown")
 	}
 	if err := cleanup(); err != nil {
 		t.Fatal(err)

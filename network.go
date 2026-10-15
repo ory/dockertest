@@ -184,7 +184,7 @@ func (p *pool) CreateNetworkT(t TestingTB, name string, opts *NetworkCreateOptio
 // Close removes the network. It releases the handle exactly once; repeated
 // calls return nil. The removal honors ctx and is bounded by the pool's
 // cleanup timeout. A failed removal is retried by the pool's Close and by
-// Main or Setup.
+// TestMain or Wrap.
 // Any containers still connected to the network should be disconnected first,
 // or the network removal will fail.
 func (n *dockerNetwork) Close(ctx context.Context) error {

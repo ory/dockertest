@@ -16,7 +16,7 @@ const (
 	labelTrue    = "true"
 	labelManaged = "io.ory.dockertest.managed" // "true" for every resource dockertest created
 	labelRun     = "io.ory.dockertest.run"     // unique ID of the creating process run
-	labelExpires = "io.ory.dockertest.expires" // unix seconds after which the run is dead; only under Main
+	labelExpires = "io.ory.dockertest.expires" // unix seconds after which the run is dead; only under TestMain or Wrap
 )
 
 // withOwnershipLabels copies user labels and adds this process's ownership labels.

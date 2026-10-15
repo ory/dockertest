@@ -1,10 +1,10 @@
 // Copyright © 2026 Ory Corp
 // SPDX-License-Identifier: Apache-2.0
 
-// Package maintest exercises dockertest.Main and dockertest.Setup in child
+// Package maintest exercises dockertest.TestMain and dockertest.Wrap in child
 // processes: the test binary re-executes itself with DOCKERTEST_MAIN_CASE set,
-// and that child's TestMain hands control to dockertest.Main or, for cases
-// prefixed with "setup-", runs a custom TestMain built on dockertest.Setup.
+// and that child's TestMain hands control to dockertest.TestMain or, for cases
+// prefixed with "wrap-", runs a custom TestMain built on dockertest.Wrap.
 package maintest
 
 import (
@@ -32,7 +32,7 @@ const (
 	envCase     = "DOCKERTEST_MAIN_CASE"
 	envOutFile  = "DOCKERTEST_MAIN_OUT"
 	readyMarker = "DOCKERTEST-READY"
-	setupPrefix = "setup-"
+	wrapPrefix  = "wrap-"
 
 	labelManaged = "io.ory.dockertest.managed"
 	labelRun     = "io.ory.dockertest.run"
@@ -44,35 +44,39 @@ func TestMain(m *testing.M) {
 	if testCase == "" {
 		os.Exit(m.Run())
 	}
-	opts := dockertest.MainOptions{CleanupTimeout: 20 * time.Second}
-	switch strings.TrimPrefix(testCase, setupPrefix) {
+	opts := []dockertest.TestMainOption{dockertest.WithShutdownTimeout(20 * time.Second)}
+	switch strings.TrimPrefix(testCase, wrapPrefix) {
 	case "invalid-options":
-		opts.CleanupTimeout = -time.Second
+		opts = append(opts, dockertest.WithShutdownTimeout(-time.Second))
 	case "cleanup-error":
-		opts.Cleanup = func(context.Context) error { return errors.New("teardown failed") }
+		opts = append(opts, dockertest.WithTeardown(func(context.Context) error { return errors.New("teardown failed") }))
 	case "stuck-cleanup":
-		opts.CleanupTimeout = time.Minute
-		opts.Cleanup = func(context.Context) error { select {} }
+		opts = append(opts,
+			dockertest.WithShutdownTimeout(time.Minute),
+			dockertest.WithTeardown(func(context.Context) error { select {} }),
+		)
 	case "signal-during-cleanup":
-		opts.CleanupTimeout = time.Minute
-		opts.Cleanup = func(ctx context.Context) error {
-			ready()
-			<-ctx.Done()
-			return ctx.Err()
-		}
+		opts = append(opts,
+			dockertest.WithShutdownTimeout(time.Minute),
+			dockertest.WithTeardown(func(ctx context.Context) error {
+				ready()
+				<-ctx.Done()
+				return ctx.Err()
+			}),
+		)
 	case "signal-race":
-		opts.Cleanup = func(context.Context) error {
+		opts = append(opts, dockertest.WithTeardown(func(context.Context) error {
 			fmt.Println(callbackMarker)
 			close(released)
 			<-cleanupCalled
 			return nil
-		}
+		}))
 	}
-	if strings.HasPrefix(testCase, setupPrefix) {
-		setupMain(m, opts, testCase)
+	if strings.HasPrefix(testCase, wrapPrefix) {
+		wrapMain(m, opts, testCase)
 		return
 	}
-	dockertest.Main(context.Background(), m, opts)
+	dockertest.TestMain(context.Background(), m, opts...)
 }
 
 const (
@@ -83,31 +87,27 @@ const (
 )
 
 var (
-	// released is closed by the signal-race Cleanup callback to let the test
-	// body return while the signal shutdown is still running.
+	// released is closed by the signal-race teardown to let the test body
+	// return while the signal shutdown is still running.
 	released = make(chan struct{})
-	// cleanupCalled is closed right before the custom TestMain calls cleanup.
+	// cleanupCalled is closed right before Wrap starts its shutdown.
 	cleanupCalled = make(chan struct{})
 	// callerClients are Docker clients a test body created itself; like any
 	// caller-owned client they are closed after cleanup, before the leak check.
 	callerClients []io.Closer
 )
 
-// setupMain is a custom TestMain built on Setup, shaped like Keto's: it keeps
-// control of m.Run, its own teardown, the goleak check, and the exit status.
-func setupMain(m *testing.M, opts dockertest.MainOptions, testCase string) {
-	cleanup, err := dockertest.Setup(context.Background(), opts)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	fmt.Println(beforeRunMarker)
-	code := m.Run()
-	fmt.Println(afterRunMarker)
-	close(cleanupCalled)
-	if err := cleanup(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-	}
+// wrapMain is a custom TestMain built on Wrap, shaped like Keto's: it runs
+// code around m.Run, the goleak check after the shutdown, and keeps control of
+// the exit status.
+func wrapMain(m *testing.M, opts []dockertest.TestMainOption, testCase string) {
+	code := dockertest.Wrap(context.Background(), func() int {
+		fmt.Println(beforeRunMarker)
+		code := m.Run()
+		fmt.Println(afterRunMarker)
+		close(cleanupCalled)
+		return code
+	}, opts...).Run()
 	for _, c := range callerClients {
 		_ = c.Close() //nolint:errcheck // best effort
 	}
@@ -118,7 +118,7 @@ func setupMain(m *testing.M, opts dockertest.MainOptions, testCase string) {
 			code = 1
 		}
 	}
-	if testCase == setupPrefix+"exit-code" {
+	if testCase == wrapPrefix+"exit-code" {
 		code = 42
 	}
 	os.Exit(code)
@@ -127,7 +127,7 @@ func setupMain(m *testing.M, opts dockertest.MainOptions, testCase string) {
 // TestHelperProcess is the body of every child process.
 func TestHelperProcess(t *testing.T) {
 	testCase := os.Getenv(envCase)
-	switch strings.TrimPrefix(testCase, setupPrefix) {
+	switch strings.TrimPrefix(testCase, wrapPrefix) {
 	case "":
 		t.Skip("not a child process")
 	case "pass", "cleanup-error", "exit-code", "signal-during-cleanup":
@@ -168,7 +168,7 @@ func TestHelperProcess(t *testing.T) {
 		}
 	case "network-pass":
 		pool := dockertest.NewPoolT(t, "")
-		writeOut(t, pool.CreateNetworkT(t, fmt.Sprintf("dockertest-setup-%d", os.Getpid()), nil).ID())
+		writeOut(t, pool.CreateNetworkT(t, fmt.Sprintf("dockertest-wrap-%d", os.Getpid()), nil).ID())
 	default:
 		t.Fatalf("unknown case %q", testCase)
 	}
@@ -488,7 +488,7 @@ func TestMainInterruptDuringCreation(t *testing.T) {
 	}
 	labels := inspect.Container.Config.Labels
 	if labels[labelExpires] == "" {
-		t.Fatalf("labels = %v, want an expiry under Main", labels)
+		t.Fatalf("labels = %v, want an expiry under TestMain", labels)
 	}
 	interrupt(t, c.cmd)
 	if code := c.wait(t); code != 130 {

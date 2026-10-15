@@ -430,52 +430,35 @@ stdout, stderr, err := resource.Logs(ctx)
 err = resource.FollowLogs(ctx, os.Stdout, os.Stderr)
 ```
 
-### Process-Wide Cleanup with `Main`
+### Process-Wide Cleanup with `TestMain`
 
 v3 left containers behind when a test hung or the process was killed. v4 adds
-`dockertest.Main` for `TestMain`:
+`dockertest.TestMain` for a package's `TestMain`:
 
 ```go
 func TestMain(m *testing.M) {
-    dockertest.Main(context.Background(), m, dockertest.MainOptions{})
+    dockertest.TestMain(context.Background(), m)
 }
 ```
 
-`Main` never returns: it runs `m.Run`, cleans up, and exits with the test
-status; cleanup errors are only printed. Install it once per process, before any
-Docker resource is created. See the README for signals, timeouts, and how
+`dockertest.TestMain` never returns: it runs `m.Run`, cleans up, and exits with
+the test status; cleanup errors are only printed. Install it once per process,
+before any Docker resource is created. Options such as `WithShutdownTimeout` and
+`WithTeardown` are variadic. See the README for signals, timeouts, and how
 resources of killed runs are removed once they expire.
 
-An existing `TestMain` with its own setup, teardown, or leak check keeps its
-shape with `dockertest.Setup`. Call the returned cleanup after `m.Run` and your
-teardown, then run leak checks, then `os.Exit`:
+An existing `TestMain` with its own setup, leak check, or exit status keeps its
+shape with `dockertest.Wrap`, which returns the exit status instead of exiting:
 
 ```go
 func TestMain(m *testing.M) {
-    cleanup, err := dockertest.Setup(context.Background(), dockertest.MainOptions{})
-    if err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        os.Exit(1)
-    }
-    code := m.Run()
-    if err := cleanup(); err != nil {
-        fmt.Fprintln(os.Stderr, err)
-    }
-    if code == 0 {
-        if err := goleak.Find(); err != nil {
-            fmt.Fprintln(os.Stderr, err)
-            code = 1
-        }
-    }
-    os.Exit(code)
+    goleak.VerifyTestMain(dockertest.Wrap(context.Background(), m.Run))
 }
 ```
 
-Replace `goleak.VerifyTestMain(m)` this way: it calls `os.Exit` itself, so
-cleanup would never run. The cleanup error is returned, so you decide whether it
-fails the run. Signals are handled as under `Main`. Unlike `Main`, resources get
-no expiry label, so leftovers of a `SIGKILL` or crash are not removed by later
-runs.
+Package-wide containers started before `m.Run` go inside the wrapped function,
+so they are created after the cleanup is installed. They need no teardown:
+dockertest removes them at shutdown.
 
 ### Advanced: Container Registry
 
@@ -538,7 +521,7 @@ resource.CloseT(t) // immediate removal
 - [ ] Updated pool.Retry(fn) to pool.Retry(ctx, timeout, fn)
 - [ ] Updated error handling to use errors.Is()
 - [ ] Added WithReuseID where same image has different configs
-- [ ] Added dockertest.Main (or dockertest.Setup in a custom TestMain) where
+- [ ] Added dockertest.TestMain (or dockertest.Wrap in a custom TestMain) where
       tests may hang or be interrupted
 - [ ] Tested all changes
 - [ ] Verified container cleanup works correctly

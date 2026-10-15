@@ -34,8 +34,8 @@ type processOwner struct {
 	mu sync.Mutex
 
 	runID   string
-	main    bool   // set when Main or Setup is installed
-	expires string // expiry label value; set by Main unless the test timeout is disabled
+	main    bool   // set when TestMain or Wrap is installed
+	expires string // expiry label value; set by TestMain or Wrap unless the test timeout is disabled
 	stderr  io.Writer
 
 	shutdown chan struct{}  // closed when process shutdown starts
@@ -44,7 +44,7 @@ type processOwner struct {
 	pools      []*pool
 	containers map[string]*containerRecord
 	networks   map[string]*networkRecord
-	created    int // total resources ever tracked; Main and Setup refuse to install after the fact
+	created    int // total resources ever tracked; TestMain and Wrap refuse to install after the fact
 }
 
 //nolint:govet // field alignment traded for readability
@@ -118,17 +118,17 @@ func (o *processOwner) installed() bool {
 	return o.main
 }
 
-// install attaches Main or Setup to the owner. It fails when either was
+// install attaches TestMain or Wrap to the owner. It fails when either was
 // already installed or when Docker resources were created before ownership
 // was taken, as those would lack the expiry label and escape shutdown.
 func (o *processOwner) install(expires string) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	if o.main {
-		return fmt.Errorf("%w: Main or Setup is already installed", ErrInvalidOption)
+		return fmt.Errorf("%w: TestMain or Wrap is already installed", ErrInvalidOption)
 	}
 	if o.created > 0 {
-		return fmt.Errorf("%w: Docker resources were created before Main or Setup was installed", ErrInvalidOption)
+		return fmt.Errorf("%w: Docker resources were created before TestMain or Wrap was installed", ErrInvalidOption)
 	}
 	o.main = true
 	o.expires = expires
@@ -319,7 +319,7 @@ func (o *processOwner) cleanup(ctx context.Context, now time.Time) error {
 		errs = append(errs, p.cleanup(ctx))
 	}
 
-	// Pools keep their clients open under Main and Setup, so each record's own pool
+	// Pools keep their clients open under TestMain and Wrap, so each record's own pool
 	// can remove it; a pool without a client leaves its records as leftovers.
 	errs = append(errs, o.retry(ctx, nil))
 
