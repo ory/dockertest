@@ -5,7 +5,10 @@ package dockertest
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 	"time"
 
@@ -48,15 +51,18 @@ type ClosablePool interface {
 }
 
 // pool manages Docker resources and operations.
+//
+//nolint:govet // field alignment traded for readability
 type pool struct {
-	client      client.DockerClient
-	ownedClient bool   // true if pool created the client and should close it
-	daemonHost  string // Docker daemon endpoint; scopes the reuse registry
-	maxWait     time.Duration
+	client         client.DockerClient
+	ownedClient    bool   // true if pool created the client and should close it
+	daemonHost     string // Docker daemon endpoint; scopes the reuse registry
+	maxWait        time.Duration
+	cleanupTimeout time.Duration
 
 	mu        sync.Mutex
-	resources []*resource // each entry is one reference; reused containers appear once per acquisition
-	networks  sync.Map
+	resources []*resource // each entry is one handle; reused containers appear once per acquisition
+	networks  map[string]*dockerNetwork
 }
 
 // NewPool creates a new pool with the given endpoint and options.
@@ -77,12 +83,17 @@ type pool struct {
 //	defer pool.Close(ctx)
 func NewPool(ctx context.Context, endpoint string, opts ...PoolOption) (ClosablePool, error) {
 	p := &pool{
-		maxWait:     60 * time.Second,
-		ownedClient: true,
+		maxWait:        60 * time.Second,
+		cleanupTimeout: 60 * time.Second,
+		networks:       map[string]*dockerNetwork{},
 	}
 
 	for _, opt := range opts {
 		opt(p)
+	}
+
+	if p.cleanupTimeout <= 0 {
+		return nil, fmt.Errorf("%w: cleanup timeout must be positive, got %v", ErrInvalidOption, p.cleanupTimeout)
 	}
 
 	if p.client == nil && endpoint != "" {
@@ -99,6 +110,7 @@ func NewPool(ctx context.Context, endpoint string, opts ...PoolOption) (Closable
 	}
 
 	p.daemonHost = p.client.DaemonHost()
+	owner.addPool(p)
 
 	return p, nil
 }
@@ -106,6 +118,27 @@ func NewPool(ctx context.Context, endpoint string, opts ...PoolOption) (Closable
 // Client returns the underlying Docker client.
 func (p *pool) Client() client.DockerClient {
 	return p.client
+}
+
+// begin admits a resource-creating operation with the process owner.
+func (p *pool) begin(ctx context.Context) (context.Context, func(), error) {
+	if p.client == nil {
+		return nil, nil, ErrClientClosed
+	}
+	return owner.beginOperation(ctx)
+}
+
+// cleanupContext bounds a cleanup by the pool's cleanup timeout. Deriving from
+// ctx means an outer cleanup deadline is preserved and never extended.
+func (p *pool) cleanupContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, p.cleanupTimeout)
+}
+
+// rollbackContext is used to undo a partially created resource after a failed
+// operation: it ignores the (possibly canceled) operation context but keeps
+// its deadline bounded.
+func (p *pool) rollbackContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return p.cleanupContext(context.WithoutCancel(ctx))
 }
 
 func (p *pool) trackResource(r *resource) {
@@ -117,15 +150,11 @@ func (p *pool) trackResource(r *resource) {
 	p.mu.Unlock()
 }
 
-func (p *pool) untrackResource(containerID string) {
-	if containerID == "" {
-		return
-	}
+func (p *pool) untrackResource(r *resource) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	// Remove the first matching entry (preserves other refs to the same container).
-	for i, r := range p.resources {
-		if r.container.ID == containerID {
+	for i, tracked := range p.resources {
+		if tracked == r {
 			p.resources = append(p.resources[:i], p.resources[i+1:]...)
 			return
 		}
@@ -136,34 +165,15 @@ func (p *pool) trackNetwork(net *dockerNetwork) {
 	if net == nil || net.inspect.ID == "" {
 		return
 	}
-	p.networks.Store(net.inspect.ID, net)
+	p.mu.Lock()
+	p.networks[net.inspect.ID] = net
+	p.mu.Unlock()
 }
 
 func (p *pool) untrackNetwork(networkID string) {
-	if networkID == "" {
-		return
-	}
-	p.networks.Delete(networkID)
-}
-
-func (p *pool) trackedNetworks() []*dockerNetwork {
-	var networks []*dockerNetwork
-	p.networks.Range(func(_, value any) bool {
-		net, ok := value.(*dockerNetwork)
-		if ok {
-			networks = append(networks, net)
-		}
-		return true
-	})
-	return networks
-}
-
-func (p *pool) trackedResources() []*resource {
 	p.mu.Lock()
-	snapshot := make([]*resource, len(p.resources))
-	copy(snapshot, p.resources)
+	delete(p.networks, networkID)
 	p.mu.Unlock()
-	return snapshot
 }
 
 // NewPoolT creates a new pool using t.Context() and registers cleanup with t.Cleanup().
@@ -186,22 +196,33 @@ func NewPoolT(t TestingTB, endpoint string, opts ...PoolOption) Pool {
 	return p
 }
 
-// Close cleans up all tracked containers and networks, then closes the pool's
-// Docker client if it was created by the pool. If a custom client was provided
-// via WithMobyClient, it is not closed (the caller remains responsible for
-// closing it).
+// Close cleans up all tracked containers and networks, bounded by the pool's
+// cleanup timeout and the supplied context. If cleanup succeeds and the pool
+// created its own Docker client, the client is closed unless TestMain or Wrap is
+// installed, which close it at process shutdown. After a failed cleanup the
+// client stays open so that Close can be called again to retry. A custom client
+// provided via WithMobyClient is never closed.
 //
 // It is safe to call Close multiple times.
 func (p *pool) Close(ctx context.Context) error {
-	cleanupErr := p.cleanup(ctx)
-	if p.ownedClient && p.client != nil {
-		err := p.client.Close()
-		p.client = nil
-		if err != nil {
-			return err
-		}
+	ctx, cancel := p.cleanupContext(ctx)
+	defer cancel()
+	if err := p.cleanup(ctx); err != nil {
+		return err
 	}
-	return cleanupErr
+	if owner.installed() {
+		return nil
+	}
+	return p.closeOwnedClient()
+}
+
+func (p *pool) closeOwnedClient() error {
+	if !p.ownedClient || p.client == nil {
+		return nil
+	}
+	err := p.client.Close()
+	p.client = nil
+	return err
 }
 
 // CloseT cleans up all tracked containers and networks, then closes the pool's
@@ -213,29 +234,28 @@ func (p *pool) CloseT(t TestingTB) {
 	}
 }
 
-// cleanup closes all tracked resources and networks.
-// Resources are closed first (respecting ref counts), then networks.
-// Errors during cleanup do not stop the process. The first error is returned.
+// cleanup closes all tracked resources and networks, then retries the removal
+// of anything created by this pool whose earlier removal failed.
+// Errors during cleanup do not stop the process; all errors are joined.
 func (p *pool) cleanup(ctx context.Context) error {
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 60*time.Second)
-	defer cancel()
-
-	var firstErr error
-
-	for _, r := range p.trackedResources() {
-		if err := r.Close(cleanupCtx); err != nil && firstErr == nil {
-			firstErr = err
-		}
+	if p.client == nil {
+		return nil
 	}
 
-	for _, net := range p.trackedNetworks() {
-		if err := net.Close(cleanupCtx); err != nil && firstErr == nil {
-			firstErr = err
-		}
-		p.untrackNetwork(net.inspect.ID)
-	}
+	p.mu.Lock()
+	resources := slices.Clone(p.resources)
+	networks := slices.Collect(maps.Values(p.networks))
+	p.mu.Unlock()
 
-	return firstErr
+	var errs []error
+	for _, r := range resources {
+		errs = append(errs, r.Close(ctx))
+	}
+	for _, net := range networks {
+		errs = append(errs, net.Close(ctx))
+	}
+	errs = append(errs, owner.retry(ctx, p))
+	return errors.Join(errs...)
 }
 
 // Run starts a container with the given repository and options.
@@ -262,6 +282,21 @@ func (p *pool) Run(ctx context.Context, repository string, opts ...RunOption) (C
 		return nil, err
 	}
 
+	ctx, done, err := p.begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+
+	r, err := p.run(ctx, repository, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+// run creates or reuses a container for an admitted operation.
+func (p *pool) run(ctx context.Context, repository string, cfg *runConfig) (*resource, error) {
 	reuseID := computeReuseID(repository, cfg)
 
 	if existing := checkForExisting(p, reuseID); existing != nil {
@@ -269,13 +304,15 @@ func (p *pool) Run(ctx context.Context, repository string, opts ...RunOption) (C
 		return existing, nil
 	}
 
-	ref := fmt.Sprintf("%s:%s", repository, cfg.tag)
-
-	if pullErr := p.pullImage(ctx, ref, cfg.noPull); pullErr != nil {
-		return nil, pullErr
+	ref := cfg.image
+	if ref == "" {
+		ref = fmt.Sprintf("%s:%s", repository, cfg.tag)
+		if err := p.pullImage(ctx, ref); err != nil {
+			return nil, err
+		}
 	}
 
-	containerID, err := p.createAndStartContainer(ctx, ref, cfg)
+	containerID, err := p.createAndStartContainer(ctx, ref, cfg, reuseID)
 	if err != nil {
 		return nil, err
 	}
@@ -296,15 +333,21 @@ func buildRunConfig(opts []RunOption) (*runConfig, error) {
 	return cfg, nil
 }
 
-// computeReuseID determines the reuse ID for container caching.
+// computeReuseID determines the reuse ID for container caching. Containers
+// created from a locally built image include the immutable image ID so that a
+// changed build never reuses a container of an older build.
 func computeReuseID(repository string, cfg *runConfig) string {
 	if cfg.noReuse {
 		return ""
 	}
-	if cfg.reuseID != "" {
-		return cfg.reuseID
+	id := cfg.reuseID
+	if id == "" {
+		id = fmt.Sprintf("%s:%s", repository, cfg.tag)
 	}
-	return fmt.Sprintf("%s:%s", repository, cfg.tag)
+	if cfg.image != "" {
+		id += "@" + cfg.image
+	}
+	return id
 }
 
 // registryKey returns a registry key scoped to this pool's daemon host.
@@ -315,27 +358,20 @@ func (p *pool) registryKey(reuseID string) string {
 }
 
 // checkForExisting looks up an existing container in the registry and
-// increments its reference count. The returned resource is a shallow clone
-// of the canonical registry entry with the pool pointer updated to the
-// caller's pool.
+// increments its reference count. The returned resource is a new handle for
+// the canonical registry entry, bound to the caller's pool.
 func checkForExisting(p *pool, reuseID string) *resource {
 	if reuseID == "" {
 		return nil
 	}
 	if existing, ok := acquire(p.registryKey(reuseID)); ok {
-		cloned := *existing
-		cloned.pool = p
-		return &cloned
+		return existing.handle(p)
 	}
 	return nil
 }
 
-// pullImage pulls a Docker image unless noPull is set.
-func (p *pool) pullImage(ctx context.Context, ref string, noPull bool) error {
-	if noPull {
-		return nil
-	}
-
+// pullImage pulls a Docker image unless it is already present.
+func (p *pool) pullImage(ctx context.Context, ref string) error {
 	if _, err := p.client.ImageInspect(ctx, ref); err == nil {
 		return nil
 	} else if !errdefs.IsNotFound(err) {
@@ -358,8 +394,11 @@ func (p *pool) pullImage(ctx context.Context, ref string, noPull bool) error {
 	return nil
 }
 
-// createAndStartContainer creates and starts a container with the given configuration.
-func (p *pool) createAndStartContainer(ctx context.Context, ref string, cfg *runConfig) (string, error) {
+// createAndStartContainer creates and starts a container with the given
+// configuration. The container is tracked by the process owner as soon as it
+// exists; if starting it fails, it is removed again and the removal error, if
+// any, is joined with the start error.
+func (p *pool) createAndStartContainer(ctx context.Context, ref string, cfg *runConfig, reuseID string) (string, error) {
 	containerConfig := &container.Config{
 		Image:      ref,
 		Env:        cfg.env,
@@ -378,6 +417,7 @@ func (p *pool) createAndStartContainer(ctx context.Context, ref string, cfg *run
 	if cfg.configModifier != nil {
 		cfg.configModifier(containerConfig)
 	}
+	containerConfig.Labels = owner.withOwnershipLabels(containerConfig.Labels)
 
 	hostConfig := &container.HostConfig{
 		PublishAllPorts: true,
@@ -396,32 +436,41 @@ func (p *pool) createAndStartContainer(ctx context.Context, ref string, cfg *run
 		cfg.hostConfigModifier(hostConfig)
 	}
 
-	createOpts := mobyclient.ContainerCreateOptions{
+	createResp, err := p.client.ContainerCreate(ctx, mobyclient.ContainerCreateOptions{
 		Name:       cfg.name,
 		Config:     containerConfig,
 		HostConfig: hostConfig,
-	}
-
-	createResp, err := p.client.ContainerCreate(ctx, createOpts)
+	})
 	if err != nil {
 		return "", fmt.Errorf("%w from %s: %w", ErrContainerCreateFailed, ref, err)
 	}
+	var registryKey string
+	if reuseID != "" {
+		registryKey = p.registryKey(reuseID)
+	}
+	owner.trackContainer(createResp.ID, p, registryKey)
 
 	_, err = p.client.ContainerStart(ctx, createResp.ID, mobyclient.ContainerStartOptions{})
 	if err != nil {
-		_, _ = p.client.ContainerRemove(ctx, createResp.ID, mobyclient.ContainerRemoveOptions{Force: true}) //nolint:errcheck // Best effort cleanup
-		return "", fmt.Errorf("%w: %s: %w", ErrContainerStartFailed, createResp.ID, err)
+		return "", errors.Join(fmt.Errorf("%w: %s: %w", ErrContainerStartFailed, createResp.ID, err), p.rollbackContainer(ctx, createResp.ID))
 	}
 
 	return createResp.ID, nil
+}
+
+// rollbackContainer removes a container that a failed operation left behind.
+// The removal ignores cancellation of ctx but is bounded by the cleanup timeout.
+func (p *pool) rollbackContainer(ctx context.Context, containerID string) error {
+	ctx, cancel := p.rollbackContext(ctx)
+	defer cancel()
+	return owner.removeContainer(ctx, p, containerID)
 }
 
 // inspectAndRegister inspects the container and registers it in the global registry.
 func (p *pool) inspectAndRegister(ctx context.Context, containerID, reuseID string) (*resource, error) {
 	inspectResp, err := p.inspectWithPortRetry(ctx, containerID)
 	if err != nil {
-		_, _ = p.client.ContainerRemove(ctx, containerID, mobyclient.ContainerRemoveOptions{Force: true}) //nolint:errcheck // Best effort cleanup
-		return nil, fmt.Errorf("container inspect failed: %w", err)
+		return nil, errors.Join(fmt.Errorf("container inspect failed: %w", err), p.rollbackContainer(ctx, containerID))
 	}
 
 	r := &resource{
@@ -433,17 +482,11 @@ func (p *pool) inspectAndRegister(ctx context.Context, containerID, reuseID stri
 	if reuseID != "" {
 		canonical, loaded := register(p.registryKey(reuseID), r)
 		if loaded {
-			cleanupCtx := context.WithoutCancel(ctx)
-			_, _ = p.client.ContainerRemove(cleanupCtx, containerID, mobyclient.ContainerRemoveOptions{
-				Force:         true,
-				RemoveVolumes: true,
-			}) //nolint:errcheck // Best effort cleanup of duplicate container
-
-			cloned := *canonical
-			cloned.pool = p
-			r = &cloned
-		} else {
-			r = canonical
+			// Another caller registered the same reuse ID first; drop ours.
+			if err := p.rollbackContainer(ctx, containerID); err != nil {
+				report(owner.stderr, "removing duplicate container: %v", err)
+			}
+			r = canonical.handle(p)
 		}
 	}
 
