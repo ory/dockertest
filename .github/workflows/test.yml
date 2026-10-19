@@ -4,6 +4,7 @@ on:
     branches:
       - master
       - v3
+      - v4
   pull_request:
 jobs:
   build:
@@ -18,3 +19,18 @@ jobs:
         run: go list -json -deps ./... > go.list
       - name: Coveralls
         run: bash <(curl -s https://codecov.io/bash)
+  native:
+    # Daemon-free tests of Main's signal handling on the platforms where its
+    # native implementation differs.
+    strategy:
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+      - run: go vet ./...
+      - run: go test -short -race ./internal/...
+      - run: go test -short -race -run '^TestMain' .

@@ -387,6 +387,9 @@ Available `BuildOptions` fields: `ContextDir` (required), `Dockerfile` (defaults
 to `"Dockerfile"`), `Tags`, `BuildArgs` (`map[string]*string`), `Labels`,
 `NoCache`, `ForceRemove`.
 
+Built images remain available across runs. Images, builder cache, named volumes,
+and pre-existing unlabeled resources are outside automatic cleanup.
+
 ### Container Networks
 
 Networks created with `CreateNetworkT` or `CreateNetwork` are tracked by the
@@ -426,6 +429,36 @@ stdout, stderr, err := resource.Logs(ctx)
 // Stream logs until container exits or ctx is cancelled:
 err = resource.FollowLogs(ctx, os.Stdout, os.Stderr)
 ```
+
+### Process-Wide Cleanup with `TestMain`
+
+v3 left containers behind when a test hung or the process was killed. v4 adds
+`dockertest.TestMain` for a package's `TestMain`:
+
+```go
+func TestMain(m *testing.M) {
+    dockertest.TestMain(context.Background(), m)
+}
+```
+
+`dockertest.TestMain` never returns: it runs `m.Run`, cleans up, and exits with
+the test status; cleanup errors are only printed. Install it once per process,
+before any Docker resource is created. Options such as `WithShutdownTimeout` and
+`WithTeardown` are variadic. See the README for signals, timeouts, and how
+resources of killed runs are removed once they expire.
+
+An existing `TestMain` with its own setup, leak check, or exit status keeps its
+shape with `dockertest.Wrap`, which returns the exit status instead of exiting:
+
+```go
+func TestMain(m *testing.M) {
+    goleak.VerifyTestMain(dockertest.Wrap(context.Background(), m.Run))
+}
+```
+
+Package-wide containers started before `m.Run` go inside the wrapped function,
+so they are created after the cleanup is installed. They need no teardown:
+dockertest removes them at shutdown.
 
 ### Advanced: Container Registry
 
@@ -488,5 +521,7 @@ resource.CloseT(t) // immediate removal
 - [ ] Updated pool.Retry(fn) to pool.Retry(ctx, timeout, fn)
 - [ ] Updated error handling to use errors.Is()
 - [ ] Added WithReuseID where same image has different configs
+- [ ] Added dockertest.TestMain (or dockertest.Wrap in a custom TestMain) where
+      tests may hang or be interrupted
 - [ ] Tested all changes
 - [ ] Verified container cleanup works correctly
