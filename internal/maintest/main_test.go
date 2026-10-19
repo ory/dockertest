@@ -66,9 +66,9 @@ func TestMain(m *testing.M) {
 		)
 	case "signal-race":
 		opts = append(opts, dockertest.WithTeardown(func(context.Context) error {
-			fmt.Println(callbackMarker)
+			fmt.Println(teardownMarker)
 			close(released)
-			<-cleanupCalled
+			<-shutdownStarted
 			return nil
 		}))
 	}
@@ -83,15 +83,15 @@ const (
 	beforeRunMarker    = "DOCKERTEST-BEFORE-RUN"
 	afterRunMarker     = "DOCKERTEST-AFTER-RUN"
 	afterCleanupMarker = "DOCKERTEST-AFTER-CLEANUP"
-	callbackMarker     = "DOCKERTEST-CLEANUP-CALLBACK"
+	teardownMarker     = "DOCKERTEST-TEARDOWN"
 )
 
 var (
 	// released is closed by the signal-race teardown to let the test body
 	// return while the signal shutdown is still running.
 	released = make(chan struct{})
-	// cleanupCalled is closed right before Wrap starts its shutdown.
-	cleanupCalled = make(chan struct{})
+	// shutdownStarted is closed right before Wrap starts its shutdown.
+	shutdownStarted = make(chan struct{})
 	// callerClients are Docker clients a test body created itself; like any
 	// caller-owned client they are closed after cleanup, before the leak check.
 	callerClients []io.Closer
@@ -105,7 +105,7 @@ func wrapMain(m *testing.M, opts []dockertest.TestMainOption, testCase string) {
 		fmt.Println(beforeRunMarker)
 		code := m.Run()
 		fmt.Println(afterRunMarker)
-		close(cleanupCalled)
+		close(shutdownStarted)
 		return code
 	}, opts...).Run()
 	for _, c := range callerClients {

@@ -28,7 +28,7 @@ func runMainForTest(ctx context.Context, t *testing.T, run func() int, opts ...T
 	return code, out.String()
 }
 
-func TestMainRejectsNegativeCleanupTimeout(t *testing.T) {
+func TestMainRejectsNegativeShutdownTimeout(t *testing.T) {
 	ran := false
 	code, stderr := runMainForTest(t.Context(), t, func() int { ran = true; return 0 }, WithShutdownTimeout(-time.Second))
 	if want := "must not be negative"; code != 1 || !strings.Contains(stderr, want) {
@@ -44,7 +44,7 @@ func TestMainResolvesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve() error = %v", err)
 	}
-	if opts.timeout != defaultCleanupTimeout {
+	if opts.timeout != defaultShutdownTimeout {
 		t.Fatalf("resolved options = %+v", opts)
 	}
 }
@@ -108,7 +108,7 @@ func TestMainRunsCleanupAndPreservesStatus(t *testing.T) {
 		t.Fatalf("order = %v", order)
 	}
 	if !strings.Contains(stderr, "teardown failed") {
-		t.Fatalf("stderr = %q, want the cleanup callback error reported", stderr)
+		t.Fatalf("stderr = %q, want the teardown error reported", stderr)
 	}
 	if got := c.callsMatching("ContainerRemove"); len(got) != 1 {
 		t.Fatalf("ContainerRemove calls = %q, want one", got)

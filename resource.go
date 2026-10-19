@@ -276,12 +276,7 @@ func (r *resource) ConnectToNetwork(ctx context.Context, net Network) error {
 		return ErrClientClosed
 	}
 
-	connectOpts := mobyclient.NetworkConnectOptions{
-		Container: r.container.ID,
-	}
-
-	_, err := r.pool.client.NetworkConnect(ctx, net.ID(), connectOpts)
-	if err != nil {
+	if _, err := r.pool.client.NetworkConnect(ctx, net.ID(), mobyclient.NetworkConnectOptions{Container: r.container.ID}); err != nil {
 		return err
 	}
 
@@ -303,13 +298,7 @@ func (r *resource) DisconnectFromNetwork(ctx context.Context, net Network) error
 		return ErrClientClosed
 	}
 
-	disconnectOpts := mobyclient.NetworkDisconnectOptions{
-		Container: r.container.ID,
-		Force:     false,
-	}
-
-	_, err := r.pool.client.NetworkDisconnect(ctx, net.ID(), disconnectOpts)
-	if err != nil {
+	if _, err := r.pool.client.NetworkDisconnect(ctx, net.ID(), mobyclient.NetworkDisconnectOptions{Container: r.container.ID}); err != nil {
 		return err
 	}
 
@@ -327,10 +316,6 @@ func (r *resource) DisconnectFromNetwork(ctx context.Context, net Network) error
 // Returns empty string if the container is not connected to the network.
 func (r *resource) GetIPInNetwork(net Network) string {
 	if r.container.NetworkSettings == nil {
-		return ""
-	}
-
-	if r.container.NetworkSettings.Networks == nil {
 		return ""
 	}
 

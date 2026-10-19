@@ -337,7 +337,7 @@ func TestOwnershipLabelsDoNotModifyCallerMap(t *testing.T) {
 		t.Fatalf("labels = %v", labels)
 	}
 	if _, ok := labels[labelExpires]; ok {
-		t.Fatal("caller-supplied expires label kept without Main")
+		t.Fatal("caller-supplied expires label kept without TestMain")
 	}
 }
 
@@ -636,13 +636,13 @@ func TestNoSweepWithoutMain(t *testing.T) {
 	c := newFakeClient()
 	p := newFakePool(t, c)
 	if _, err := p.Run(t.Context(), "alpine", WithoutReuse()); err != nil {
-		t.Fatalf("Run without Main: %v", err)
+		t.Fatalf("Run without TestMain: %v", err)
 	}
 	if err := p.Close(t.Context()); err != nil {
-		t.Fatalf("Close without Main: %v", err)
+		t.Fatalf("Close without TestMain: %v", err)
 	}
 	if calls := slices.Concat(c.callsMatching("ContainerList"), c.callsMatching("NetworkList")); len(calls) != 0 {
-		t.Fatalf("daemon swept without Main: %v", calls)
+		t.Fatalf("daemon swept without TestMain: %v", calls)
 	}
 }
 
@@ -698,7 +698,7 @@ func TestPoolCloseKeepsClientAfterFailedCleanup(t *testing.T) {
 		t.Fatalf("second Close() error = %v", err)
 	}
 	if p.client != nil || !c.closed {
-		t.Fatal("owned client not closed after successful cleanup without Main")
+		t.Fatal("owned client not closed after successful cleanup without TestMain")
 	}
 }
 
@@ -717,7 +717,7 @@ func TestPoolCloseKeepsOwnedClientUnderMain(t *testing.T) {
 		t.Fatalf("Close() error = %v", err)
 	}
 	if p.client == nil || c.closed {
-		t.Fatal("client closed under Main, want Main to close it at shutdown")
+		t.Fatal("client closed under TestMain, want TestMain to close it at shutdown")
 	}
 	if err := o.closeClients(); err != nil || !c.closed {
 		t.Fatalf("closeClients() error = %v, closed = %t", err, c.closed)

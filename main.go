@@ -48,7 +48,7 @@ type mainOptions struct {
 }
 
 const (
-	defaultCleanupTimeout = 60 * time.Second
+	defaultShutdownTimeout = 60 * time.Second
 	// windowsConsoleCloseTimeout caps cleanup when Windows closes the console:
 	// the OS terminates the process shortly after, so a longer budget is moot.
 	windowsConsoleCloseTimeout = 4 * time.Second
@@ -67,7 +67,7 @@ func report(w io.Writer, format string, args ...any) {
 }
 
 func resolve(opts []TestMainOption) (mainOptions, error) {
-	o := mainOptions{timeout: defaultCleanupTimeout}
+	var o mainOptions
 	for _, opt := range opts {
 		opt(&o)
 	}
@@ -75,7 +75,7 @@ func resolve(opts []TestMainOption) (mainOptions, error) {
 		return o, fmt.Errorf("%w: WithShutdownTimeout must not be negative, got %v", ErrInvalidOption, o.timeout)
 	}
 	if o.timeout == 0 {
-		o.timeout = defaultCleanupTimeout
+		o.timeout = defaultShutdownTimeout
 	}
 	return o, nil
 }

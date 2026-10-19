@@ -122,7 +122,7 @@ func TestWrapCleanupDuringSignalShutdown(t *testing.T) {
 	if code := c.wait(t); code != 130 {
 		t.Fatalf("exit = %d, want 130; stderr:\n%s", code, c.stderr.String())
 	}
-	want := []string{beforeRunMarker, callbackMarker, afterRunMarker}
+	want := []string{beforeRunMarker, teardownMarker, afterRunMarker}
 	if got := c.markers(); !slices.Equal(got, want) {
 		t.Fatalf("markers = %q, want %q", got, want)
 	}
