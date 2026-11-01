@@ -386,7 +386,8 @@ resource := pool.BuildAndRunT(t, "myapp:test",
 Available `BuildOptions` fields: `ContextDir` (required), `Dockerfile` (defaults
 to `"Dockerfile"`), `Tags`, `BuildArgs` (`map[string]*string`), `Labels`,
 `NoCache`, `ForceRemove`, `Version`, `Output` (an `io.Writer` for the build log,
-such as `t.Output()`).
+such as `t.Output()`; with `Version: "2"` BuildKit's progress records are not
+written).
 
 Built images remain available across runs. Images, builder cache, named volumes,
 and pre-existing unlabeled resources are outside automatic cleanup.

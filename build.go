@@ -300,6 +300,19 @@ func createBuildContext(contextDir string) (io.ReadCloser, error) {
 	return pr, nil
 }
 
+// writeBuildLog writes a classic-builder log line: build output, or a status
+// line such as a base image pull step. Progress bars are left out.
+func writeBuildLog(w io.Writer, msg *jsonstream.Message) {
+	switch {
+	case msg.Stream != "":
+		_, _ = io.WriteString(w, msg.Stream) //nolint:errcheck // the log is best effort
+	case msg.Status != "" && msg.Progress == nil && msg.ID != "":
+		_, _ = fmt.Fprintf(w, "%s: %s\n", msg.ID, msg.Status) //nolint:errcheck // the log is best effort
+	case msg.Status != "" && msg.Progress == nil:
+		_, _ = fmt.Fprintln(w, msg.Status) //nolint:errcheck // the log is best effort
+	}
+}
+
 // readBuildResult consumes the Docker build JSON stream and returns the ID of
 // the built image. Docker embeds build errors (failed RUN commands, syntax
 // errors) as {"errorDetail":...} messages in the stream rather than returning
@@ -317,8 +330,8 @@ func readBuildResult(r io.Reader, output io.Writer) (string, error) {
 			}
 			return "", fmt.Errorf("decoding build stream: %w", err)
 		}
-		if output != nil && msg.Stream != "" {
-			_, _ = io.WriteString(output, msg.Stream) //nolint:errcheck // the log is best effort
+		if output != nil {
+			writeBuildLog(output, &msg)
 		}
 		if msg.Error != nil {
 			return "", msg.Error

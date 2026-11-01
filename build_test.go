@@ -505,7 +505,7 @@ func TestBuildAndRunWritesBuildOutput(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	dockerfile := `FROM alpine:latest
-RUN echo build-output-marker && false
+RUN printf '%s-%s\n' build output && false
 `
 	if err := os.WriteFile(filepath.Join(tmpDir, "Dockerfile"), []byte(dockerfile), 0o644); err != nil {
 		t.Fatalf("Failed to write Dockerfile: %v", err)
@@ -522,7 +522,8 @@ RUN echo build-output-marker && false
 	if !errors.Is(err, dockertest.ErrImageBuildFailed) {
 		t.Fatalf("BuildAndRun error = %v, want ErrImageBuildFailed", err)
 	}
-	if !strings.Contains(out.String(), "build-output-marker") {
+	// The RUN instruction itself is logged too; only its output joins the words.
+	if !strings.Contains(out.String(), "\nbuild-output\n") {
 		t.Fatalf("build output %q does not contain the RUN step's output", out.String())
 	}
 }
