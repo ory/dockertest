@@ -199,17 +199,21 @@ pool.RunT(t, "postgres",
 
 Available options: `WithTag`, `WithEnv`, `WithCmd`, `WithEntrypoint`,
 `WithUser`, `WithWorkingDir`, `WithLabels`, `WithHostname`, `WithName`,
-`WithMounts`, `WithPortBindings`, `WithPlatform`, `WithoutReuse`, `WithReuseID`,
+`WithMounts`, `WithPortBindings`, `WithoutReuse`, `WithReuseID`,
 `WithContainerConfig`, `WithHostConfig`.
-
-v3's `RunOptions.Platform` becomes `WithPlatform("linux/amd64")`, and
-`BuildOptions.Platform` keeps its name.
 
 > [!NOTE]
 >
 > `WithPortBindings` takes `network.PortMap` from
 > `github.com/moby/moby/api/types/network`. Similarly, `WithContainerConfig` and
 > `WithHostConfig` use types from `github.com/moby/moby/api/types/container`.
+
+v3's `RunOptions.Platform` becomes `WithPlatform("linux/amd64")`, and
+`BuildOptions.Platform` keeps its name.
+
+v3's `RunOptions.Auth` becomes `WithRegistryAuth(registry.AuthConfig{...})`, and
+`BuildOptions.Auth` becomes `BuildOptions.AuthConfigs`, keyed by registry
+address.
 
 ### Cleanup Pattern
 

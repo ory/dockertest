@@ -309,7 +309,7 @@ func (p *pool) run(ctx context.Context, repository string, cfg *runConfig) (*res
 	ref := cfg.image
 	if ref == "" {
 		ref = fmt.Sprintf("%s:%s", repository, cfg.tag)
-		if err := p.pullImage(ctx, ref, cfg.platform); err != nil {
+		if err := p.pullImage(ctx, ref, cfg); err != nil {
 			return nil, err
 		}
 	}
@@ -376,12 +376,12 @@ func checkForExisting(p *pool, reuseID string) *resource {
 }
 
 // pullImage pulls a Docker image unless it is already present.
-func (p *pool) pullImage(ctx context.Context, ref string, platform *ocispec.Platform) error {
+func (p *pool) pullImage(ctx context.Context, ref string, cfg *runConfig) error {
 	var inspectOpts []mobyclient.ImageInspectOption
-	pullOpts := mobyclient.ImagePullOptions{}
-	if platform != nil {
-		inspectOpts = append(inspectOpts, mobyclient.ImageInspectWithPlatform(platform))
-		pullOpts.Platforms = []ocispec.Platform{*platform}
+	pullOpts := mobyclient.ImagePullOptions{RegistryAuth: cfg.registryAuth}
+	if cfg.platform != nil {
+		inspectOpts = append(inspectOpts, mobyclient.ImageInspectWithPlatform(cfg.platform))
+		pullOpts.Platforms = []ocispec.Platform{*cfg.platform}
 	}
 	if _, err := p.client.ImageInspect(ctx, ref, inspectOpts...); err == nil {
 		return nil

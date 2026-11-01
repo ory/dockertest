@@ -17,6 +17,7 @@ import (
 	"github.com/distribution/reference"
 	"github.com/moby/moby/api/types/build"
 	"github.com/moby/moby/api/types/jsonstream"
+	"github.com/moby/moby/api/types/registry"
 	mobyclient "github.com/moby/moby/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -51,6 +52,15 @@ type BuildOptions struct {
 	// Example: map[string]string{"version": "1.0", "env": "test"}
 	Labels map[string]string
 
+	// AuthConfigs holds credentials for pulling base images from private
+	// registries, keyed by registry address, such as "registry.example.com" or
+	// "https://index.docker.io/v1/" for Docker Hub.
+	AuthConfigs map[string]registry.AuthConfig
+
+	// Platform builds the image for a platform such as "linux/amd64". The
+	// container then runs on the same platform unless WithPlatform is given.
+	Platform string
+
 	// NoCache disables build cache when set to true.
 	// Useful for ensuring a clean build.
 	NoCache bool
@@ -62,10 +72,6 @@ type BuildOptions struct {
 	// Version specifies the builder to use. "1" for classic, "2" for BuildKit.
 	// Defaults to the daemon's configured default if empty.
 	Version string
-
-	// Platform builds the image for a platform such as "linux/amd64". The
-	// container then runs on the same platform unless WithPlatform is given.
-	Platform string
 }
 
 // BuildAndRun builds a Docker image from a Dockerfile and runs it as a container.
@@ -153,6 +159,7 @@ func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOp
 	}
 	buildResult, err := p.client.ImageBuild(ctx, buildContext, mobyclient.ImageBuildOptions{
 		Platforms:   platforms,
+		AuthConfigs: buildOpts.AuthConfigs,
 		Tags:        tags,
 		Dockerfile:  cmp.Or(buildOpts.Dockerfile, "Dockerfile"),
 		BuildArgs:   buildOpts.BuildArgs,

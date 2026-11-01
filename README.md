@@ -194,6 +194,8 @@ Available configuration options:
 - `WithPortBindings(bindings network.PortMap)` - Set explicit port bindings
 - `WithPlatform(platform string)` - Pull and run the image for a platform, such
   as `"linux/amd64"`
+- `WithRegistryAuth(auth registry.AuthConfig)` - Pull the image from a private
+  registry
 - `WithReuseID(id string)` - Set a custom reuse key (default:
   `"repository:tag"`)
 - `WithoutReuse()` - Disable container reuse for this run

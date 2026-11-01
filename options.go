@@ -4,9 +4,6 @@
 package dockertest
 
 import (
-	"fmt"
-	"slices"
-	"strings"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
@@ -66,11 +63,12 @@ type runConfig struct {
 	hostname           string
 	labels             map[string]string
 	portBindings       network.PortMap
-	platform           *ocispec.Platform
 	configModifier     func(*container.Config)
 	hostConfigModifier func(*container.HostConfig)
 	image              string // immutable image ID of a locally built image; replaces repository:tag
 	noReuse            bool
+	platform           *ocispec.Platform
+	registryAuth       string
 }
 
 // WithTag sets the image tag. Default is "latest".
@@ -185,34 +183,6 @@ func WithName(name string) RunOption {
 		rc.name = name
 		return nil
 	}
-}
-
-// WithPlatform selects the image platform, such as "linux/amd64" or
-// "linux/arm64/v8", for pulling the image and creating the container. A
-// locally present image for another platform is not used. Containers for
-// different platforms are not reused for each other.
-func WithPlatform(platform string) RunOption {
-	return func(rc *runConfig) error {
-		p, err := parsePlatform(platform)
-		if err != nil {
-			return err
-		}
-		rc.platform = p
-		return nil
-	}
-}
-
-// parsePlatform parses "os/arch" or "os/arch/variant".
-func parsePlatform(s string) (*ocispec.Platform, error) {
-	parts := strings.Split(s, "/")
-	if len(parts) < 2 || len(parts) > 3 || slices.Contains(parts, "") {
-		return nil, fmt.Errorf("%w: platform %q is not os/arch[/variant]", ErrInvalidOption, s)
-	}
-	p := &ocispec.Platform{OS: parts[0], Architecture: parts[1]}
-	if len(parts) == 3 {
-		p.Variant = parts[2]
-	}
-	return p, nil
 }
 
 // WithPortBindings sets explicit port bindings for the container.
