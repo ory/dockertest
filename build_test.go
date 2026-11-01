@@ -495,3 +495,32 @@ func TestBuildFailureKeepsPreexistingTag(t *testing.T) {
 		t.Fatalf("pre-existing tag changed from %s to %s", before, after)
 	}
 }
+
+func TestBuildAndRunWritesBuildOutput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	pool := dockertest.NewPoolT(t, "")
+
+	tmpDir := t.TempDir()
+	dockerfile := `FROM alpine:latest
+RUN echo build-output-marker && false
+`
+	if err := os.WriteFile(filepath.Join(tmpDir, "Dockerfile"), []byte(dockerfile), 0o644); err != nil {
+		t.Fatalf("Failed to write Dockerfile: %v", err)
+	}
+
+	var out strings.Builder
+	_, err := pool.BuildAndRun(t.Context(), "test-build-output", &dockertest.BuildOptions{
+		ContextDir: tmpDir,
+		Version:    "1",
+		Output:     &out,
+	})
+	if !errors.Is(err, dockertest.ErrImageBuildFailed) {
+		t.Fatalf("BuildAndRun error = %v, want ErrImageBuildFailed", err)
+	}
+	if !strings.Contains(out.String(), "build-output-marker") {
+		t.Fatalf("build output %q does not contain the RUN step's output", out.String())
+	}
+}

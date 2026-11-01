@@ -61,6 +61,12 @@ type BuildOptions struct {
 	// Version specifies the builder to use. "1" for classic, "2" for BuildKit.
 	// Defaults to the daemon's configured default if empty.
 	Version string
+
+	// Output receives the build log, such as the output of a failing RUN
+	// step, for example t.Output() in a test. The classic builder sends its
+	// log as text; BuildKit sends binary progress records, which are not
+	// written.
+	Output io.Writer
 }
 
 // BuildAndRun builds a Docker image from a Dockerfile and runs it as a container.
@@ -150,7 +156,7 @@ func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOp
 		_ = buildResult.Body.Close() //nolint:errcheck // Best effort close in defer
 	}()
 
-	imageID, err := readBuildResult(buildResult.Body)
+	imageID, err := readBuildResult(buildResult.Body, buildOpts.Output)
 	if err != nil {
 		return "", fmt.Errorf("%w: %w", ErrImageBuildFailed, err)
 	}
@@ -300,7 +306,7 @@ func createBuildContext(contextDir string) (io.ReadCloser, error) {
 // them from ImageBuild directly, and reports the final image as a structured
 // {"aux":{"ID":...}} message. The ID is only accepted after the stream has
 // ended cleanly, so a truncated stream never yields an image.
-func readBuildResult(r io.Reader) (string, error) {
+func readBuildResult(r io.Reader, output io.Writer) (string, error) {
 	var imageID string
 	dec := json.NewDecoder(r)
 	for {
@@ -310,6 +316,9 @@ func readBuildResult(r io.Reader) (string, error) {
 				break
 			}
 			return "", fmt.Errorf("decoding build stream: %w", err)
+		}
+		if output != nil && msg.Stream != "" {
+			_, _ = io.WriteString(output, msg.Stream) //nolint:errcheck // the log is best effort
 		}
 		if msg.Error != nil {
 			return "", msg.Error
