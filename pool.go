@@ -447,7 +447,7 @@ func (p *pool) createAndStartContainer(ctx context.Context, ref string, cfg *run
 	// The daemon reports deprecated settings, such as an empty port binding
 	// list, only as create warnings.
 	for _, w := range createResp.Warnings {
-		report(owner.stderr, "container %s from %s: %s", createResp.ID, ref, w)
+		report(owner.stderr, "container %s from %s: %s", createResp.ID, containerConfig.Image, w)
 	}
 	var registryKey string
 	if reuseID != "" {
