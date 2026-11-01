@@ -17,7 +17,9 @@ import (
 	"github.com/distribution/reference"
 	"github.com/moby/moby/api/types/build"
 	"github.com/moby/moby/api/types/jsonstream"
+	"github.com/moby/moby/api/types/registry"
 	mobyclient "github.com/moby/moby/client"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // BuildOptions configures image building from a Dockerfile.
@@ -49,6 +51,15 @@ type BuildOptions struct {
 	// Labels are metadata to apply to the built image.
 	// Example: map[string]string{"version": "1.0", "env": "test"}
 	Labels map[string]string
+
+	// AuthConfigs holds credentials for pulling base images from private
+	// registries, keyed by registry address, such as "registry.example.com" or
+	// "https://index.docker.io/v1/" for Docker Hub.
+	AuthConfigs map[string]registry.AuthConfig
+
+	// Platform builds the image for a platform such as "linux/amd64". The
+	// container then runs on the same platform unless WithPlatform is given.
+	Platform string
 
 	// NoCache disables build cache when set to true.
 	// Useful for ensuring a clean build.
@@ -102,6 +113,15 @@ func (p *pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid image reference %q: %w", ErrInvalidOption, tags[0], err)
 	}
+	var platform *ocispec.Platform
+	if buildOpts.Platform != "" {
+		if platform, err = parsePlatform(buildOpts.Platform); err != nil {
+			return nil, err
+		}
+		if cfg.platform == nil {
+			cfg.platform = platform
+		}
+	}
 
 	ctx, done, err := p.begin(ctx)
 	if err != nil {
@@ -109,7 +129,7 @@ func (p *pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 	}
 	defer done()
 
-	imageID, err := p.buildImage(ctx, tags, buildOpts)
+	imageID, err := p.buildImage(ctx, tags, buildOpts, platform)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +144,7 @@ func (p *pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 }
 
 // buildImage builds an image and resolves the returned immutable image ID.
-func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOptions) (string, error) {
+func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOptions, platform *ocispec.Platform) (string, error) {
 	buildContext, err := createBuildContext(buildOpts.ContextDir)
 	if err != nil {
 		return "", fmt.Errorf("%w: failed to create build context: %w", ErrImageBuildFailed, err)
@@ -133,7 +153,13 @@ func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOp
 		_ = buildContext.Close() //nolint:errcheck // Best effort close in defer
 	}()
 
+	var platforms []ocispec.Platform
+	if platform != nil {
+		platforms = []ocispec.Platform{*platform}
+	}
 	buildResult, err := p.client.ImageBuild(ctx, buildContext, mobyclient.ImageBuildOptions{
+		Platforms:   platforms,
+		AuthConfigs: buildOpts.AuthConfigs,
 		Tags:        tags,
 		Dockerfile:  cmp.Or(buildOpts.Dockerfile, "Dockerfile"),
 		BuildArgs:   buildOpts.BuildArgs,

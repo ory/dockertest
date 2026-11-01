@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path"
 	"slices"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	mobyclient "github.com/moby/moby/client"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/ory/dockertest/v4/internal/client"
 )
 
@@ -307,7 +309,7 @@ func (p *pool) run(ctx context.Context, repository string, cfg *runConfig) (*res
 	ref := cfg.image
 	if ref == "" {
 		ref = fmt.Sprintf("%s:%s", repository, cfg.tag)
-		if err := p.pullImage(ctx, ref); err != nil {
+		if err := p.pullImage(ctx, ref, cfg); err != nil {
 			return nil, err
 		}
 	}
@@ -347,6 +349,9 @@ func computeReuseID(repository string, cfg *runConfig) string {
 	if cfg.image != "" {
 		id += "@" + cfg.image
 	}
+	if p := cfg.platform; p != nil {
+		id += "|" + path.Join(p.OS, p.Architecture, p.Variant)
+	}
 	return id
 }
 
@@ -370,15 +375,44 @@ func checkForExisting(p *pool, reuseID string) *resource {
 	return nil
 }
 
+// imagePresent reports whether ref is present locally, for platform if it is
+// set. Inspecting by platform needs API 1.49; with an older daemon the local
+// image's platform is compared instead.
+func (p *pool) imagePresent(ctx context.Context, ref string, platform *ocispec.Platform) (bool, error) {
+	if platform != nil {
+		_, err := p.client.ImageInspect(ctx, ref, mobyclient.ImageInspectWithPlatform(platform))
+		if err == nil || errdefs.IsNotFound(err) {
+			return err == nil, nil
+		}
+	}
+	img, err := p.client.ImageInspect(ctx, ref)
+	if errdefs.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if platform == nil {
+		return true, nil
+	}
+	return img.Os == platform.OS && img.Architecture == platform.Architecture &&
+		(platform.Variant == "" || img.Variant == platform.Variant), nil
+}
+
 // pullImage pulls a Docker image unless it is already present.
-func (p *pool) pullImage(ctx context.Context, ref string) error {
-	if _, err := p.client.ImageInspect(ctx, ref); err == nil {
-		return nil
-	} else if !errdefs.IsNotFound(err) {
+func (p *pool) pullImage(ctx context.Context, ref string, cfg *runConfig) error {
+	if present, err := p.imagePresent(ctx, ref, cfg.platform); err != nil {
 		return fmt.Errorf("image inspect failed for %s: %w", ref, err)
+	} else if present {
+		return nil
 	}
 
-	pullResp, err := p.client.ImagePull(ctx, ref, mobyclient.ImagePullOptions{})
+	pullOpts := mobyclient.ImagePullOptions{RegistryAuth: cfg.registryAuth}
+	if cfg.platform != nil {
+		pullOpts.Platforms = []ocispec.Platform{*cfg.platform}
+	}
+
+	pullResp, err := p.client.ImagePull(ctx, ref, pullOpts)
 	if err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrImagePullFailed, ref, err)
 	}
@@ -440,6 +474,7 @@ func (p *pool) createAndStartContainer(ctx context.Context, ref string, cfg *run
 		Name:       cfg.name,
 		Config:     containerConfig,
 		HostConfig: hostConfig,
+		Platform:   cfg.platform,
 	})
 	if err != nil {
 		return "", fmt.Errorf("%w from %s: %w", ErrContainerCreateFailed, ref, err)

@@ -208,6 +208,13 @@ Available options: `WithTag`, `WithEnv`, `WithCmd`, `WithEntrypoint`,
 > `github.com/moby/moby/api/types/network`. Similarly, `WithContainerConfig` and
 > `WithHostConfig` use types from `github.com/moby/moby/api/types/container`.
 
+v3's `RunOptions.Platform` becomes `WithPlatform("linux/amd64")`, and
+`BuildOptions.Platform` keeps its name.
+
+v3's `RunOptions.Auth` becomes `WithRegistryAuth(registry.AuthConfig{...})`, and
+`BuildOptions.Auth` becomes `BuildOptions.AuthConfigs`, keyed by registry
+address.
+
 ### Cleanup Pattern
 
 See [Pool Creation](#pool-creation) for the full `TestMain` pattern.

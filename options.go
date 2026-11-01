@@ -8,6 +8,7 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/ory/dockertest/v4/internal/client"
 )
 
@@ -66,6 +67,8 @@ type runConfig struct {
 	hostConfigModifier func(*container.HostConfig)
 	image              string // immutable image ID of a locally built image; replaces repository:tag
 	noReuse            bool
+	platform           *ocispec.Platform
+	registryAuth       string
 }
 
 // WithTag sets the image tag. Default is "latest".
