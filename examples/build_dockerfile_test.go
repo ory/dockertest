@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -21,6 +22,8 @@ func TestBuildDockerfile(t *testing.T) {
 	}
 
 	pool := dockertest.NewPoolT(t, "")
+	// A per-process tag keeps concurrent runs on one daemon apart.
+	tag := fmt.Sprintf("dockertest-build-example:%d", os.Getpid())
 	// Built images are not removed automatically. This cleanup runs after the
 	// container's, so the image is no longer in use.
 	c, err := mobyclient.New(mobyclient.FromEnv)
@@ -31,12 +34,12 @@ func TestBuildDockerfile(t *testing.T) {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 30*time.Second)
 		t.Cleanup(cancel)
-		if _, rmErr := c.ImageRemove(ctx, "dockertest-build-example:test", mobyclient.ImageRemoveOptions{PruneChildren: true}); rmErr != nil {
+		if _, rmErr := c.ImageRemove(ctx, tag, mobyclient.ImageRemoveOptions{PruneChildren: true}); rmErr != nil {
 			t.Errorf("remove built image: %v", rmErr)
 		}
 	})
 
-	resource := pool.BuildAndRunT(t, "dockertest-build-example:test",
+	resource := pool.BuildAndRunT(t, tag,
 		&dockertest.BuildOptions{
 			ContextDir: "testdata",
 			Dockerfile: "Dockerfile",
