@@ -183,6 +183,7 @@ func TestBuildAndRunWithBuildContext(t *testing.T) {
 	}
 
 	trackImage := cleanupBuildImages(t, "test-build-context")
+	t.Cleanup(func() { removeLabeledImages(t, "dockertest.test=build-context-builder") })
 
 	dockertest.ResetRegistry()
 	t.Cleanup(func() {
@@ -348,6 +349,30 @@ CMD ["sleep", "300"]
 
 // cleanupBuildImages runs after the subsequently registered pool cleanup.
 // Keep both the test tag and IDs because another build can replace the tag.
+// removeLabeledImages removes the images that carry label, with their untagged
+// parents.
+func removeLabeledImages(t *testing.T, label string) {
+	t.Helper()
+	dc, err := mobyclient.New(mobyclient.FromEnv)
+	if err != nil {
+		t.Errorf("image cleanup client: %v", err)
+		return
+	}
+	defer dc.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	images, err := dc.ImageList(ctx, mobyclient.ImageListOptions{All: true, Filters: make(mobyclient.Filters).Add("label", label)})
+	if err != nil {
+		t.Errorf("list images labeled %s: %v", label, err)
+		return
+	}
+	for _, img := range images.Items {
+		if _, err := dc.ImageRemove(ctx, img.ID, mobyclient.ImageRemoveOptions{PruneChildren: true}); err != nil && !errdefs.IsNotFound(err) {
+			t.Errorf("remove image %s labeled %s: %v", img.ID, label, err)
+		}
+	}
+}
+
 func cleanupBuildImages(t *testing.T, tag string) func(string) {
 	t.Helper()
 	var ids []string
@@ -360,7 +385,7 @@ func cleanupBuildImages(t *testing.T, tag string) func(string) {
 		defer dc.Close()
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		if _, err := dc.ImageRemove(ctx, tag, mobyclient.ImageRemoveOptions{}); err != nil && !errdefs.IsNotFound(err) {
+		if _, err := dc.ImageRemove(ctx, tag, mobyclient.ImageRemoveOptions{PruneChildren: true}); err != nil && !errdefs.IsNotFound(err) {
 			t.Errorf("remove test image tag %s: %v", tag, err)
 		}
 		for _, id := range ids {
@@ -376,7 +401,7 @@ func cleanupBuildImages(t *testing.T, tag string) func(string) {
 			if len(img.RepoTags) != 0 {
 				continue
 			}
-			if _, err := dc.ImageRemove(ctx, id, mobyclient.ImageRemoveOptions{}); err != nil && !errdefs.IsNotFound(err) {
+			if _, err := dc.ImageRemove(ctx, id, mobyclient.ImageRemoveOptions{PruneChildren: true}); err != nil && !errdefs.IsNotFound(err) {
 				t.Errorf("remove test image %s: %v", id, err)
 			}
 		}
@@ -487,7 +512,9 @@ func TestBuildFailureKeepsPreexistingTag(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	writeDockerfile(t, tmpDir, "FROM alpine:latest\nRUN false\n")
-	_, buildErr := pool.BuildAndRun(ctx, tag, &dockertest.BuildOptions{ContextDir: tmpDir})
+	// ForceRemove removes the failed step's container, which the classic
+	// builder otherwise leaves behind.
+	_, buildErr := pool.BuildAndRun(ctx, tag, &dockertest.BuildOptions{ContextDir: tmpDir, ForceRemove: true})
 	if !errors.Is(buildErr, dockertest.ErrImageBuildFailed) {
 		t.Fatalf("BuildAndRun() error = %v, want ErrImageBuildFailed", buildErr)
 	}
