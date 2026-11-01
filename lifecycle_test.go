@@ -380,8 +380,10 @@ func TestRunWithExposedPorts(t *testing.T) {
 		t.Fatalf("ExposedPorts = %v, want %v", got, want)
 	}
 
-	if _, err := p.Run(t.Context(), "alpine", WithExposedPorts("not-a-port"), WithoutReuse()); !errors.Is(err, ErrInvalidOption) {
-		t.Fatalf("Run() with an invalid port: error = %v, want ErrInvalidOption", err)
+	for _, port := range []string{"not-a-port", "5432/tcpp"} {
+		if _, err := p.Run(t.Context(), "alpine", WithExposedPorts(port), WithoutReuse()); !errors.Is(err, ErrInvalidOption) {
+			t.Fatalf("Run() with port %q: error = %v, want ErrInvalidOption", port, err)
+		}
 	}
 }
 

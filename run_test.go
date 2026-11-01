@@ -483,7 +483,7 @@ func TestRunWithExposedPorts(t *testing.T) {
 	resource := pool.RunT(t, "alpine",
 		dockertest.WithTag("latest"),
 		dockertest.WithExposedPorts("8080"),
-		dockertest.WithCmd([]string{"sleep", "10"}),
+		dockertest.WithCmd([]string{"tail", "-f", "/dev/null"}),
 		dockertest.WithoutReuse(),
 	)
 

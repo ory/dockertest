@@ -196,6 +196,11 @@ func WithExposedPorts(ports ...string) RunOption {
 			if err != nil {
 				return fmt.Errorf("%w: %w", ErrInvalidOption, err)
 			}
+			switch port.Proto() {
+			case network.TCP, network.UDP, network.SCTP:
+			default:
+				return fmt.Errorf("%w: unsupported protocol in port %q", ErrInvalidOption, p)
+			}
 			rc.exposedPorts[port] = struct{}{}
 		}
 		return nil
