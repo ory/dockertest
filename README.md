@@ -192,6 +192,8 @@ Available configuration options:
 - `WithMounts(binds []string)` - Set bind mounts ("host:container" or
   "host:container:mode")
 - `WithPortBindings(bindings network.PortMap)` - Set explicit port bindings
+- `WithPlatform(platform string)` - Pull and run the image for a platform, such
+  as `"linux/amd64"`
 - `WithReuseID(id string)` - Set a custom reuse key (default:
   `"repository:tag"`)
 - `WithoutReuse()` - Disable container reuse for this run

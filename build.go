@@ -18,6 +18,7 @@ import (
 	"github.com/moby/moby/api/types/build"
 	"github.com/moby/moby/api/types/jsonstream"
 	mobyclient "github.com/moby/moby/client"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 // BuildOptions configures image building from a Dockerfile.
@@ -61,6 +62,10 @@ type BuildOptions struct {
 	// Version specifies the builder to use. "1" for classic, "2" for BuildKit.
 	// Defaults to the daemon's configured default if empty.
 	Version string
+
+	// Platform builds the image for a platform such as "linux/amd64". The
+	// container then runs on the same platform unless WithPlatform is given.
+	Platform string
 }
 
 // BuildAndRun builds a Docker image from a Dockerfile and runs it as a container.
@@ -102,6 +107,15 @@ func (p *pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 	if err != nil {
 		return nil, fmt.Errorf("%w: invalid image reference %q: %w", ErrInvalidOption, tags[0], err)
 	}
+	var platform *ocispec.Platform
+	if buildOpts.Platform != "" {
+		if platform, err = parsePlatform(buildOpts.Platform); err != nil {
+			return nil, err
+		}
+		if cfg.platform == nil {
+			cfg.platform = platform
+		}
+	}
 
 	ctx, done, err := p.begin(ctx)
 	if err != nil {
@@ -109,7 +123,7 @@ func (p *pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 	}
 	defer done()
 
-	imageID, err := p.buildImage(ctx, tags, buildOpts)
+	imageID, err := p.buildImage(ctx, tags, buildOpts, platform)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +138,7 @@ func (p *pool) BuildAndRun(ctx context.Context, name string, buildOpts *BuildOpt
 }
 
 // buildImage builds an image and resolves the returned immutable image ID.
-func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOptions) (string, error) {
+func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOptions, platform *ocispec.Platform) (string, error) {
 	buildContext, err := createBuildContext(buildOpts.ContextDir)
 	if err != nil {
 		return "", fmt.Errorf("%w: failed to create build context: %w", ErrImageBuildFailed, err)
@@ -133,7 +147,12 @@ func (p *pool) buildImage(ctx context.Context, tags []string, buildOpts *BuildOp
 		_ = buildContext.Close() //nolint:errcheck // Best effort close in defer
 	}()
 
+	var platforms []ocispec.Platform
+	if platform != nil {
+		platforms = []ocispec.Platform{*platform}
+	}
 	buildResult, err := p.client.ImageBuild(ctx, buildContext, mobyclient.ImageBuildOptions{
+		Platforms:   platforms,
 		Tags:        tags,
 		Dockerfile:  cmp.Or(buildOpts.Dockerfile, "Dockerfile"),
 		BuildArgs:   buildOpts.BuildArgs,

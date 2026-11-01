@@ -199,8 +199,11 @@ pool.RunT(t, "postgres",
 
 Available options: `WithTag`, `WithEnv`, `WithCmd`, `WithEntrypoint`,
 `WithUser`, `WithWorkingDir`, `WithLabels`, `WithHostname`, `WithName`,
-`WithMounts`, `WithPortBindings`, `WithoutReuse`, `WithReuseID`,
+`WithMounts`, `WithPortBindings`, `WithPlatform`, `WithoutReuse`, `WithReuseID`,
 `WithContainerConfig`, `WithHostConfig`.
+
+v3's `RunOptions.Platform` becomes `WithPlatform("linux/amd64")`, and
+`BuildOptions.Platform` keeps its name.
 
 > [!NOTE]
 >

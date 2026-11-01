@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"path"
 	"slices"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	mobyclient "github.com/moby/moby/client"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/ory/dockertest/v4/internal/client"
 )
 
@@ -307,7 +309,7 @@ func (p *pool) run(ctx context.Context, repository string, cfg *runConfig) (*res
 	ref := cfg.image
 	if ref == "" {
 		ref = fmt.Sprintf("%s:%s", repository, cfg.tag)
-		if err := p.pullImage(ctx, ref); err != nil {
+		if err := p.pullImage(ctx, ref, cfg.platform); err != nil {
 			return nil, err
 		}
 	}
@@ -347,6 +349,9 @@ func computeReuseID(repository string, cfg *runConfig) string {
 	if cfg.image != "" {
 		id += "@" + cfg.image
 	}
+	if p := cfg.platform; p != nil {
+		id += "|" + path.Join(p.OS, p.Architecture, p.Variant)
+	}
 	return id
 }
 
@@ -371,14 +376,20 @@ func checkForExisting(p *pool, reuseID string) *resource {
 }
 
 // pullImage pulls a Docker image unless it is already present.
-func (p *pool) pullImage(ctx context.Context, ref string) error {
-	if _, err := p.client.ImageInspect(ctx, ref); err == nil {
+func (p *pool) pullImage(ctx context.Context, ref string, platform *ocispec.Platform) error {
+	var inspectOpts []mobyclient.ImageInspectOption
+	pullOpts := mobyclient.ImagePullOptions{}
+	if platform != nil {
+		inspectOpts = append(inspectOpts, mobyclient.ImageInspectWithPlatform(platform))
+		pullOpts.Platforms = []ocispec.Platform{*platform}
+	}
+	if _, err := p.client.ImageInspect(ctx, ref, inspectOpts...); err == nil {
 		return nil
 	} else if !errdefs.IsNotFound(err) {
 		return fmt.Errorf("image inspect failed for %s: %w", ref, err)
 	}
 
-	pullResp, err := p.client.ImagePull(ctx, ref, mobyclient.ImagePullOptions{})
+	pullResp, err := p.client.ImagePull(ctx, ref, pullOpts)
 	if err != nil {
 		return fmt.Errorf("%w: %s: %w", ErrImagePullFailed, ref, err)
 	}
@@ -440,6 +451,7 @@ func (p *pool) createAndStartContainer(ctx context.Context, ref string, cfg *run
 		Name:       cfg.name,
 		Config:     containerConfig,
 		HostConfig: hostConfig,
+		Platform:   cfg.platform,
 	})
 	if err != nil {
 		return "", fmt.Errorf("%w from %s: %w", ErrContainerCreateFailed, ref, err)
