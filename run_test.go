@@ -171,9 +171,9 @@ func TestPoolRunWithReuseIDIgnoresTag(t *testing.T) {
 
 	pool := dockertest.NewPoolT(t, "")
 
-	// First run with tag "3.19" and custom reuse ID
+	// First run with tag "3.24" and custom reuse ID
 	r1 := pool.RunT(t, "alpine",
-		dockertest.WithTag("3.19"),
+		dockertest.WithTag("3.24"),
 		dockertest.WithCmd([]string{"sleep", "300"}),
 		dockertest.WithReuseID("ignore-tag-test"),
 	)

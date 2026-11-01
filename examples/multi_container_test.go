@@ -24,7 +24,7 @@ func TestMultipleContainers(t *testing.T) {
 
 	// Start two PostgreSQL containers on the same network
 	pg1 := pool.RunT(t, "postgres",
-		dockertest.WithTag("14-alpine"),
+		dockertest.WithTag("18-alpine"),
 		dockertest.WithEnv([]string{
 			"POSTGRES_PASSWORD=secret",
 			"POSTGRES_DB=db1",
@@ -33,7 +33,7 @@ func TestMultipleContainers(t *testing.T) {
 	)
 
 	pg2 := pool.RunT(t, "postgres",
-		dockertest.WithTag("14-alpine"),
+		dockertest.WithTag("18-alpine"),
 		dockertest.WithEnv([]string{
 			"POSTGRES_PASSWORD=secret",
 			"POSTGRES_DB=db2",

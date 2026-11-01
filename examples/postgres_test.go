@@ -20,7 +20,7 @@ func TestPostgreSQL(t *testing.T) {
 	pool := dockertest.NewPoolT(t, "")
 
 	postgres := pool.RunT(t, "postgres",
-		dockertest.WithTag("14-alpine"),
+		dockertest.WithTag("18-alpine"),
 		dockertest.WithEnv([]string{
 			"POSTGRES_PASSWORD=secret",
 			"POSTGRES_DB=testdb",

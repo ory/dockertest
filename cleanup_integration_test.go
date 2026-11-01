@@ -44,7 +44,7 @@ func TestCleanupAfterSubtests(t *testing.T) {
 	t.Run("redis-passes", func(t *testing.T) {
 		pool := dockertest.NewPoolT(t, "")
 		r := pool.RunT(t, "alpine",
-			dockertest.WithTag("3.19"),
+			dockertest.WithTag("3.24"),
 			dockertest.WithCmd([]string{"sleep", "300"}),
 			dockertest.WithoutReuse(),
 		)
