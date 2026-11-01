@@ -583,9 +583,11 @@ go-test:
   services:
     - docker:dind
   variables:
-    DOCKER_HOST: tcp://docker:2375
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_TLS_VERIFY: 1
+    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
     DOCKER_DRIVER: overlay2
-    DOCKER_TLS_CERTDIR: ""
     YOUR_APP_DB_HOST: docker
   script:
     - go test ./...
@@ -605,9 +607,15 @@ gitlab-runner register -n \
  --registration-token $YOUR_TOKEN \
  --executor docker \
  --description "My Docker Runner" \
- --docker-image "docker:27" \
- --docker-privileged
+ --docker-image "docker:29" \
+ --docker-privileged \
+ --docker-volumes "/certs/client"
 ```
 
-The `DOCKER_TLS_CERTDIR: ""` variable in the example above tells the Docker
-daemon to start on port 2375 over HTTP (TLS disabled).
+With `DOCKER_TLS_CERTDIR` set, the dind service generates TLS certificates and
+listens on port 2376. dockertest reads `DOCKER_HOST`, `DOCKER_TLS_VERIFY` and
+`DOCKER_CERT_PATH`, so it connects without further configuration. The
+`/certs/client` volume shares the client certificates with the job container.
+Docker deprecated listening on TCP without TLS (`DOCKER_TLS_CERTDIR: ""` on
+port 2375) in Engine v26.0; current dind images warn and delay startup in that
+mode.
