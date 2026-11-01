@@ -516,6 +516,8 @@ RUN echo build-output-marker && false
 		ContextDir: tmpDir,
 		Version:    "1",
 		Output:     &out,
+		// The classic builder otherwise keeps the failed step's container.
+		ForceRemove: true,
 	})
 	if !errors.Is(err, dockertest.ErrImageBuildFailed) {
 		t.Fatalf("BuildAndRun error = %v, want ErrImageBuildFailed", err)
