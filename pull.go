@@ -15,9 +15,9 @@ import (
 )
 
 // WithPlatform selects the image platform, such as "linux/amd64" or
-// "linux/arm64/v8", for pulling the image and creating the container. A
-// locally present image for another platform is not used. Containers for
-// different platforms are not reused for each other.
+// "linux/arm64/v8". It is passed to the image inspect, the pull and the
+// container create. Containers for different platforms are not reused for
+// each other.
 func WithPlatform(platform string) RunOption {
 	return func(rc *runConfig) error {
 		p, err := parsePlatform(platform)
