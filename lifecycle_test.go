@@ -362,6 +362,20 @@ func TestContainerLabelsIncludeOwnership(t *testing.T) {
 	}
 }
 
+func TestRunReportsCreateWarnings(t *testing.T) {
+	_, stderr := testOwner(t)
+	c := newFakeClient()
+	c.createWarnings = []string{"empty port bindings are deprecated"}
+	p := newFakePool(t, c)
+	if _, err := p.Run(t.Context(), "alpine", WithoutReuse()); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	want := "dockertest: container container-1 from alpine:latest: empty port bindings are deprecated\n"
+	if got := stderr.String(); got != want {
+		t.Fatalf("stderr = %q, want %q", got, want)
+	}
+}
+
 func TestReadBuildResult(t *testing.T) {
 	cases := []struct {
 		name    string
