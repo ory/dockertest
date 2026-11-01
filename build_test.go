@@ -183,8 +183,9 @@ func TestBuildAndRunWithBuildContext(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	trackImage := cleanupBuildImages(t, "test-build-context")
 	run := strconv.Itoa(os.Getpid())
+	imageTag := "test-build-context-" + run
+	trackImage := cleanupBuildImages(t, imageTag)
 	cleanupLabeledImages(t, "dockertest.test=build-context-builder-"+run)
 
 	dockertest.ResetRegistry()
@@ -203,7 +204,7 @@ func TestBuildAndRunWithBuildContext(t *testing.T) {
 		BuildArgs:  map[string]*string{"DOCKERTEST_RUN": &run},
 	}
 
-	r := pool.BuildAndRunT(t, "test-build-context", buildOpts)
+	r := pool.BuildAndRunT(t, imageTag, buildOpts)
 
 	// Verify container was created
 	if r == nil {
