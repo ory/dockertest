@@ -366,9 +366,10 @@ func removeLabeledImages(t *testing.T, label string) {
 		t.Errorf("list images labeled %s: %v", label, err)
 		return
 	}
-	for _, img := range images.Items {
-		if _, err := dc.ImageRemove(ctx, img.ID, mobyclient.ImageRemoveOptions{PruneChildren: true}); err != nil && !errdefs.IsNotFound(err) {
-			t.Errorf("remove image %s labeled %s: %v", img.ID, label, err)
+	for i := range images.Items {
+		id := images.Items[i].ID
+		if _, err := dc.ImageRemove(ctx, id, mobyclient.ImageRemoveOptions{PruneChildren: true}); err != nil && !errdefs.IsNotFound(err) {
+			t.Errorf("remove image %s labeled %s: %v", id, label, err)
 		}
 	}
 }
