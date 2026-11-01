@@ -1,8 +1,10 @@
 FROM alpine:latest AS builder
 
 # The classic builder keeps this stage as an untagged image; the label lets
-# TestBuildAndRunWithBuildContext remove it.
-LABEL dockertest.test=build-context-builder
+# TestBuildAndRunWithBuildContext remove it. DOCKERTEST_RUN keeps test
+# processes sharing a daemon from removing each other's image.
+ARG DOCKERTEST_RUN
+LABEL dockertest.test=build-context-builder-${DOCKERTEST_RUN}
 
 WORKDIR /app
 

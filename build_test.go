@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -183,7 +184,8 @@ func TestBuildAndRunWithBuildContext(t *testing.T) {
 	}
 
 	trackImage := cleanupBuildImages(t, "test-build-context")
-	cleanupLabeledImages(t, "dockertest.test=build-context-builder")
+	run := strconv.Itoa(os.Getpid())
+	cleanupLabeledImages(t, "dockertest.test=build-context-builder-"+run)
 
 	dockertest.ResetRegistry()
 	t.Cleanup(func() {
@@ -198,6 +200,7 @@ func TestBuildAndRunWithBuildContext(t *testing.T) {
 	buildOpts := &dockertest.BuildOptions{
 		Dockerfile: "Dockerfile",
 		ContextDir: contextDir,
+		BuildArgs:  map[string]*string{"DOCKERTEST_RUN": &run},
 	}
 
 	r := pool.BuildAndRunT(t, "test-build-context", buildOpts)

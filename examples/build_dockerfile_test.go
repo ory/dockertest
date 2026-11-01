@@ -21,11 +21,11 @@ func TestBuildDockerfile(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	pool := dockertest.NewPoolT(t, "")
 	// A per-process tag keeps concurrent runs on one daemon apart.
 	tag := fmt.Sprintf("dockertest-build-example:%d", os.Getpid())
-	// Built images are not removed automatically. This cleanup runs after the
-	// container's, so the image is no longer in use.
+	// Built images are not removed automatically. Cleanups run in reverse
+	// order, so registering this one before the pool removes the image after
+	// the pool has removed the container.
 	c, err := mobyclient.New(mobyclient.FromEnv)
 	if err != nil {
 		t.Fatalf("image cleanup client: %v", err)
@@ -38,6 +38,8 @@ func TestBuildDockerfile(t *testing.T) {
 			t.Errorf("remove built image: %v", rmErr)
 		}
 	})
+
+	pool := dockertest.NewPoolT(t, "")
 
 	resource := pool.BuildAndRunT(t, tag,
 		&dockertest.BuildOptions{
