@@ -201,6 +201,9 @@ func WithExposedPorts(ports ...string) RunOption {
 			default:
 				return fmt.Errorf("%w: unsupported protocol in port %q", ErrInvalidOption, p)
 			}
+			if port.Num() == 0 {
+				return fmt.Errorf("%w: port %q must be greater than zero", ErrInvalidOption, p)
+			}
 			rc.exposedPorts[port] = struct{}{}
 		}
 		return nil

@@ -30,7 +30,7 @@ func TestRunWithExposedPorts(t *testing.T) {
 		t.Fatalf("ExposedPorts = %v, want %v", got, want)
 	}
 
-	for _, port := range []string{"not-a-port", "5432/tcpp"} {
+	for _, port := range []string{"not-a-port", "5432/tcpp", "0/tcp"} {
 		if _, err := p.Run(t.Context(), "alpine", WithExposedPorts(port), WithoutReuse()); !errors.Is(err, ErrInvalidOption) {
 			t.Fatalf("Run() with port %q: error = %v, want ErrInvalidOption", port, err)
 		}
