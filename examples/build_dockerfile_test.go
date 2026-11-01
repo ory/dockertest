@@ -23,15 +23,16 @@ func TestBuildDockerfile(t *testing.T) {
 	pool := dockertest.NewPoolT(t, "")
 	// Built images are not removed automatically. This cleanup runs after the
 	// container's, so the image is no longer in use.
+	c, err := mobyclient.New(mobyclient.FromEnv)
+	if err != nil {
+		t.Fatalf("image cleanup client: %v", err)
+	}
+	t.Cleanup(func() { c.Close() })
 	t.Cleanup(func() {
-		c, err := mobyclient.New(mobyclient.FromEnv)
-		if err != nil {
-			t.Errorf("image cleanup client: %v", err)
-			return
-		}
-		defer c.Close()
-		if _, err := c.ImageRemove(context.WithoutCancel(t.Context()), "dockertest-build-example:test", mobyclient.ImageRemoveOptions{PruneChildren: true}); err != nil {
-			t.Errorf("remove built image: %v", err)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 30*time.Second)
+		t.Cleanup(cancel)
+		if _, rmErr := c.ImageRemove(ctx, "dockertest-build-example:test", mobyclient.ImageRemoveOptions{PruneChildren: true}); rmErr != nil {
+			t.Errorf("remove built image: %v", rmErr)
 		}
 	})
 
