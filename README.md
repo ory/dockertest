@@ -191,6 +191,8 @@ Available configuration options:
 - `WithName(name string)` - Set the container name
 - `WithMounts(binds []string)` - Set bind mounts ("host:container" or
   "host:container:mode")
+- `WithExposedPorts(ports ...string)` - Publish container ports on random host
+  ports, for images that do not `EXPOSE` them
 - `WithPortBindings(bindings network.PortMap)` - Set explicit port bindings
 - `WithReuseID(id string)` - Set a custom reuse key (default:
   `"repository:tag"`)

@@ -199,8 +199,11 @@ pool.RunT(t, "postgres",
 
 Available options: `WithTag`, `WithEnv`, `WithCmd`, `WithEntrypoint`,
 `WithUser`, `WithWorkingDir`, `WithLabels`, `WithHostname`, `WithName`,
-`WithMounts`, `WithPortBindings`, `WithoutReuse`, `WithReuseID`,
-`WithContainerConfig`, `WithHostConfig`.
+`WithMounts`, `WithExposedPorts`, `WithPortBindings`, `WithoutReuse`,
+`WithReuseID`, `WithContainerConfig`, `WithHostConfig`.
+
+v3's `RunOptions.ExposedPorts` becomes `WithExposedPorts("5432/tcp")`. Each port
+is published on a random host port; use `WithPortBindings` for a fixed one.
 
 > [!NOTE]
 >
