@@ -20,7 +20,7 @@ func TestMongoDB(t *testing.T) {
 	pool := dockertest.NewPoolT(t, "")
 
 	mongodb := pool.RunT(t, "mongo",
-		dockertest.WithTag("7"),
+		dockertest.WithTag("9"),
 	)
 	// Create MongoDB client outside retry loop to avoid leaking connections
 	ctx := t.Context()

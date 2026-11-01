@@ -20,7 +20,7 @@ func TestCockroachDB(t *testing.T) {
 	pool := dockertest.NewPoolT(t, "")
 
 	cockroach := pool.RunT(t, "cockroachdb/cockroach",
-		dockertest.WithTag("v24.3.2"),
+		dockertest.WithTag("v26.3.4"),
 		dockertest.WithCmd([]string{"start-single-node", "--insecure"}),
 	)
 	// Open connection outside retry loop to avoid leaking connection pools

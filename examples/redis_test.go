@@ -18,7 +18,7 @@ func TestRedis(t *testing.T) {
 	pool := dockertest.NewPoolT(t, "")
 
 	redisContainer := pool.RunT(t, "redis",
-		dockertest.WithTag("7-alpine"),
+		dockertest.WithTag("8-alpine"),
 	)
 	// Create Redis client
 	addr := redisContainer.GetHostPort("6379/tcp")

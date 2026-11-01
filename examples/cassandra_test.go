@@ -20,7 +20,7 @@ func TestCassandra(t *testing.T) {
 	pool := dockertest.NewPoolT(t, "")
 
 	cassandra := pool.RunT(t, "cassandra",
-		dockertest.WithTag("4"),
+		dockertest.WithTag("5"),
 		dockertest.WithEnv([]string{
 			"CASSANDRA_AUTHENTICATOR=PasswordAuthenticator",
 		}),
