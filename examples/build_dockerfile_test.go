@@ -4,12 +4,15 @@
 package examples_test
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
+	mobyclient "github.com/moby/moby/client"
 	"github.com/ory/dockertest/v4"
 )
 
@@ -18,9 +21,27 @@ func TestBuildDockerfile(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
+	// A per-process tag keeps concurrent runs on one daemon apart.
+	tag := fmt.Sprintf("dockertest-build-example:%d", os.Getpid())
+	// Built images are not removed automatically. Cleanups run in reverse
+	// order, so registering this one before the pool removes the image after
+	// the pool has removed the container.
+	c, err := mobyclient.New(mobyclient.FromEnv)
+	if err != nil {
+		t.Fatalf("image cleanup client: %v", err)
+	}
+	t.Cleanup(func() { c.Close() })
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 30*time.Second)
+		t.Cleanup(cancel)
+		if _, rmErr := c.ImageRemove(ctx, tag, mobyclient.ImageRemoveOptions{PruneChildren: true}); rmErr != nil {
+			t.Errorf("remove built image: %v", rmErr)
+		}
+	})
+
 	pool := dockertest.NewPoolT(t, "")
 
-	resource := pool.BuildAndRunT(t, "dockertest-build-example:test",
+	resource := pool.BuildAndRunT(t, tag,
 		&dockertest.BuildOptions{
 			ContextDir: "testdata",
 			Dockerfile: "Dockerfile",
