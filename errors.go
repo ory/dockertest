@@ -25,5 +25,5 @@ var ErrClientClosed = errors.New("client is closed")
 // TestMain or Wrap has started process shutdown.
 var ErrShuttingDown = errors.New("dockertest is shutting down")
 
-// ErrInvalidOption is returned for invalid pool, build, TestMain, or Wrap options.
+// ErrInvalidOption is returned for invalid pool, run, build, TestMain, or Wrap options.
 var ErrInvalidOption = errors.New("invalid option")

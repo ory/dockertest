@@ -467,6 +467,31 @@ func TestRunWithPortBindings(t *testing.T) {
 	}
 }
 
+func TestRunWithExposedPorts(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping integration test in short mode")
+	}
+
+	dockertest.ResetRegistry()
+	t.Cleanup(func() {
+		dockertest.ResetRegistry()
+	})
+
+	pool := dockertest.NewPoolT(t, "")
+
+	// alpine does not EXPOSE any port, so only the option publishes 8080.
+	resource := pool.RunT(t, "alpine",
+		dockertest.WithTag("latest"),
+		dockertest.WithExposedPorts("8080"),
+		dockertest.WithCmd([]string{"sleep", "10"}),
+		dockertest.WithoutReuse(),
+	)
+
+	if got := resource.GetPort("8080/tcp"); got == "" {
+		t.Fatal("GetPort(8080/tcp) is empty, want a random host port")
+	}
+}
+
 func TestResourceCloseRefCounting(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")

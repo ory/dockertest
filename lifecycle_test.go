@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -359,6 +360,28 @@ func TestContainerLabelsIncludeOwnership(t *testing.T) {
 	}
 	if len(user) != 1 {
 		t.Fatalf("caller labels modified: %v", user)
+	}
+}
+
+func TestRunWithExposedPorts(t *testing.T) {
+	testOwner(t)
+	c := newFakeClient()
+	var got network.PortSet
+	c.containerCreate = func(_ context.Context, opts mobyclient.ContainerCreateOptions) (string, error) {
+		got = opts.Config.ExposedPorts
+		return "c1", nil
+	}
+	p := newFakePool(t, c)
+	if _, err := p.Run(t.Context(), "alpine", WithExposedPorts("4566", "53/udp"), WithoutReuse()); err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	want := network.PortSet{network.MustParsePort("4566/tcp"): {}, network.MustParsePort("53/udp"): {}}
+	if !maps.Equal(got, want) {
+		t.Fatalf("ExposedPorts = %v, want %v", got, want)
+	}
+
+	if _, err := p.Run(t.Context(), "alpine", WithExposedPorts("not-a-port"), WithoutReuse()); !errors.Is(err, ErrInvalidOption) {
+		t.Fatalf("Run() with an invalid port: error = %v, want ErrInvalidOption", err)
 	}
 }
 
