@@ -20,9 +20,9 @@ import (
 func TestRunPullsWithRegistryAuthAndPlatform(t *testing.T) {
 	const missing = `{"message":"no such image"}`
 	for _, tc := range []struct {
-		wantInspect []string
 		name, api   string
 		localImage  string // inspect response body; missing means 404
+		wantInspect []string
 		wantPull    bool
 	}{
 		{name: "missing image", api: "1.54", localImage: missing, wantPull: true,
