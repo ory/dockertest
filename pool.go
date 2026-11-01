@@ -375,18 +375,41 @@ func checkForExisting(p *pool, reuseID string) *resource {
 	return nil
 }
 
+// imagePresent reports whether ref is present locally, for platform if it is
+// set. Inspecting by platform needs API 1.49; with an older daemon the local
+// image's platform is compared instead.
+func (p *pool) imagePresent(ctx context.Context, ref string, platform *ocispec.Platform) (bool, error) {
+	if platform != nil {
+		_, err := p.client.ImageInspect(ctx, ref, mobyclient.ImageInspectWithPlatform(platform))
+		if err == nil || errdefs.IsNotFound(err) {
+			return err == nil, nil
+		}
+	}
+	img, err := p.client.ImageInspect(ctx, ref)
+	if errdefs.IsNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if platform == nil {
+		return true, nil
+	}
+	return img.Os == platform.OS && img.Architecture == platform.Architecture &&
+		(platform.Variant == "" || img.Variant == platform.Variant), nil
+}
+
 // pullImage pulls a Docker image unless it is already present.
 func (p *pool) pullImage(ctx context.Context, ref string, cfg *runConfig) error {
-	var inspectOpts []mobyclient.ImageInspectOption
+	if present, err := p.imagePresent(ctx, ref, cfg.platform); err != nil {
+		return fmt.Errorf("image inspect failed for %s: %w", ref, err)
+	} else if present {
+		return nil
+	}
+
 	pullOpts := mobyclient.ImagePullOptions{RegistryAuth: cfg.registryAuth}
 	if cfg.platform != nil {
-		inspectOpts = append(inspectOpts, mobyclient.ImageInspectWithPlatform(cfg.platform))
 		pullOpts.Platforms = []ocispec.Platform{*cfg.platform}
-	}
-	if _, err := p.client.ImageInspect(ctx, ref, inspectOpts...); err == nil {
-		return nil
-	} else if !errdefs.IsNotFound(err) {
-		return fmt.Errorf("image inspect failed for %s: %w", ref, err)
 	}
 
 	pullResp, err := p.client.ImagePull(ctx, ref, pullOpts)
