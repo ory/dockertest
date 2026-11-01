@@ -4,12 +4,14 @@
 package examples_test
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"testing"
 	"time"
 
 	_ "github.com/lib/pq"
+	mobyclient "github.com/moby/moby/client"
 	"github.com/ory/dockertest/v4"
 )
 
@@ -19,6 +21,19 @@ func TestBuildDockerfile(t *testing.T) {
 	}
 
 	pool := dockertest.NewPoolT(t, "")
+	// Built images are not removed automatically. This cleanup runs after the
+	// container's, so the image is no longer in use.
+	t.Cleanup(func() {
+		c, err := mobyclient.New(mobyclient.FromEnv)
+		if err != nil {
+			t.Errorf("image cleanup client: %v", err)
+			return
+		}
+		defer c.Close()
+		if _, err := c.ImageRemove(context.WithoutCancel(t.Context()), "dockertest-build-example:test", mobyclient.ImageRemoveOptions{PruneChildren: true}); err != nil {
+			t.Errorf("remove built image: %v", err)
+		}
+	})
 
 	resource := pool.BuildAndRunT(t, "dockertest-build-example:test",
 		&dockertest.BuildOptions{
