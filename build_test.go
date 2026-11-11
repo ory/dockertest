@@ -287,11 +287,17 @@ func TestBuildAndRunWithBuildKit(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	dockerfile := `FROM alpine:latest
+COPY payload /payload
+RUN --mount=type=cache,target=/cache test "$(wc -c < /payload)" -eq 12582912
 CMD ["sleep", "300"]
 `
 	dockerfilePath := filepath.Join(tmpDir, "Dockerfile")
 	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0o644); err != nil {
 		t.Fatalf("Failed to write Dockerfile: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(tmpDir, "payload"), make([]byte, 12<<20), 0o644); err != nil {
+		t.Fatal(err)
 	}
 
 	buildOpts := &dockertest.BuildOptions{
@@ -300,10 +306,16 @@ CMD ["sleep", "300"]
 		Version:    "2", // BuildKit
 	}
 
-	r := pool.BuildAndRunT(t, "test-build-buildkit", buildOpts)
-	if r == nil {
-		t.Fatal("BuildAndRunT returned nil resource")
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	t.Cleanup(cancel)
+	r, err := pool.BuildAndRun(ctx, "test-build-buildkit", buildOpts)
+	if err != nil {
+		t.Fatal(err)
 	}
+	if r == nil {
+		t.Fatal("BuildAndRun returned nil resource")
+	}
+	r.Cleanup(t)
 	trackImage(r.Container().Image)
 }
 
