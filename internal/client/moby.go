@@ -5,6 +5,8 @@ package client
 
 import (
 	"context"
+	"net/http"
+	"strings"
 
 	mobyclient "github.com/moby/moby/client"
 )
@@ -12,7 +14,13 @@ import (
 // NewMobyClient creates a new Docker client from environment variables.
 // It uses DOCKER_HOST, DOCKER_API_VERSION, DOCKER_CERT_PATH, and DOCKER_TLS_VERIFY.
 func NewMobyClient(ctx context.Context) (DockerClient, error) {
-	c, err := mobyclient.New(mobyclient.FromEnv)
+	// Request the continue handshake to avoid stalls during chunked context uploads.
+	c, err := mobyclient.New(mobyclient.FromEnv, mobyclient.WithHTTPRequestHook(func(req *http.Request) error {
+		if req.Method == http.MethodPost && strings.HasSuffix(req.URL.Path, "/build") {
+			req.Header.Set("Expect", "100-continue")
+		}
+		return nil
+	}))
 	if err != nil {
 		return nil, err
 	}
