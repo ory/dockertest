@@ -367,6 +367,7 @@ if err != nil {
 resource := pool.BuildAndRunT(t, "myapp:test",
     &dockertest.BuildOptions{
         ContextDir: "./testdata",
+        Output:     t.Output(), // the build log, shown when the test fails
     },
 )
 ```

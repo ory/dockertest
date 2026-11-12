@@ -379,7 +379,7 @@ func TestReadBuildResult(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			id, err := readBuildResult(strings.NewReader(tc.stream))
+			id, err := readBuildResult(strings.NewReader(tc.stream), nil)
 			if tc.wantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
 					t.Fatalf("error = %v, want containing %q", err, tc.wantErr)
