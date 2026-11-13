@@ -1,6 +1,6 @@
 module github.com/ory/dockertest/v4
 
-go 1.25.5
+go 1.26.0
 
 require (
 	github.com/cenkalti/backoff/v5 v5.0.3
@@ -10,7 +10,7 @@ require (
 	github.com/moby/moby/api v1.56.1
 	github.com/moby/moby/client v0.6.2
 	go.uber.org/goleak v1.3.0
-	golang.org/x/sys v0.47.0
+	golang.org/x/sys v0.50.0
 )
 
 require (
