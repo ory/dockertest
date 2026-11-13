@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: config
-        uses: ory/ci/conventional_commit_config@35878b67f40c377bcb14dce2c26cf92e53586b4a # master
+        uses: ory/ci/conventional_commit_config@028d3415662a14a30b2ca40aad9c449e3ee9a961 # master
         with:
           config_path: .github/conventional_commits.json
           default_types: |
