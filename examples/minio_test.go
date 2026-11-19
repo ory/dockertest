@@ -11,6 +11,7 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/moby/moby/api/types/network"
 	"github.com/ory/dockertest/v4"
 )
 
@@ -21,9 +22,12 @@ func TestMinio(t *testing.T) {
 
 	pool := dockertest.NewPoolT(t, "")
 
-	resource := pool.RunT(t, "minio/minio",
+	// minio/minio is no longer published on Docker Hub. Chainguard's image
+	// does not EXPOSE the API port, so publish it explicitly.
+	resource := pool.RunT(t, "chainguard/minio",
 		dockertest.WithTag("latest"),
 		dockertest.WithCmd([]string{"server", "/data"}),
+		dockertest.WithPortBindings(network.PortMap{network.MustParsePort("9000/tcp"): {{}}}),
 		dockertest.WithEnv([]string{
 			"MINIO_ROOT_USER=minioadmin",
 			"MINIO_ROOT_PASSWORD=minioadmin",
