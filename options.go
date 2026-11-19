@@ -4,6 +4,7 @@
 package dockertest
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
@@ -61,6 +62,7 @@ type runConfig struct {
 	workingDir         string
 	hostname           string
 	labels             map[string]string
+	exposedPorts       network.PortSet
 	portBindings       network.PortMap
 	configModifier     func(*container.Config)
 	hostConfigModifier func(*container.HostConfig)
@@ -178,6 +180,32 @@ func WithHostConfig(modifier func(*container.HostConfig)) RunOption {
 func WithName(name string) RunOption {
 	return func(rc *runConfig) error {
 		rc.name = name
+		return nil
+	}
+}
+
+// WithExposedPorts declares container ports to publish, such as "5432/tcp" or
+// "5432" (tcp). Each one is bound to a random host port, readable through
+// Resource.GetPort, which is needed for images that do not EXPOSE the port.
+// Use WithPortBindings for a fixed host port.
+func WithExposedPorts(ports ...string) RunOption {
+	return func(rc *runConfig) error {
+		rc.exposedPorts = make(network.PortSet, len(ports))
+		for _, p := range ports {
+			port, err := network.ParsePort(p)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrInvalidOption, err)
+			}
+			switch port.Proto() {
+			case network.TCP, network.UDP, network.SCTP:
+			default:
+				return fmt.Errorf("%w: unsupported protocol in port %q", ErrInvalidOption, p)
+			}
+			if port.Num() == 0 {
+				return fmt.Errorf("%w: port %q must be greater than zero", ErrInvalidOption, p)
+			}
+			rc.exposedPorts[port] = struct{}{}
+		}
 		return nil
 	}
 }

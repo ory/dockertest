@@ -409,6 +409,10 @@ func (p *pool) createAndStartContainer(ctx context.Context, ref string, cfg *run
 		Hostname:   cfg.hostname,
 	}
 
+	if len(cfg.exposedPorts) > 0 {
+		containerConfig.ExposedPorts = cfg.exposedPorts
+	}
+
 	if len(cfg.entrypoint) > 0 {
 		containerConfig.Entrypoint = cfg.entrypoint
 	}
