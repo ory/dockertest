@@ -40,6 +40,7 @@ type fakeClient struct {
 	host       string
 
 	containerCreate  func(ctx context.Context, opts mobyclient.ContainerCreateOptions) (string, error)
+	createWarnings   []string
 	containerStart   func(ctx context.Context, id string) error
 	containerInspect func(ctx context.Context, id string) (container.InspectResponse, error)
 	containerRemove  func(ctx context.Context, id string, opts mobyclient.ContainerRemoveOptions) error
@@ -93,7 +94,7 @@ func (f *fakeClient) ContainerCreate(ctx context.Context, opts mobyclient.Contai
 		f.containers[id] = opts.Config.Image
 		f.mu.Unlock()
 	}
-	return mobyclient.ContainerCreateResult{ID: id}, err
+	return mobyclient.ContainerCreateResult{ID: id, Warnings: f.createWarnings}, err
 }
 
 func (f *fakeClient) ContainerStart(ctx context.Context, id string, _ mobyclient.ContainerStartOptions) (mobyclient.ContainerStartResult, error) {
