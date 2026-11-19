@@ -14,6 +14,7 @@ import (
 
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
 	mobyclient "github.com/moby/moby/client"
 	"github.com/ory/dockertest/v4/internal/client"
 )
@@ -434,6 +435,22 @@ func (p *pool) createAndStartContainer(ctx context.Context, ref string, cfg *run
 	// Apply host config modifier last to allow overriding anything
 	if cfg.hostConfigModifier != nil {
 		cfg.hostConfigModifier(hostConfig)
+	}
+
+	// An empty binding list means any host port. The daemon filled it in
+	// itself before API 1.53 and discards the port since, so fill it in here.
+	var bindings network.PortMap
+	for port, b := range hostConfig.PortBindings {
+		if len(b) > 0 {
+			continue
+		}
+		if bindings == nil {
+			bindings = maps.Clone(hostConfig.PortBindings)
+		}
+		bindings[port] = []network.PortBinding{{}}
+	}
+	if bindings != nil {
+		hostConfig.PortBindings = bindings
 	}
 
 	createResp, err := p.client.ContainerCreate(ctx, mobyclient.ContainerCreateOptions{
