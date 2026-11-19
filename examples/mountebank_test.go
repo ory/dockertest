@@ -20,7 +20,7 @@ func TestMountebank(t *testing.T) {
 	pool := dockertest.NewPoolT(t, "")
 
 	mb := pool.RunT(t, "bbyars/mountebank",
-		dockertest.WithTag("2.9.1"),
+		dockertest.WithTag("2.9.5"),
 		dockertest.WithCmd([]string{"--allowInjection"}),
 		dockertest.WithoutReuse(),
 	)

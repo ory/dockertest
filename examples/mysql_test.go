@@ -20,7 +20,7 @@ func TestMySQL(t *testing.T) {
 	pool := dockertest.NewPoolT(t, "")
 
 	mysql := pool.RunT(t, "mysql",
-		dockertest.WithTag("8"),
+		dockertest.WithTag("26"),
 		dockertest.WithEnv([]string{
 			"MYSQL_ROOT_PASSWORD=secret",
 			"MYSQL_DATABASE=testdb",

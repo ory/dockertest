@@ -76,9 +76,9 @@ import (
 func TestPostgres(t *testing.T) {
     pool := dockertest.NewPoolT(t, "")
 
-    // Container is automatically reused across test runs based on "postgres:14".
+    // Container is automatically reused across test runs based on "postgres:18".
     postgres := pool.RunT(t, "postgres",
-        dockertest.WithTag("14"),
+        dockertest.WithTag("18"),
         dockertest.WithEnv([]string{
             "POSTGRES_PASSWORD=secret",
             "POSTGRES_DB=testdb",
@@ -142,14 +142,14 @@ defer pool.Close(ctx)
 ```go
 // Test helper - fails test on error
 resource := pool.RunT(t, "postgres",
-    dockertest.WithTag("14"),
+    dockertest.WithTag("18"),
     dockertest.WithEnv([]string{"POSTGRES_PASSWORD=secret"}),
     dockertest.WithCmd([]string{"postgres", "-c", "log_statement=all"}),
 )
 
 // With error handling
 resource, err := pool.Run(ctx, "postgres",
-    dockertest.WithTag("14"),
+    dockertest.WithTag("18"),
     dockertest.WithEnv([]string{"POSTGRES_PASSWORD=secret"}),
 )
 if err != nil {
@@ -165,7 +165,7 @@ Customize container settings with configuration options:
 
 ```go
 resource := pool.RunT(t, "postgres",
-    dockertest.WithTag("14"),
+    dockertest.WithTag("18"),
     dockertest.WithUser("postgres"),
     dockertest.WithWorkingDir("/var/lib/postgresql/data"),
     dockertest.WithLabels(map[string]string{
@@ -222,7 +222,7 @@ For host-level configuration, use `WithHostConfig`:
 
 ```go
 resource := pool.RunT(t, "postgres",
-    dockertest.WithTag("14"),
+    dockertest.WithTag("18"),
     dockertest.WithHostConfig(func(hc *container.HostConfig) {
         hc.RestartPolicy = container.RestartPolicy{
             Name:              container.RestartPolicyOnFailure,
@@ -241,10 +241,10 @@ the last reference is released.
 
 ```go
 // First test creates container
-r1 := pool.RunT(t, "postgres", dockertest.WithTag("14"))
+r1 := pool.RunT(t, "postgres", dockertest.WithTag("18"))
 
 // Second test reuses the same container
-r2 := pool.RunT(t, "postgres", dockertest.WithTag("14"))
+r2 := pool.RunT(t, "postgres", dockertest.WithTag("18"))
 
 // r1 and r2 point to the same container
 ```
@@ -253,7 +253,7 @@ Disable reuse if needed:
 
 ```go
 resource := pool.RunT(t, "postgres",
-    dockertest.WithTag("14"),
+    dockertest.WithTag("18"),
     dockertest.WithoutReuse(), // Always create new container
 )
 ```
@@ -261,7 +261,7 @@ resource := pool.RunT(t, "postgres",
 ### Getting connection info
 
 ```go
-resource := pool.RunT(t, "postgres", dockertest.WithTag("14"))
+resource := pool.RunT(t, "postgres", dockertest.WithTag("18"))
 
 // Get host:port (e.g., "127.0.0.1:54320")
 hostPort := resource.GetHostPort("5432/tcp")
@@ -413,7 +413,7 @@ finishes. Nothing to do.
 ```go
 func TestDB(t *testing.T) {
     pool := dockertest.NewPoolT(t, "")
-    resource := pool.RunT(t, "postgres", dockertest.WithTag("14"))
+    resource := pool.RunT(t, "postgres", dockertest.WithTag("18"))
     // Use resource... cleanup happens automatically when t finishes.
 }
 ```
@@ -429,7 +429,7 @@ if err != nil {
 }
 defer pool.Close(ctx) // releases all tracked containers and networks
 
-resource, err := pool.Run(ctx, "postgres", dockertest.WithTag("14"))
+resource, err := pool.Run(ctx, "postgres", dockertest.WithTag("18"))
 if err != nil {
     panic(err)
 }
@@ -512,7 +512,7 @@ guarantees above for abnormal exits.
 ### Error handling
 
 ```go
-resource, err := pool.Run(ctx, "postgres", dockertest.WithTag("14"))
+resource, err := pool.Run(ctx, "postgres", dockertest.WithTag("18"))
 if errors.Is(err, dockertest.ErrImagePullFailed) {
     // Image could not be pulled
 }
