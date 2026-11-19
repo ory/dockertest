@@ -561,7 +561,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version-file: go.mod
 
       - run: go test -v ./...
 ```
@@ -579,7 +579,7 @@ stages:
   - test
 go-test:
   stage: test
-  image: golang:1.24
+  image: golang:1.25
   services:
     - docker:dind
   variables:
