@@ -55,11 +55,14 @@ type BuildOptions struct {
 	NoCache bool
 
 	// ForceRemove always removes intermediate containers, even on build failure.
-	// It does not remove intermediate images or builder cache.
+	// It does not remove intermediate images or builder cache. It only affects
+	// the classic builder; BuildKit does not create intermediate containers.
 	ForceRemove bool
 
 	// Version specifies the builder to use. "1" for classic, "2" for BuildKit.
-	// Defaults to the daemon's configured default if empty.
+	// If empty, the daemon uses the classic builder, even when BuildKit is its
+	// default for the docker CLI. Docker deprecated the classic builder for
+	// Linux images in Engine v23.0.
 	Version string
 }
 
